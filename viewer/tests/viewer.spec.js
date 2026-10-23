@@ -153,9 +153,10 @@ test("sidebar keyboard focus can activate the Open action", async ({
   page,
 }) => {
   await ready(page);
+  // Install chooser interception before the direct keyboard command.
+  const chooser = page.waitForEvent("filechooser");
   await page.locator("#sidebar").focus();
   await page.keyboard.press("Tab");
-  const chooser = page.waitForEvent("filechooser");
   await page.keyboard.press("Enter");
   await (await chooser).setFiles(path.join(fixtures, "single.SLDPRT"));
   await expect
