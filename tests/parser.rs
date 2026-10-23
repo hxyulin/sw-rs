@@ -316,11 +316,11 @@ fn descriptor_budget_rejects_large_table_before_vertex_expansion() {
 
 #[test]
 fn local_byte_override_retains_record_integrity_and_honors_compressed_limits() {
-    let input = file(&[("saved", b"display cache")]);
+    let input = file(&[("saved", b"display cache"), ("other", b"")]);
     let bounded = Container::parse(
         &input,
         Limits {
-            max_compressed_bytes: 1,
+            max_compressed_bytes: 2,
             ..Limits::default()
         },
     )
