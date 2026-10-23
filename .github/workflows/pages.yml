@@ -37,7 +37,11 @@ jobs:
             viewer/target
           key: ${{ runner.os }}-viewer-pages-${{ hashFiles('viewer/Cargo.lock') }}
       - name: Install matching WASM bindings tool
-        run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
+        run: |
+          bindings_version=$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)
+          if [ "$(wasm-bindgen --version 2>/dev/null || true)" != "wasm-bindgen $bindings_version" ]; then
+            cargo install wasm-bindgen-cli --version "$bindings_version" --locked --force
+          fi
       - name: Test parser-backed viewer model
         run: cargo test --locked
       - name: Build static viewer
