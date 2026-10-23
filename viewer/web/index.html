@@ -131,6 +131,13 @@
         letter-spacing: 0.15em;
         pointer-events: none;
       }
+      #view-controls { position: absolute; top: 58px; left: 22px; display: flex;
+        gap: 5px; flex-wrap: wrap; max-width: calc(100% - 400px); font-size: 11px; }
+      #view-controls label { display: flex; gap: 5px; align-items: center; }
+      #view-controls select { background: #17212b; color: #d0dce6; border: 1px solid #3e5264; border-radius: 4px; }
+      #view-controls button { padding: 4px 7px; font-size: 11px; }
+      #axis-triad { position: absolute; bottom: 45px; left: 14px; width: 110px; height: 110px;
+        pointer-events: none; background: #0b1016c0; border-radius: 6px; }
       body.dragging main {
         outline: 3px solid #72d5c7;
         outline-offset: -3px;
@@ -218,6 +225,15 @@
           <div id="occurrence-tree" role="tree" aria-label="Component occurrences"></div>
         </details>
         <div class="tag">SOURCE DISPLAY CACHE</div>
+        <div id="view-controls" role="group" aria-label="Model orientation">
+          <label>Orbit up <select id="up-axis" aria-label="Orbit up axis">
+            <option value="y">Y · SolidWorks default</option>
+            <option value="z">Z · authored Z-up</option>
+          </select></label>
+          <button data-view="front">Front</button><button data-view="top">Top</button>
+          <button data-view="right">Right</button><button data-view="iso">Isometric</button>
+        </div>
+        <canvas id="axis-triad" width="110" height="110" role="img" aria-label="Model axes: X red, Y green, Z blue"></canvas>
         <div id="loading">
           <label id="loading-label" for="loading-progress">Starting viewer…</label>
           <progress id="loading-progress" max="100" aria-valuetext="Starting viewer…"></progress>

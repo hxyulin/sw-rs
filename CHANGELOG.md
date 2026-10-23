@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- Declare the assumed native SolidWorks model XYZ frame with explicit provenance;
+  default the viewer to Y-up, add standard views/source-axis triad and a Z-up
+  camera override without changing geometry or assembly transforms.
+
 - Preserve saved shader/texture references and optical attributes; add saved
   material appearance and physical-family styles without redecoding geometry.
 - Approximate known saved metal/plastic/fiber styles with procedural textures

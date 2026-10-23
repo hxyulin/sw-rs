@@ -110,7 +110,7 @@ impl View for Model {
             .child(label("").key("search-slot").fill_width().height(34.))
             .child(scroll_area(files).key("documents").fill_width().height(220.))
             .child(scroll_area(column().fill_width().gap(10.).child(configs).child(details)).fill_width().fill_height().min_height(0.))
-            .child(label("Saved display cache · approximate material presets\nPhysical units and source frames need review.").font_size(11.).color(ThemeColor::TextMuted))
+            .child(label("SolidWorks XYZ · right-handed · assumed default\nCached physical values remain unverified.").font_size(11.).color(ThemeColor::TextMuted))
     }
 }
 /// RXUI sidebar hosted by an application-owned WebGPU canvas.
@@ -492,6 +492,11 @@ impl ArchiveProject {
                 self.scene.occurrences
             ),
         ];
+        if self.scene.metadata["coordinate_frame"].is_object() {
+            info.push("Model frame: SolidWorks XYZ · right-handed".into());
+            info.push("Front: XY · +Y up · +Z toward observer (default convention)".into());
+            info.push("Geometry: metres in viewer · original document origin retained".into());
+        }
         if !self.scene.materials.is_empty() {
             info.push(format!(
                 "{} saved material preset(s) · approximate appearances",

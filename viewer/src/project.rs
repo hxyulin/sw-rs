@@ -486,6 +486,20 @@ mod tests {
         assert!(rigid(&a)); // Saved mirrored occurrences remain valid isometries.
         a[3] = 1.;
         assert!(!rigid(&a));
+        // A parent rotation must rotate a child's translation as well as vertices.
+        let rotation = [
+            0., 1., 0., 0., -1., 0., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
+        ];
+        let mut child = IDENTITY;
+        child[12] = 1.;
+        assert_eq!(
+            point(multiply(rotation, child), [1000., 0., 0.]),
+            [0., 2., 0.]
+        );
+        assert_ne!(
+            point(multiply(child, rotation), [1000., 0., 0.]),
+            [0., 2., 0.]
+        );
     }
 }
 
@@ -495,6 +509,7 @@ mod traversal_tests {
     fn doc(kind: &str, components: Vec<sw_rs::Component>) -> Document {
         Document {
             document_type: kind.into(),
+            coordinate_frame: (kind != "drawing").then_some(sw_rs::SOLIDWORKS_MODEL_FRAME),
             materials: None,
             version: 0,
             global_properties: Default::default(),
@@ -550,6 +565,7 @@ mod traversal_tests {
                     sha256: "synthetic".into(),
                 },
                 length_unit: "millimeter",
+                coordinate_frame: sw_rs::SOLIDWORKS_MODEL_FRAME,
                 configurations: vec![],
                 model: sw_rs::GeometryModel {
                     tessellations: vec![sw_rs::Tessellation {

@@ -99,6 +99,28 @@ geometry/configurations, no worker scene request, toggle restoration and style
 persistence. The public browser suite passes 50 tests at DPR 1/2, with two optional
 private cases skipped; a separate real-EGA browser run verifies both modes.
 
+## Model-coordinate convention — 2026-10-24
+
+The parser now declares the default right-handed SolidWorks model XYZ basis
+separately from display units and camera orientation. Metadata provenance is
+`assumed_default_solidworks_convention`; custom coordinate-system features and
+saved camera transforms are not decoded. The convention follows the official
+Front/Top/Right plane definitions linked in `src/frame.rs`. This does not establish
+cached body-to-model alignment, physical gravity or cached mass-property units.
+
+The viewer defaults to Y-up and supplies Front (+Z observer, +Y up), Top (+Y
+observer, -Z screen-up), Right (+X observer, +Y up) and isometric camera views.
+A manual Z-up orbit override leaves source vertices and occurrence transforms
+unchanged. The XYZ triad, camera pan basis and hemisphere/key lighting use the
+selected orientation. Regression tests cover cardinal view bases including the
+Top-view pole, orientation changes without worker decoding, source-frame JSON
+provenance, and noncommuting parent rotation/child translation in metre units.
+
+The real EGA model retains 3,380,059 triangles and identical selected-document
+state/diagnostics when switching Y-up/Z-up. Private evidence and screenshots are
+`local-assets/ega-frame-report.json`, `ega-frame-y-up.png` and `ega-frame-z-up.png`.
+The public browser suite passes 52 tests at DPR 1/2 with two private cases skipped.
+
 ## Original metadata comparison
 
 Compared this initial Rust implementation against openswx revision

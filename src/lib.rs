@@ -9,6 +9,7 @@
 mod config;
 mod container;
 mod document;
+mod frame;
 mod geometry;
 mod mesh;
 mod xml;
@@ -18,6 +19,7 @@ pub use document::{
     MaterialData, MaterialDensity, ReferenceReplacement, SavedAppearance, SavedAppearanceRecord,
     SavedMaterial, Sheet, SheetView,
 };
+pub use frame::{CoordinateFrame, SOLIDWORKS_MODEL_FRAME};
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
 };

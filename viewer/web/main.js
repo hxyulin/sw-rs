@@ -413,6 +413,14 @@ try {
     searchInput.focus();
   });
   scene = new SceneView(document.querySelector("#scene"));
+  scene.axesCanvas = document.querySelector("#axis-triad");
+  const upAxis = document.querySelector("#up-axis");
+  upAxis.onchange = () => scene.setUpAxis(upAxis.value);
+  for (const button of document.querySelectorAll("[data-view]")) button.onclick = () => {
+    scene.standardView(button.dataset.view);
+    upAxis.value = scene.upAxis;
+  };
+  scene.draw();
   const appearanceStyle = document.querySelector("#appearance-style");
   scene.appearanceStyle = appearanceStyle.value;
   appearanceStyle.onchange = () => {
@@ -559,6 +567,7 @@ try {
       return fontReady;
     },
     snapshot: () => JSON.parse(app.snapshot()),
+    orientation: () => scene.orientation(),
     get busy() {
       return busy;
     },

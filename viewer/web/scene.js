@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 // App-owned WebGL2 viewport. All CAD parsing and assembly placement is Rust/WASM.
+// Coordinates stay in source XYZ/metres. Only the camera chooses its orbit-up axis.
+export function orbitBasis(yaw, pitch, upAxis = "y") {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return upAxis === "z" ? {
+    back: [cp * cy, cp * sy, sp], right: [-sy, cy, 0], up: [-sp * cy, -sp * sy, cp],
+  } : {
+    back: [cp * sy, sp, cp * cy], right: [cy, 0, -sy], up: [-sp * sy, cp, -sp * cy],
+  };
+}
 export class SceneView {
   constructor(canvas) {
     this.canvas = canvas;
@@ -40,8 +49,12 @@ export class SceneView {
       uniform int surfaceMode;
       uniform vec3 baseColor; uniform float roughness; uniform float metallic;
       uniform vec3 eyePosition;
+      uniform vec3 sceneUp;
       uniform vec3 opticalCoefficients; // diffuse, specularity, emission
       const float PI=3.14159265359;
+      vec3 environmentLight(vec3 direction){
+        return sceneUp.y>0.5?vec3(direction.x,direction.z,-direction.y):direction;
+      }
       // Patterns are anchored to placed WORLD coordinates in metres. They do not
       // track the camera or bounds, and are not recovered CAD UVs/fiber directions.
       // Dominant-plane projection avoids stretching on vertical planar surfaces.
@@ -84,7 +97,7 @@ export class SceneView {
       void main(){
         vec3 normal=normalize(n);if(!gl_FrontFacing)normal=-normal;
         if(surfaceMode==0){
-          float diffuse=max(dot(normal,normalize(vec3(0.4,-0.5,0.8))),0.);
+          float diffuse=max(dot(normal,normalize(environmentLight(vec3(0.4,-0.5,0.8)))),0.);
           outputColor=vec4(pow(c*(0.35+0.65*diffuse),vec3(0.8)),1.);return;
         }
         vec2 uv=surfaceUV(worldPosition,normal);
@@ -115,10 +128,10 @@ export class SceneView {
         }
         vec3 f0=mix(vec3(0.04),base,metallic);
         float grazing=pow(1.-max(dot(normal,view),0.),4.);
-        vec3 ambient=base*(0.21+0.12*max(normal.z,0.))*(1.-0.7*metallic)*opticalCoefficients.x;
-        ambient+=mix(f0,vec3(0.55),grazing)*(0.18+0.16*max(normal.z,0.));
-        vec3 lit=ambient+3.*keyLight(normal,view,normalize(vec3(0.4,-0.5,0.8)),base,r,metallic);
-        lit+=1.2*keyLight(normal,view,normalize(vec3(-0.6,0.3,0.5)),base,min(r+0.2,1.),metallic);
+        vec3 ambient=base*(0.21+0.12*max(dot(normal,sceneUp),0.))*(1.-0.7*metallic)*opticalCoefficients.x;
+        ambient+=mix(f0,vec3(0.55),grazing)*(0.18+0.16*max(dot(normal,sceneUp),0.));
+        vec3 lit=ambient+3.*keyLight(normal,view,normalize(environmentLight(vec3(0.4,-0.5,0.8))),base,r,metallic);
+        lit+=1.2*keyLight(normal,view,normalize(environmentLight(vec3(-0.6,0.3,0.5))),base,min(r+0.2,1.),metallic);
         lit+=base*opticalCoefficients.z;
         // Approximate display response, not colorimetric/material metrology.
         lit=lit/(vec3(1.)+lit);
@@ -135,6 +148,7 @@ export class SceneView {
     this.roughness = gl.getUniformLocation(program, "roughness");
     this.metallic = gl.getUniformLocation(program, "metallic");
     this.eyePosition = gl.getUniformLocation(program, "eyePosition");
+    this.sceneUp = gl.getUniformLocation(program, "sceneUp");
     this.opticalCoefficients = gl.getUniformLocation(program, "opticalCoefficients");
     this._materialsEnabled = true;
     this.appearanceStyle = "saved";
@@ -145,7 +159,8 @@ export class SceneView {
     this.lineCount = 0;
     this.data = new Float32Array();
     this.wire = false;
-    this.yaw = -0.85;
+    this.upAxis = "y";
+    this.yaw = Math.PI / 4;
     this.pitch = 0.45;
     this.radius = 1;
     this.distance = 3;
@@ -165,12 +180,7 @@ export class SceneView {
       drag.x = e.clientX;
       drag.y = e.clientY;
       if (drag.pan) {
-        const right = [-Math.sin(this.yaw), Math.cos(this.yaw), 0];
-        const up = [
-          -Math.sin(this.pitch) * Math.cos(this.yaw),
-          -Math.sin(this.pitch) * Math.sin(this.yaw),
-          Math.cos(this.pitch),
-        ];
+        const { right, up } = orbitBasis(this.yaw, this.pitch, this.upAxis);
         for (let i = 0; i < 3; i++)
           this.center[i] +=
             ((-right[i] * dx + up[i] * dy) * this.distance) /
@@ -281,9 +291,48 @@ export class SceneView {
       ? Math.max(Math.hypot(...hi.map((v, i) => v - lo[i])) / 2, 0.001)
       : 1;
     this.distance = this.radius * 3.2;
-    this.yaw = -0.85;
+    this.yaw = Math.PI / 4;
     this.pitch = 0.45;
     this.draw();
+  }
+  setUpAxis(axis) {
+    if (!["y", "z"].includes(axis)) throw Error("Unsupported camera up axis");
+    this.upAxis = axis;
+    this.yaw = Math.PI / 4;
+    this.pitch = 0.45;
+    this.draw();
+  }
+  standardView(name) {
+    const angles = { front: [0, 0], top: [0, Math.PI / 2], right: [Math.PI / 2, 0], iso: [Math.PI / 4, Math.asin(1 / Math.sqrt(3))] }[name];
+    if (!angles) throw Error("Unknown standard view");
+    this.upAxis = "y";
+    [this.yaw, this.pitch] = angles;
+    this.draw();
+  }
+  orientation() {
+    return { upAxis: this.upAxis, ...orbitBasis(this.yaw, this.pitch, this.upAxis) };
+  }
+  drawAxes() {
+    const canvas = this.axesCanvas;
+    if (!canvas) return;
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = canvas.height = Math.round(110 * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    const basis = this.orientation();
+    const axes = [["X", "#ff7373", 0], ["Y", "#79d99c", 1], ["Z", "#72b5ff", 2]];
+    axes.sort((a, b) => basis.back[a[2]] - basis.back[b[2]]);
+    ctx.font = "bold 13px system-ui";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const [label, color, i] of axes) {
+      const x = 55 + basis.right[i] * 33, y = 52 - basis.up[i] * 33;
+      ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(55, 52); ctx.lineTo(x, y); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillText(label, 55 + basis.right[i] * 44, 52 - basis.up[i] * 44);
+    }
+    ctx.fillStyle = "#91a5b4"; ctx.font = "10px system-ui";
+    ctx.fillText("MODEL XYZ", 55, 103);
   }
   draw() {
     const gl = this.gl,
@@ -298,25 +347,21 @@ export class SceneView {
     gl.viewport(0, 0, w, h);
     gl.clearColor(0.045, 0.06, 0.075, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    this.drawAxes();
     if (!this.data.length) return;
-    const cp = Math.cos(this.pitch),
+    const basis = orbitBasis(this.yaw, this.pitch, this.upAxis),
       eye = this.center.map(
         (v, i) =>
-          v +
-          this.distance *
-            [
-              cp * Math.cos(this.yaw),
-              cp * Math.sin(this.yaw),
-              Math.sin(this.pitch),
-            ][i],
+          v + this.distance * basis.back[i],
       );
     const camera = multiply(
       perspective(Math.PI / 4, w / h, this.radius * 0.005, this.radius * 300),
-      lookAt(eye, this.center),
+      lookAt(eye, this.center, basis.up),
     );
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.matrix, false, camera);
     gl.uniform3fv(this.eyePosition, eye);
+    gl.uniform3fv(this.sceneUp, this.upAxis === "y" ? [0, 1, 0] : [0, 0, 1]);
     gl.uniform1i(this.surfaceMode, 0);
     gl.enable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);
@@ -386,7 +431,7 @@ function perspective(fov, aspect, near, far) {
     0,
   ];
 }
-function lookAt(eye, target) {
+function lookAt(eye, target, cameraUp) {
   const normalize = (a) => {
     const n = Math.hypot(...a);
     return a.map((x) => x / n);
@@ -397,7 +442,7 @@ function lookAt(eye, target) {
     a[0] * b[1] - a[1] * b[0],
   ];
   const z = normalize(eye.map((v, i) => v - target[i])),
-    x = normalize(cross([0, 0, 1], z)),
+    x = normalize(cross(cameraUp, z)),
     y = cross(z, x),
     dot = (a) => -a.reduce((s, v, i) => s + v * eye[i], 0);
   return [

@@ -219,6 +219,23 @@ fn cached_geometry_is_byte_based_hashed_and_preserves_winding_and_units() {
     let g = sw_rs::geometry(&bytes, "synthetic.SLDPRT").unwrap();
     assert_eq!(g.source.sha256.len(), 64);
     assert_eq!(g.length_unit, "millimeter");
+    assert_eq!(g.coordinate_frame, sw_rs::SOLIDWORKS_MODEL_FRAME);
+    let metadata = serde_json::to_value(sw_rs::parse(&bytes, "synthetic.SLDPRT").unwrap()).unwrap();
+    assert_eq!(
+        metadata["coordinate_frame"]["provenance"],
+        "assumed_default_solidworks_convention"
+    );
+    assert_eq!(metadata["coordinate_frame"]["front_view_up"], "+y");
+    assert_eq!(
+        metadata["coordinate_frame"]["custom_coordinate_systems_decoded"],
+        false
+    );
+    assert!(
+        sw_rs::parse(&bytes, "drawing.SLDDRW")
+            .unwrap()
+            .coordinate_frame
+            .is_none()
+    );
     let m = &g.model.tessellations[0];
     assert_eq!(m.vertices, [[0., 0., 0.], [1000., 0., 0.], [0., 1000., 0.]]);
     assert_eq!(m.triangles, [[0, 1, 2]]);

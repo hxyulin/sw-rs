@@ -40,6 +40,8 @@ pub struct GeometryDocument {
     pub source: GeometrySource,
     /// Output coordinate unit, currently `millimeter` for this carrier profile.
     pub length_unit: &'static str,
+    /// Native model XYZ interpretation, explicitly based on the default convention.
+    pub coordinate_frame: crate::CoordinateFrame,
     /// Source configurations; this profile refuses ambiguous multi-config ownership.
     pub configurations: Vec<crate::Configuration>,
     /// Saved display geometry, not a freshly evaluated feature history.
@@ -130,13 +132,14 @@ pub fn geometry_with_limits(
                 .collect(),
         },
         length_unit: "millimeter",
+        coordinate_frame: crate::SOLIDWORKS_MODEL_FRAME,
         configurations: doc.configurations,
         model: GeometryModel { tessellations },
         limitations: vec![
             "saved_display_cache_may_be_partial_or_stale",
             "no_BRep_body_or_face_ownership",
             "single_native_configuration_only",
-            "source_frame_requires_review",
+            "display_cache_alignment_not_independently_validated",
         ],
     })
 }

@@ -45,6 +45,17 @@ Transforms use openswx's column-major interpretation; agreement with upstream
 is not independent placement validation. Absent/malformed transforms are `None`
 (JSON `null`), rather than fabricated identity matrices.
 
+`Document::coordinate_frame` and `GeometryDocument::coordinate_frame` explicitly
+declare the assumed SolidWorks model XYZ convention: right-handed, native
+document origin, Front plane XY, Front-view up +Y and toward-observer +Z.
+This follows [SolidWorks' plane/direction definitions](https://help.solidworks.com/2021/english/SolidWorks/cworks/c_specifying_directions.htm).
+It is labelled `assumed_default_solidworks_convention`; named coordinate-system
+features and saved camera orientations are not decoded or automatically applied.
+Model coordinates are never recentered or reordered by this declaration. Custom
+reference frames do not replace the document's global model basis. Drawings
+expose no 3D frame. Cached mesh output stays in millimetres; the viewer composes
+saved component poses in metres and converts mesh units exactly once.
+
 `Document::materials` retains material definitions and configuration references.
 `Configuration::material` selects only a unique exact saved reference;
 `definition_index` resolves a unique definition within that document. Definitions

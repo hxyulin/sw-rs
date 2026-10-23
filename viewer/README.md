@@ -79,6 +79,19 @@ finishing an import dismisses the panel. The chooser, search and occurrence tree
 use accessible native HTML overlays. The remaining canvas UI does not yet publish
 a full DOM accessibility tree or support touch-specific navigation.
 
+The camera defaults to **Y · SolidWorks default**: native model XYZ is right-handed,
+the Front plane is XY, and +Z points toward a Front-view observer with +Y up.
+**Front**, **Top**, **Right** and **Isometric** select standard orientations and
+restore the Y-up camera convention. The colored **MODEL XYZ** triad shows source
+axes (X red, Y green, Z blue). For assemblies authored with vertical Z, choose
+**Z · authored Z-up** under **Orbit up**. Fit keeps that up-axis choice.
+
+These controls change the camera, pan basis and lighting up direction only;
+they do not rotate/recenter source vertices, alter occurrence transforms or infer
+physical gravity. The inspector labels the model-frame convention as assumed.
+Custom coordinate-system features and saved view orientations are not decoded.
+Named reference frames are not applied silently to model coordinates.
+
 The inspector exposes saved properties, raw cached mass tokens and diagnostics.
 All coordinates preserve the source assembly frame, with metre/millimetre
 conversion matching the audited display carrier. **Material colors** uses

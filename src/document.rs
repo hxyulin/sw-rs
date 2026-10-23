@@ -89,6 +89,9 @@ pub struct Document {
     /// Extension-derived kind: part, assembly, or drawing.
     #[serde(rename = "doc_type")]
     pub document_type: String,
+    /// Default model-frame interpretation; absent for unsupported drawing coordinates.
+    /// Provenance distinguishes a convention assumption from parsed custom features.
+    pub coordinate_frame: Option<crate::CoordinateFrame>,
     /// Native model version (not a calendar year); zero when unknown.
     pub version: u32,
     /// Saved global custom and core properties.
@@ -356,6 +359,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         },
         materials,
         document_type: kind.into(),
+        coordinate_frame: (kind != "drawing").then_some(crate::SOLIDWORKS_MODEL_FRAME),
         version,
         global_properties: global,
         configurations,
