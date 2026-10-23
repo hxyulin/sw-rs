@@ -102,6 +102,10 @@ python3 scripts/compare-corpus.py /path/to/native-files \
   --output local-assets/corpus-comparison.json
 ```
 
-Next useful ports are cut lists/drawing metadata and saved display tessellations,
-followed by explicitly scoped Parasolid topology/geometry support. General mate
-solving and feature-history regeneration require separate designs and validation.
+[PORTING.md](PORTING.md) traces the actual rm-simulator consumers, measured JSON
+compatibility gaps, permissive geometry sources (including a pinned earlier MIT
+sldkit revision), and acceptance gates for replacing both external readers.
+Metadata interchange compatibility and Part tessellations are the next steps;
+complete portable Parasolid/drawing support can follow in tested milestones.
+General mate solving and feature-history regeneration require separate designs
+and validation.
