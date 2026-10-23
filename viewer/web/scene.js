@@ -57,6 +57,14 @@ export class SceneView {
         float width=fwidth(phase);
         return sin(phase)*exp(-0.5*width*width);
       }
+      float grainHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+      float filteredGrain(vec2 p){
+        vec2 cell=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+        float value=mix(mix(grainHash(cell),grainHash(cell+vec2(1.,0.)),f.x),
+          mix(grainHash(cell+vec2(0.,1.)),grainHash(cell+vec2(1.,1.)),f.x),f.y);
+        vec2 footprint=fwidth(p);
+        return (2.*value-1.)*exp(-2.*dot(footprint,footprint));
+      }
       vec3 keyLight(vec3 normal,vec3 view,vec3 light,vec3 base,float r,float metal){
         vec3 halfVector=normalize(view+light);
         float nl=max(dot(normal,light),0.);
@@ -101,7 +109,7 @@ export class SceneView {
           r=clamp(r+0.045*brush,0.2,0.65);
         } else if(surfaceMode==5){
           // Filtered cast/plastic microtexture, synthesized from the saved style.
-          float grain=wave(2.*PI*uv.x*1700.)*wave(2.*PI*uv.y*1490.);
+          float grain=filteredGrain(uv*1800.)+0.35*filteredGrain(uv*3600.);
           base*=1.+0.08*grain;
           r=clamp(r+0.06*grain,0.15,0.9);
         }
