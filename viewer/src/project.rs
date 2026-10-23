@@ -12,6 +12,16 @@ use sw_rs::{
 const IDENTITY: [f64; 16] = [
     1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
 ];
+/// A contiguous range of triangle vertices sharing one saved material preset.
+#[derive(Debug, serde::Serialize)]
+pub struct MaterialBatch {
+    /// Offset in the interleaved scene buffer, measured in vertices.
+    pub first_vertex: usize,
+    /// Number of vertices; always a multiple of three.
+    pub vertex_count: usize,
+    /// Index into `Scene::materials`; absent means diagnostic colors only.
+    pub material_index: Option<usize>,
+}
 #[derive(Default)]
 pub struct Scene {
     /// Interleaved world positions (metres), face normals, diagnostic RGB.
@@ -24,6 +34,12 @@ pub struct Scene {
     pub diagnostics: Vec<String>,
     pub metadata: serde_json::Value,
     pub configurations: Vec<String>,
+    /// Flat preorder occurrence tree; parent IDs preserve repeated instances.
+    pub hierarchy: Vec<serde_json::Value>,
+    /// Approximate viewer appearances backed by explicit material assignments.
+    pub materials: Vec<crate::appearance::MaterialAppearance>,
+    /// Complete, disjoint triangle ranges, including unassigned diagnostic ranges.
+    pub batches: Vec<MaterialBatch>,
 }
 pub struct Project {
     pub files: FileSet,
@@ -110,17 +126,25 @@ impl Project {
                 scene.configurations = doc.configurations.iter().map(|c| c.name.clone()).collect();
             }
             Err(e) => {
+                scene.hierarchy.push(serde_json::json!({"id":0,"parent":null,"name":path,"path":path,"configuration":"","kind":"document","status":"unsupported"}));
                 scene.diagnostics.push(e);
                 return scene;
             }
         }
-        let name = scene
-            .configurations
-            .get(config)
-            .cloned()
-            .unwrap_or_default();
+        let name = match scene.configurations.get(config) {
+            Some(name) => name.clone(),
+            None if scene.metadata["doc_type"] == "drawing" => String::new(),
+            None => {
+                scene.hierarchy.push(serde_json::json!({"id":0,"parent":null,"name":path,"path":path,"configuration":"","kind":"document","status":"configuration unavailable"}));
+                scene
+                    .diagnostics
+                    .push(format!("Requested configuration is unavailable: {path}"));
+                return scene;
+            }
+        };
+        scene.hierarchy.push(serde_json::json!({"id":0,"parent":null,"name":path.rsplit('/').next().unwrap_or(path),"path":path,"configuration":name,"kind":"document","status":"available"}));
         self.visit(
-            path,
+            (0, path),
             &name,
             IDENTITY,
             show_hidden,
@@ -129,9 +153,16 @@ impl Project {
         );
         scene
     }
+    /// Resolve a saved configuration name, including worker-local embedded documents.
+    pub fn configuration_index(&mut self, path: &str, name: &str) -> usize {
+        self.document(path)
+            .ok()
+            .and_then(|d| d.configurations.iter().position(|c| c.name == name))
+            .unwrap_or(usize::MAX)
+    }
     fn visit(
         &mut self,
-        path: &str,
+        (node, path): (usize, &str),
         name: &str,
         pose: [f64; 16],
         show_hidden: bool,
@@ -140,18 +171,22 @@ impl Project {
     ) {
         scene.visited_nodes += 1;
         if ancestors.contains(&(path.into(), name.into())) {
+            scene.hierarchy[node]["status"] = "cyclic".into();
             scene.diagnostics.push(format!("Cyclic reference: {path}"));
             return;
         }
         let doc = match self.document(path) {
             Ok(d) => d,
             Err(e) => {
+                scene.hierarchy[node]["status"] = "unsupported".into();
                 scene.diagnostics.push(format!("{path}: {e}"));
                 return;
             }
         };
         let kind = doc.document_type.clone();
+        scene.hierarchy[node]["kind"] = kind.clone().into();
         if kind == "drawing" {
+            scene.hierarchy[node]["status"] = "unsupported".into();
             scene
                 .diagnostics
                 .push("Drawing metadata is available; drawing rendering is not supported.".into());
@@ -163,11 +198,13 @@ impl Project {
             .filter(|c| c.name == name)
             .collect();
         if matching.len() != 1 {
+            scene.hierarchy[node]["status"] = "configuration unavailable".into();
             scene
                 .diagnostics
                 .push(format!("Missing/ambiguous configuration: {path} / {name}"));
             return;
         }
+        let appearance = crate::appearance::for_configuration(doc, name);
         if kind == "assembly" {
             let replacements = doc.reference_replacements.clone();
             let children: Vec<_> = matching[0]
@@ -186,10 +223,20 @@ impl Project {
                 .collect();
             ancestors.insert((path.into(), name.into()));
             for (label, reference, config, suppressed, hidden, transform) in children {
+                let child_node = scene.hierarchy.len();
+                let status = if suppressed {
+                    "suppressed"
+                } else if hidden && !show_hidden {
+                    "hidden"
+                } else {
+                    "available"
+                };
+                scene.hierarchy.push(serde_json::json!({"id":child_node,"parent":node,"name":label,"path":null,"reference":reference,"configuration":config,"kind":if reference.to_ascii_lowercase().ends_with(".sldasm") {"assembly"} else {"part"},"status":status,"hidden":hidden}));
                 if suppressed || (hidden && !show_hidden) {
                     continue;
                 }
                 let Some(local) = transform.filter(rigid) else {
+                    scene.hierarchy[child_node]["status"] = "unchecked transform".into();
                     scene
                         .diagnostics
                         .push(format!("Unchecked transform: {label}"));
@@ -217,23 +264,30 @@ impl Project {
                     }
                 }
                 match resolved {
-                    Resolution::Found(child) => self.visit(
-                        &child,
-                        &config,
-                        multiply(pose, local),
-                        show_hidden,
-                        ancestors,
-                        scene,
-                    ),
+                    Resolution::Found(child) => {
+                        scene.hierarchy[child_node]["path"] = child.clone().into();
+                        self.visit(
+                            (child_node, &child),
+                            &config,
+                            multiply(pose, local),
+                            show_hidden,
+                            ancestors,
+                            scene,
+                        )
+                    }
                     Resolution::Missing => {
+                        scene.hierarchy[child_node]["status"] = "missing".into();
                         scene.missing_references += 1;
                         scene.diagnostics.push(format!(
                             "Missing reference (skipped): {label} · {reference}"
                         ));
                     }
-                    Resolution::Ambiguous(_) => scene
-                        .diagnostics
-                        .push(format!("Ambiguous reference: {label}")),
+                    Resolution::Ambiguous(_) => {
+                        scene.hierarchy[child_node]["status"] = "ambiguous".into();
+                        scene
+                            .diagnostics
+                            .push(format!("Ambiguous reference: {label}"));
+                    }
                 }
             }
             ancestors.remove(&(path.into(), name.into()));
@@ -272,6 +326,7 @@ impl Project {
         let g = match &self.geometry[path] {
             Ok(g) => g,
             Err(e) => {
+                scene.hierarchy[node]["status"] = "unsupported".into();
                 scene.diagnostics.push(format!("{path}: {e}"));
                 return;
             }
@@ -288,6 +343,7 @@ impl Project {
             [0.73, 0.58, 0.72],
         ];
         let color = palette[hash as usize % palette.len()];
+        let first_vertex = scene.vertices.len() / 9;
         scene.occurrences += 1;
         for mesh in &g.model.tessellations {
             for triangle in &mesh.triangles {
@@ -308,6 +364,31 @@ impl Project {
                     scene.vertices.extend(n.map(|x| (x / length) as f32));
                     scene.vertices.extend(color);
                 }
+            }
+        }
+        let vertex_count = scene.vertices.len() / 9 - first_vertex;
+        if vertex_count > 0 {
+            let material_index = appearance.map(|appearance| {
+                if let Some(index) = scene.materials.iter().position(|m| m == &appearance) {
+                    index
+                } else {
+                    let index = scene.materials.len();
+                    scene.materials.push(appearance);
+                    index
+                }
+            });
+            scene.hierarchy[node]["material_index"] = material_index.into();
+            if let Some(previous) = scene.batches.last_mut().filter(|b| {
+                b.material_index == material_index
+                    && b.first_vertex + b.vertex_count == first_vertex
+            }) {
+                previous.vertex_count += vertex_count;
+            } else {
+                scene.batches.push(MaterialBatch {
+                    first_vertex,
+                    vertex_count,
+                    material_index,
+                });
             }
         }
     }
@@ -414,12 +495,14 @@ mod traversal_tests {
     fn doc(kind: &str, components: Vec<sw_rs::Component>) -> Document {
         Document {
             document_type: kind.into(),
+            materials: None,
             version: 0,
             global_properties: Default::default(),
             configurations: vec![sw_rs::Configuration {
                 index: 0,
                 name: "Default".into(),
                 parent_index: None,
+                material: None,
                 properties: Default::default(),
                 mass_properties: None,
                 components,
@@ -482,6 +565,117 @@ mod traversal_tests {
             }),
         );
         p
+    }
+    #[test]
+    fn unavailable_configuration_never_falls_back_and_drawings_keep_metadata() {
+        let mut p = fixture(vec![]);
+        assert_eq!(p.configuration_index("part.SLDPRT", "Absent"), usize::MAX);
+        let invalid = p.scene("part.SLDPRT", usize::MAX, false);
+        assert!(invalid.vertices.is_empty());
+        assert!(invalid.materials.is_empty());
+        assert_eq!(invalid.hierarchy[0]["status"], "configuration unavailable");
+        let mut drawing = doc("drawing", vec![]);
+        drawing.configurations.clear();
+        p.metadata.insert("sheet.SLDDRW".into(), drawing);
+        let scene = p.scene("sheet.SLDDRW", 0, false);
+        assert_eq!(scene.metadata["doc_type"], "drawing");
+        assert_eq!(scene.hierarchy[0]["status"], "unsupported");
+        assert!(scene.diagnostics[0].contains("Drawing metadata is available"));
+    }
+    #[test]
+    fn material_batches_cover_assigned_and_unassigned_occurrences_without_gaps() {
+        let mut p = fixture(vec![
+            component("part.SLDPRT", Some(IDENTITY), false),
+            component("part.SLDPRT", Some(IDENTITY), false),
+            component("unknown.SLDPRT", Some(IDENTITY), false),
+        ]);
+        let mut other = fixture(vec![]);
+        p.files
+            .documents
+            .insert("unknown.SLDPRT".into(), Vec::new().into());
+        p.metadata
+            .insert("unknown.SLDPRT".into(), doc("part", vec![]));
+        p.geometry.insert(
+            "unknown.SLDPRT".into(),
+            other.geometry.remove("part.SLDPRT").unwrap(),
+        );
+        let assignment = sw_rs::MaterialAssignment {
+            configuration: "Default".into(),
+            material_reference: "test|6061|21".into(),
+            definition_index: Some(0),
+            source_path: "/materials/configurationslist/configuration".into(),
+        };
+        let part = p.metadata.get_mut("part.SLDPRT").unwrap();
+        part.configurations[0].material = Some(assignment.clone());
+        part.materials = Some(sw_rs::MaterialData {
+            source_stream: "swXmlContents/MATERIALTREE".into(),
+            definitions: vec![sw_rs::SavedMaterial {
+                name: "test|6061".into(),
+                material_id: Some("21".into()),
+                classifications: vec!["铝合金".into()],
+                density: None,
+                saved_swatch_rgb: None,
+                source_path: "/materials/classification/material".into(),
+            }],
+            assignments: vec![assignment],
+            body_assignments_decoded: false,
+        });
+        let s = p.scene("root.SLDASM", 0, false);
+        assert_eq!(s.vertices.len() / 9, 9);
+        assert_eq!(s.materials.len(), 1);
+        assert_eq!(s.batches.len(), 2);
+        assert_eq!(s.batches[0].first_vertex, 0);
+        assert_eq!(s.batches[0].vertex_count, 6);
+        assert_eq!(s.batches[0].material_index, Some(0));
+        assert_eq!(s.batches[1].first_vertex, 6);
+        assert_eq!(s.batches[1].vertex_count, 3);
+        assert_eq!(s.batches[1].material_index, None);
+        assert_eq!(s.hierarchy[1]["material_index"], 0);
+        assert!(s.hierarchy[3]["material_index"].is_null());
+    }
+    #[test]
+    fn hierarchy_keeps_repeated_subassemblies_and_excluded_or_failed_leaves() {
+        let mut suppressed = component("suppressed.SLDPRT", Some(IDENTITY), false);
+        suppressed.is_suppressed = true;
+        let mut p = fixture(vec![
+            component("nested.SLDASM", Some(IDENTITY), false),
+            component("nested.SLDASM", Some(IDENTITY), false),
+            suppressed,
+            component("part.SLDPRT", Some(IDENTITY), true),
+        ]);
+        p.files
+            .documents
+            .insert("nested.SLDASM".into(), Vec::new().into());
+        p.metadata.insert(
+            "nested.SLDASM".into(),
+            doc(
+                "assembly",
+                vec![
+                    component("part.SLDPRT", Some(IDENTITY), false),
+                    component("missing.SLDPRT", Some(IDENTITY), false),
+                    component("broken.SLDPRT", Some(IDENTITY), false),
+                ],
+            ),
+        );
+        p.files
+            .documents
+            .insert("broken.SLDPRT".into(), Vec::new().into());
+        p.metadata
+            .insert("broken.SLDPRT".into(), doc("part", vec![]));
+        p.geometry
+            .insert("broken.SLDPRT".into(), Err("unsupported cache".into()));
+        let scene = p.scene("root.SLDASM", 0, false);
+        assert_eq!(scene.occurrences, 2);
+        assert_eq!(scene.hierarchy.len(), 11);
+        assert_eq!(scene.hierarchy[1]["path"], scene.hierarchy[5]["path"]);
+        assert_eq!(scene.hierarchy[2]["parent"], 1);
+        assert_eq!(scene.hierarchy[6]["parent"], 5);
+        assert_eq!(scene.hierarchy[3]["status"], "missing");
+        assert!(scene.hierarchy[3]["path"].is_null());
+        assert_eq!(scene.hierarchy[4]["status"], "unsupported");
+        assert_eq!(scene.hierarchy[9]["status"], "suppressed");
+        assert_eq!(scene.hierarchy[10]["status"], "hidden");
+        assert_eq!(p.scene("root.SLDASM", 0, true).occurrences, 3);
     }
     #[test]
     fn repeated_hidden_occurrences_keep_source_poses_and_shared_decode() {

@@ -3,6 +3,9 @@
 // Ported from openswx document.cc and internal/xml_readers.cc.
 // Copyright (c) 2026 openswx contributors; see LICENSE-openswx.
 use crate::{Container, Diagnostic, config, xml};
+#[path = "material.rs"]
+mod material;
+pub use material::{MaterialAssignment, MaterialData, MaterialDensity, SavedMaterial};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,6 +63,9 @@ pub struct Configuration {
     pub mass_properties: Option<MassProperties>,
     /// Direct occurrences for assemblies, without recursive file loading.
     pub components: Vec<Component>,
+    /// Unique saved material reference for this exact configuration name.
+    /// Resolve its definition index through `Document::materials`; no inheritance is inferred.
+    pub material: Option<MaterialAssignment>,
     /// Saved weldment cut-list items, without unit interpretation.
     pub cut_list: Vec<CutListItem>,
     /// Saved configuration preview bytes, omitted from normal JSON output.
@@ -86,6 +92,9 @@ pub struct Document {
     pub global_properties: BTreeMap<String, String>,
     /// Saved configurations; drawings currently expose raw streams only.
     pub configurations: Vec<Configuration>,
+    /// Saved physical-material definitions and explicit configuration references.
+    /// None means the stream is absent or unsupported, not proof of no material.
+    pub materials: Option<MaterialData>,
     /// Document PNG preview bytes, without decoding the image.
     #[serde(skip_serializing)]
     pub preview_png: Vec<u8>,
@@ -188,6 +197,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
                 name = properties.get("Configuration").cloned().unwrap_or_default();
             }
             configurations.push(Configuration {
+                material: None,
                 index,
                 name,
                 parent_index,
@@ -241,6 +251,30 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
                 if let [name] = bases.as_slice() {
                     configurations[*i].name = name.clone();
                 }
+            }
+        }
+    }
+    let materials = streams
+        .get(material::STREAM)
+        .and_then(|bytes| material::parse(bytes, &mut container.diagnostics));
+    if let Some(materials) = &materials {
+        for configuration in &mut configurations {
+            let matches = materials
+                .assignments
+                .iter()
+                .filter(|a| !configuration.name.is_empty() && a.configuration == configuration.name)
+                .collect::<Vec<_>>();
+            if let [assignment] = matches.as_slice() {
+                configuration.material = Some((*assignment).clone());
+            } else if matches.len() > 1 {
+                container.diagnostics.push(Diagnostic {
+                    offset: 0,
+                    message: format!(
+                        "{}: ambiguous references for configuration {}; no assignment selected",
+                        material::STREAM,
+                        configuration.name
+                    ),
+                });
             }
         }
     }
@@ -317,6 +351,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         } else {
             Vec::new()
         },
+        materials,
         document_type: kind.into(),
         version,
         global_properties: global,

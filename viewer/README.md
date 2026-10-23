@@ -41,10 +41,23 @@ three Part definitions, not a SolidWorks-authored model. Its source generator is
 
 ## Use
 
-Open or drop an archive. The largest of the shallowest assemblies is initially
-selected (rather than the first alphabetic subassembly); choose
-another document or saved configuration in the RXUI sidebar. Suppressed
-occurrences stay excluded. **Show hidden Parts** controls saved hidden flags.
+Open or drop an archive. If it contains multiple SLDASM documents, a native modal
+lets you search full paths and choose which assembly to open. **Choose assembly…**
+reopens it. Escape or **Browse individual documents** dismisses the chooser;
+select any document in the RXUI sidebar to continue. A single assembly or individual
+native document opens directly. The existing document search also keeps Parts
+and drawings independently usable.
+
+The **Component occurrences** panel shows the selected configuration's actual
+assembly instances, including repeated subassemblies and embedded documents,
+rather than grouping archive folders. The root starts expanded; nested assemblies
+start collapsed. Expand with the row button or Right arrow; Left collapses or
+moves to the parent, Up/Down and Home/End move between visible rows. Enter or a
+row's **Open** button opens its resolved document and saved configuration, including
+embedded Parts absent from the archive document list. Missing, ambiguous,
+suppressed, hidden, cyclic and unsupported occurrences remain labelled in the tree.
+Unresolved references never offer an Open action. Suppressed occurrences stay
+excluded from rendering. **Show hidden Parts** controls saved hidden flags.
 Repeated occurrences retain distinct source poses while sharing decoded geometry.
 Missing references are allowed: available sibling parts still render, while the
 header and inspector label the assembly as partial and list omitted references.
@@ -62,13 +75,28 @@ the viewport accepts F after focus. The header has an ordinary browser status
 region and Cancel / clear action. A loading panel shows file-read bytes and
 percentage, ZIP extraction entry progress, and an indeterminate bar for TAR
 extraction and mesh decoding (where no reliable total is known). Cancelling or
-finishing an import dismisses the panel. The canvas UI does not yet publish a full DOM
-accessibility tree or support touch-specific navigation.
+finishing an import dismisses the panel. The chooser, search and occurrence tree
+use accessible native HTML overlays. The remaining canvas UI does not yet publish
+a full DOM accessibility tree or support touch-specific navigation.
 
 The inspector exposes saved properties, raw cached mass tokens and diagnostics.
 All coordinates preserve the source assembly frame, with metre/millimetre
-conversion matching the audited display carrier. Colors are diagnostic palette
-colors, not recovered CAD appearances. Unknown transforms, missing references,
+conversion matching the audited display carrier. **Material colors** uses
+approximate viewer presets based on explicit saved material assignments; **Diagnostic colors** uses the path palette. These presets do not recover
+original CAD appearances. The inspector reports explicit saved material
+assignments for the opened configuration and preserves raw density tokens with
+unverified units labelled; material names do not establish recovered appearance.
+
+Aluminum uses an approximate metallic/roughness shader with procedural satin
+brushing; carbon fiber uses a filtered woven-bundle pattern. Other assigned
+materials use their saved RGB swatch, when available, with a generic surface
+preset. Patterns use dominant-plane projection of placed world coordinates in
+metres, so they stay fixed while orbiting; original UVs, machining direction and
+fiber orientation are not recovered. Unassigned Parts keep diagnostic colors.
+Presets and draw ranges are carried separately from geometry, and repeated
+occurrences with the same saved preset share its record. No SolidWorks shader
+library, external texture download or proprietary material asset is required.
+Unknown transforms, missing references,
 ambiguous paths/configurations, cycles and unsupported meshes are reported.
 An incomplete assembly remains labelled with its issue count; opening a drawing
 shows metadata without inventing a rendered drawing. The view does not validate
@@ -120,7 +148,9 @@ npm test
 The browser suite uses software WebGPU in Chromium and exercises actual RXUI
 canvas clicks, file chooser activation, ZIP/TAR/TAR.GZ assembly composition,
 Part selection, visible orbit/wireframe changes, keyboard activation, cancellation
-and failed-import recovery. Native tests cover archive integrity, bounds,
+and failed-import recovery, assembly choice/reopening, occurrence expansion and
+keyboard navigation, embedded-document opening and saved material labels. Native
+tests cover archive integrity, bounds,
 traversal, source transforms, hidden occurrences and failure accounting.
 
 Optional private-CAD validation runs only when explicitly supplied locally:

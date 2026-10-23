@@ -2,6 +2,72 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # Initial port validation — 2026-10-23
 
+## Web archive investigation — 2026-10-24
+
+The locally supplied EGA mechanisms ZIP contains 340 native documents (295 Parts
+and 45 Assemblies). Its SHA-256 is
+`9b688805963fe892e12332d3ff02991c4fc9261c56d04d93d8e2a61c4c092ddc`.
+The archive, decoded streams, per-document reports and screenshots stay in
+gitignored `local-assets/`; the public viewer contains synthetic fixtures only.
+
+At `3578b39`, 34 of the 45 first-configuration assembly scenes contain geometry.
+The main assembly renders 3,380,059 triangles across 615 supported occurrences,
+with one unresolved source reference. This establishes partial display recovery,
+not completeness: unsupported constituent Parts still leave gaps. Saved rename
+maps and owner-scoped imported/virtual documents account for the improvement
+from the initial 18 renderable assemblies. Reflected orthogonal transforms are
+accepted; a filename beginning with `Mirror` is not itself a rejection reason.
+
+Reproduce the native report with:
+
+```sh
+mbx run --manifest-path viewer/Cargo.toml --release --example inspect_project -- \
+  /path/to/archive.zip > local-assets/assemblies.jsonl
+```
+
+The browser suite exercises synthetic data at device-pixel ratios 1 and 2;
+`SW_VIEWER_ARCHIVE=/path/to/archive.zip npm --prefix viewer test` adds an optional
+local real-CAD check. Browser tests do not establish geometry completeness,
+material correctness, cross-browser certification or physical-model validity.
+
+The material audit found `MATERIALTREE` in 274 of the 295 external Parts, with
+214 saved definitions and 1,109 uniquely resolved configuration references.
+Explicit assignments include aluminum-classified 6061/6061-T6/7075-O and
+carbon-fiber-classified VMA/Thornel Mat VMA. Density tokens include `2700.000000`
+and `2000.000000`; their XML does not explicitly establish units. Definitions
+without an exact configuration reference remain unassigned. Body-level
+ownership and final face appearances are not decoded. Private evidence is
+`local-assets/material-investigation/report.json` and `audit.json`, including
+source hashes. Synthetic tests cover Unicode encodings, exact references,
+duplicate/ambiguous records, invalid density tokens and malformed XML.
+
+A separate geometry inventory found 248 supported external Part entries, 23
+without recognized cached face records, and 24 with ambiguous configuration
+ownership. The 23 unsupported Mirror Parts have 7,640-byte environment/lighting
+display streams and retained `StockBodies`. All 372 inspected embedded Part
+entries lack recognized cached faces, including the 116 distinct embedded paths
+reached in the prior assembly report; those retain `LocalBodies`. Inflated body
+samples identify Parasolid binary transmit data. No failure in this inventory
+had a recognized face marker with an unreadable table. Geometry output is
+unchanged by the more specific diagnostics; there is no claimed rendering gain.
+Regenerated display caches or a separately validated body decoder are needed for
+these files. Counts include duplicate bytes and embedded documents outside the
+selected visible configuration; deduplicated totals and source hashes remain in
+`local-assets/geometry-investigation-summary.json`.
+
+The hierarchy/material viewer passes 48 public browser tests at device-pixel
+ratios 1 and 2, with two opt-in private-archive cases skipped in that suite.
+The full real ZIP was additionally loaded locally: the chooser lists all 45
+assemblies, the main scene has 1,317 occurrence records and unchanged geometry,
+and a carbon-fiber Part opens with its exact VMA assignment and procedural weave.
+Material/diagnostic switching changes rendered pixels and restores the original
+mode. Native tests cover exact configuration material selection, preset
+classification and complete nonoverlapping draw ranges. These procedural
+appearances use world-space projection and artistic optical parameters; they
+are not recovered source face appearances, UVs or fiber directions.
+
+## Original metadata comparison
+
 Compared this initial Rust implementation against openswx revision
 `a838a83e267fadbf8f01fd75a288b2ae517c9133`, using the existing private EGA corpus
 from the rm-simulator import experiments. The corpus contains 295 Parts and

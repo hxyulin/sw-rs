@@ -24,7 +24,7 @@ self.onmessage = async ({ data }) => {
       if (!project) throw Error("No archive loaded.");
       postMessage({ type: "progress", label: `Decoding metadata and display meshes · ${data.path}` });
       const scene = JSON.parse(
-        project.scene(data.path, data.config, data.hidden),
+        project.scene(data.path, data.config, data.hidden, data.configurationName),
       );
       const vertices = project.take_vertices();
       postMessage({ type: "scene", key: data.key, scene, vertices }, [

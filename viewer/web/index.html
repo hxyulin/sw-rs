@@ -153,6 +153,25 @@
       #part-search:focus { outline: 2px solid #72d5c7; outline-offset: 1px; }
       #clear-search { padding: 0 8px; }
       #clear-search[hidden] { display: none; }
+      dialog { color: #d0dce6; background: #111b26; border: 1px solid #526576;
+        border-radius: 10px; width: min(640px, 90vw); max-height: 80vh; }
+      dialog::backdrop { background: #0009; }
+      #assembly-options { display: grid; gap: 8px; margin: 16px 0; }
+      #assembly-options button { text-align: left; overflow-wrap: anywhere; }
+      #assembly-filter { width: 100%; padding: 9px; background: #17212b; color: inherit; border: 1px solid #526576; }
+      #hierarchy-panel { position: absolute; right: 14px; top: 18px; width: min(330px, 43%);
+        max-height: calc(100% - 90px); overflow: auto; background: #111b26ee;
+        border: 1px solid #314451; border-radius: 6px; padding: 10px; font-size: 12px; }
+      #hierarchy-panel > summary { cursor: pointer; font-weight: 600; }
+      #occurrence-tree { margin-top: 10px; }
+      #occurrence-tree [role=group] { padding-left: 16px; }
+      #occurrence-tree [role=treeitem] { outline: none; }
+      #occurrence-tree .node-row { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+      #occurrence-tree .node-name { overflow-wrap: anywhere; flex: 1; }
+      #occurrence-tree [role=treeitem]:focus > .node-row { outline: 2px solid #72d5c7; }
+      #occurrence-tree button { padding: 2px 5px; font-size: 11px; }
+      #occurrence-tree .node-state { color: #edb27b; }
+      [hidden] { display: none !important; }
       @media (max-width: 720px) {
         main {
           grid-template-columns: 280px 1fr;
@@ -170,7 +189,7 @@
     <header>
       <b>SW EXPLORER</b
       ><span id="status" role="status" aria-live="polite">Starting RXUI…</span
-      ><button
+      ><button id="material-colors" aria-pressed="true" title="Approximate saved material presets; unassigned geometry keeps diagnostic colors">Material colors</button><button id="choose-assembly" hidden>Choose assembly…</button><button
         id="cancel"
         title="Stop parsing and release the uploaded archive"
       >
@@ -187,6 +206,9 @@
       ></canvas>
       <section id="viewport">
         <canvas id="scene" tabindex="0" aria-label="3D CAD viewport"></canvas>
+        <details id="hierarchy-panel" hidden open><summary>Component occurrences</summary>
+          <div id="occurrence-tree" role="tree" aria-label="Component occurrences"></div>
+        </details>
         <div class="tag">SOURCE DISPLAY CACHE</div>
         <div id="loading">
           <label id="loading-label" for="loading-progress">Starting viewer…</label>
@@ -205,6 +227,14 @@
         aria-label="Search parts" autocomplete="off" spellcheck="false" />
       <button id="clear-search" type="button" aria-label="Clear parts search" hidden>Clear</button>
     </div>
+    <dialog id="assembly-chooser" aria-labelledby="assembly-title" aria-describedby="assembly-description">
+      <h2 id="assembly-title">Choose an assembly</h2>
+      <p id="assembly-description">Open a saved SLDASM document. Individual parts remain available in the sidebar.</p>
+      <input id="assembly-filter" type="search" aria-label="Search assemblies" placeholder="Search assembly paths…" />
+      <div id="assembly-options"></div>
+      <p id="assembly-no-results" hidden>No matching assemblies.</p>
+      <button id="assembly-close">Browse individual documents</button>
+    </dialog>
     <input
       id="file"
       type="file"

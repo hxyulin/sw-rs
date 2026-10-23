@@ -176,6 +176,10 @@ test("optional private native archive renders with CJK labels", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   await ready(page);
   await page.locator("#file").setInputFiles(process.env.SW_VIEWER_ARCHIVE);
+  await expect.poll(async () => await page.getByRole("dialog").isVisible()
+    || await page.evaluate(() => window.viewer.triangles > 0), { timeout: 30000 }).toBe(true);
+  if (await page.getByRole("dialog").isVisible())
+    await page.locator("#assembly-options button").first().click();
   await expect
     .poll(() => page.evaluate(() => window.viewer.triangles), {
       timeout: 30000,
@@ -321,3 +325,125 @@ for (const name of ["renamed", "embedded", "virtual"])
     expect(await page.evaluate(() => window.viewer.snapshot().state.diagnostics)).toEqual([]);
     await expect(page.locator("#status")).toHaveAttribute("data-state", "ready");
   });
+
+test("assembly chooser waits for selection, filters paths and reopens", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "hierarchy.zip"));
+  const chooser = page.getByRole("dialog", { name: "Choose an assembly" });
+  await expect(chooser).toBeVisible();
+  await expect(page.locator("#loading")).toBeHidden();
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(0);
+  await page.getByRole("searchbox", { name: "Search assemblies" }).fill("sUb");
+  await expect(page.locator("#assembly-options button")).toHaveText(["Sub.SLDASM"]);
+  await page.getByRole("button", { name: "Sub.SLDASM", exact: true }).click();
+  await expect(chooser).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("Sub.SLDASM");
+  await page.getByRole("button", { name: "Choose assembly…", exact: true }).click();
+  await expect(page.getByRole("searchbox", { name: "Search assemblies" })).toHaveValue("");
+  await expect(page.locator("#assembly-options button")).toHaveText(["Root.SLDASM", "Sub.SLDASM"]);
+  await page.getByRole("button", { name: "Root.SLDASM", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(24);
+});
+
+test("occurrence tree retains repeated subassemblies and excluded states with keyboard expansion", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "hierarchy.zip"));
+  await page.getByRole("button", { name: "Root.SLDASM", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(24);
+  const tree = page.getByRole("tree", { name: "Component occurrences" });
+  await expect(tree.getByRole("treeitem")).toHaveCount(5);
+  const root = tree.getByRole("treeitem", { name: "Root.SLDASM · assembly · Default", exact: true });
+  await expect(root).toHaveAttribute("aria-expanded", "true");
+  const first = tree.getByRole("treeitem", { name: "child0 · assembly · Default", exact: true });
+  await expect(first).toHaveAttribute("aria-expanded", "false");
+  await first.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(first).toHaveAttribute("aria-expanded", "true");
+  await expect(tree.getByRole("treeitem")).toHaveCount(8);
+  await expect(tree.getByRole("treeitem", { name: "child1 · missing · Default", exact: true })).toHaveCount(1);
+  await expect(tree.getByRole("treeitem", { name: "child2 · unsupported · Default", exact: true })).toHaveCount(1);
+  await expect(tree.getByRole("treeitem", { name: "child2 · suppressed · Default", exact: true })).toHaveCount(1);
+  await expect(tree.getByRole("treeitem", { name: "child3 · hidden · Default", exact: true })).toHaveCount(1);
+  await expect(tree.getByRole("treeitem", { name: "child1 · missing · Default", exact: true }).getByRole("button")).toHaveCount(0);
+  await page.keyboard.press("ArrowDown");
+  await expect(tree.getByRole("treeitem", { name: "child0 · part · Default", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(first).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(first).toHaveAttribute("aria-expanded", "false");
+  // Pointer expansion returns the keyboard focus to the occurrence row.
+  await page.getByRole("button", { name: "Expand child0", exact: true }).click();
+  await expect(first).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("Base.SLDPRT");
+});
+
+test("dismissing the chooser preserves individual Part browsing and search", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "hierarchy.zip"));
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.locator("#status")).toContainText("choose a document in the sidebar");
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(0);
+  await page.getByRole("searchbox", { name: "Search parts" }).fill("Base");
+  const key = await page.evaluate(() => window.viewer.snapshot().elements.find(e => e.text === "Base.SLDPRT").key.match(/file-\d+/)[0]);
+  await clickRxui(page, key);
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await page.getByRole("button", { name: "Choose assembly…", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Browse individual documents", exact: true }).click();
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(12);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("Base.SLDPRT");
+});
+
+test("embedded occurrence opens its worker-local path outside the archive list", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "embedded.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await page.getByRole("button", { name: "Open child0", exact: true }).first().click();
+  await expect.poll(() => page.evaluate(() => window.viewer.snapshot().state.selected)).toContain("/@embedded/嵌入.SLDASM");
+  await expect.poll(() => page.evaluate(() => window.viewer.busy)).toBe(false);
+  await page.getByRole("button", { name: "Open child0", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.viewer.snapshot().state.selected)).toContain("/@embedded/嵌入零件.SLDPRT");
+  await expect.poll(() => page.evaluate(() => window.viewer.busy)).toBe(false);
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(12);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.documents)).toBe(1);
+});
+
+test("native Part inspector shows saved material and raw density without inventing units", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "single.SLDPRT"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  const info = await page.evaluate(() => window.viewer.snapshot().state.info.join("\n"));
+  expect(info).toContain("Saved material: test materials|6061 Alloy");
+  expect(info).toContain("Material classification: Aluminum");
+  expect(info).toContain("Saved density token: 2700 (units unverified)");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Material colors", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const materialView = await page.locator("#scene").evaluate(c => c.toDataURL());
+  await page.getByRole("button", { name: "Material colors", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Diagnostic colors", exact: true })).toHaveAttribute("aria-pressed", "false");
+  expect(await page.locator("#scene").evaluate(c => c.toDataURL())).not.toBe(materialView);
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await page.getByRole("button", { name: "Diagnostic colors", exact: true }).click();
+  expect(await page.locator("#scene").evaluate(c => c.toDataURL())).toBe(materialView);
+});
+
+test("opening a configured occurrence retains its nondefault assembly configuration", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "configuration-hierarchy.zip"));
+  await page.getByRole("button", { name: "ConfigRoot.SLDASM", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await page.getByRole("button", { name: "Open Configured subassembly", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("ConfigSub.SLDASM");
+  await expect.poll(() => page.evaluate(() => window.viewer.busy)).toBe(false);
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await expect(page.getByRole("treeitem", { name: "ConfigSub.SLDASM · assembly · Alternate", exact: true })).toBeVisible();
+  const elements = await page.evaluate(() => window.viewer.snapshot().elements);
+  expect(elements.some(e => e.text === "Alternate")).toBe(true);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.diagnostics)).toEqual([]);
+});

@@ -25,6 +25,147 @@ let app,
   fontPromise,
   fontReady = false,
   reader;
+const chooser = document.querySelector("#assembly-chooser"),
+  assemblyOptions = document.querySelector("#assembly-options"),
+  assemblyFilter = document.querySelector("#assembly-filter"),
+  chooseAssembly = document.querySelector("#choose-assembly"),
+  hierarchyPanel = document.querySelector("#hierarchy-panel"),
+  occurrenceTree = document.querySelector("#occurrence-tree");
+let assemblyPaths = [], awaitingChoice = false;
+function selectDocument(path, configuration) {
+  app.select_document(path, configuration);
+  awaitingChoice = false;
+  chooser.close();
+  poll();
+  invalidate();
+}
+function renderAssemblyOptions() {
+  const query = assemblyFilter.value.trim().toLocaleLowerCase();
+  assemblyOptions.replaceChildren();
+  for (const path of assemblyPaths.filter(p => p.toLocaleLowerCase().includes(query))) {
+    const button = document.createElement("button");
+    button.textContent = path;
+    button.onclick = () => selectDocument(path);
+    assemblyOptions.append(button);
+  }
+  document.querySelector("#assembly-no-results").hidden = assemblyOptions.childElementCount > 0;
+}
+function openChooser() {
+  assemblyFilter.value = "";
+  renderAssemblyOptions();
+  chooser.showModal();
+  assemblyFilter.focus();
+}
+function resetOverlays() {
+  awaitingChoice = false;
+  chooser.close();
+  chooseAssembly.hidden = true;
+  hierarchyPanel.hidden = true;
+  occurrenceTree.replaceChildren();
+  assemblyPaths = [];
+}
+// Render exported occurrence metadata independently of the RXUI inspector.
+export function renderHierarchy(sceneMetadata, container, onOpen) {
+  container.replaceChildren();
+  const nodes = sceneMetadata.hierarchy || [], groups = new Map([[null, container]]);
+  const parents = new Set(nodes.map(node => node.parent));
+  for (const node of nodes) {
+    const parent = groups.get(node.parent);
+    if (!parent) continue;
+    const item = document.createElement("div");
+    item.setAttribute("role", "treeitem");
+    item.tabIndex = node.id === 0 ? 0 : -1;
+    const row = document.createElement("div");
+    row.className = "node-row";
+    const label = document.createElement("span");
+    label.className = "node-name";
+    label.textContent = node.name;
+    row.append(label);
+    const state = document.createElement("span");
+    state.className = "node-state";
+    state.textContent = node.status === "available" ? node.kind : node.status;
+    row.append(state);
+    item.setAttribute("aria-label", `${node.name} · ${state.textContent} · ${node.configuration || ""}`);
+    item.title = [node.path || node.reference, node.configuration].filter(Boolean).join(" · ");
+    const group = document.createElement("div");
+    group.setAttribute("role", "group");
+    groups.set(node.id, group);
+    const hasChildren = parents.has(node.id);
+    if (hasChildren) {
+      item.setAttribute("aria-expanded", "true");
+      const toggle = document.createElement("button");
+      toggle.textContent = "−";
+      toggle.tabIndex = -1;
+      toggle.setAttribute("aria-label", `Collapse ${node.name}`);
+      const expand = value => {
+        group.hidden = !value;
+        item.setAttribute("aria-expanded", String(value));
+        toggle.textContent = value ? "−" : "+";
+        toggle.setAttribute("aria-label", `${value ? "Collapse" : "Expand"} ${node.name}`);
+      };
+      item.expand = expand;
+      toggle.onclick = () => { item.focus(); expand(group.hidden); };
+      expand(node.parent === null);
+      row.prepend(toggle);
+    }
+    if (node.path) {
+      const open = document.createElement("button");
+      open.textContent = "Open";
+      open.tabIndex = -1;
+      open.setAttribute("aria-label", `Open ${node.name}`);
+      open.onclick = () => { item.focus(); onOpen(node.path, node.configuration); };
+      row.append(open);
+      item.openDocument = () => onOpen(node.path, node.configuration);
+    }
+    item.append(row, group);
+    parent.append(item);
+    item.onfocus = event => {
+      if (event.target !== item) return;
+      for (const entry of container.querySelectorAll('[role="treeitem"]')) entry.tabIndex = entry === item ? 0 : -1;
+    };
+    item.onkeydown = event => {
+      if (event.target !== item) return;
+      const visible = [...container.querySelectorAll('[role="treeitem"]')].filter(e => !e.closest('[hidden]'));
+      const index = visible.indexOf(item);
+      let target;
+      switch (event.key) {
+        case "ArrowDown": target = visible[index + 1]; break;
+        case "ArrowUp": target = visible[index - 1]; break;
+        case "Home": target = visible[0]; break;
+        case "End": target = visible.at(-1); break;
+        case "ArrowRight":
+          if (group.hidden) item.expand?.(true);
+          else target = group.querySelector('[role="treeitem"]');
+          break;
+        case "ArrowLeft":
+          if (hasChildren && !group.hidden) item.expand(false);
+          else target = item.parentElement.closest('[role="treeitem"]');
+          break;
+        case "Enter": item.openDocument?.(); break;
+        case " ": if (hasChildren) item.expand(group.hidden); break;
+        default: return;
+      }
+      target?.focus();
+      event.preventDefault();
+      event.stopPropagation();
+    };
+  }
+}
+chooseAssembly.onclick = openChooser;
+assemblyFilter.oninput = renderAssemblyOptions;
+document.querySelector("#assembly-close").onclick = () => chooser.close();
+chooser.addEventListener("close", () => {
+  // Dismissal leaves the indexed document browser usable without decoding a guessed assembly.
+  if (awaitingChoice) {
+    awaitingChoice = false;
+    app.select_document("", undefined);
+    app.set_status("Choose a document in the sidebar or reopen Choose assembly.");
+    status.textContent = `${currentFile} · choose a document in the sidebar`;
+    status.dataset.state = "ready";
+    empty.textContent = "Choose an individual document in the sidebar, or reopen Choose assembly.";
+    invalidate();
+  }
+});
 function progress(label, fraction) {
   loading.hidden = false;
   loadingLabel.textContent = label;
@@ -111,6 +252,9 @@ function draw(time) {
     status.dataset.state = "error";
   }
 }
+function sceneKey(selection) {
+  return JSON.stringify([selection.path, selection.configurationName ?? selection.config, selection.hidden]);
+}
 function poll() {
   controls = JSON.parse(app.controls());
   if (controls.open) input.click();
@@ -127,8 +271,8 @@ function poll() {
     scene.wire = controls.wire;
     scene.draw();
   }
-  const key = JSON.stringify([controls.path, controls.config, controls.hidden]);
-  if (loaded && !busy && controls.path && key !== lastKey) {
+  const key = sceneKey(controls);
+  if (loaded && !busy && !awaitingChoice && controls.path && key !== lastKey) {
     lastKey = key;
     busy = true;
     status.textContent = "Decoding " + controls.path + "…";
@@ -169,14 +313,20 @@ function startWorker() {
       ensureFont(data.paths.join("\n"));
       loaded = true;
       app.set_files(JSON.stringify(data.paths));
+      assemblyPaths = data.paths.filter(path => path.toLowerCase().endsWith(".sldasm"));
+      chooseAssembly.hidden = assemblyPaths.length === 0;
+      if (assemblyPaths.length > 1) {
+        awaitingChoice = true;
+        app.set_status("Choose an assembly or browse individual documents.");
+        finishProgress();
+        empty.textContent = "Choose an assembly to view, or browse individual documents.";
+        openChooser();
+      }
       status.textContent = `${currentFile} · ${data.paths.length} documents`;
-      progress("Archive indexed · preparing the selected document…");
+      if (!awaitingChoice) progress("Archive indexed · preparing the selected document…");
+      else status.dataset.state = "ready";
     } else if (data.type === "scene") {
-      const current = JSON.stringify([
-        controls.path,
-        controls.config,
-        controls.hidden,
-      ]);
+      const current = sceneKey(controls);
       if (data.key === current) {
         ensureFont(
           [
@@ -186,8 +336,10 @@ function startWorker() {
           ].join("\n"),
         );
         app.show_scene(JSON.stringify(data.scene));
+        renderHierarchy(data.scene, occurrenceTree, selectDocument);
+        hierarchyPanel.hidden = !data.scene.hierarchy?.length;
         progress("Uploading mesh to the viewport…");
-        scene.setMesh(data.vertices);
+        scene.setMesh(data.vertices, data.scene.materials || [], data.scene.batches || []);
         finishProgress();
         empty.hidden = data.vertices.length > 0;
         empty.textContent = data.vertices.length
@@ -222,6 +374,7 @@ async function load(file) {
   lastKey = "";
   currentFile = file.name;
   app.clear();
+  resetOverlays();
   resetSearch();
   scene.setMesh(new Float32Array());
   empty.hidden = false;
@@ -260,6 +413,12 @@ try {
     searchInput.focus();
   });
   scene = new SceneView(document.querySelector("#scene"));
+  document.querySelector("#material-colors").onclick = event => {
+    scene.materialsEnabled = !scene.materialsEnabled;
+    event.currentTarget.setAttribute("aria-pressed", String(scene.materialsEnabled));
+    event.currentTarget.textContent = scene.materialsEnabled ? "Material colors" : "Diagnostic colors";
+    scene.draw();
+  };
   const position = (e) => {
     const r = sidebar.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
@@ -365,6 +524,7 @@ try {
     loaded = false;
     busy = false;
     app.clear();
+    resetOverlays();
     resetSearch();
     app.set_status("Import cancelled. Open another archive.");
     scene.setMesh(new Float32Array());

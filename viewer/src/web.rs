@@ -17,6 +17,8 @@ struct Model {
     paths: Vec<String>,
     search: String,
     selected: usize,
+    occurrence_path: Option<String>,
+    occurrence_config: Option<String>,
     config: usize,
     configs: Vec<String>,
     status: String,
@@ -49,6 +51,8 @@ impl View for Model {
                         ButtonVariant::Default
                     })
                     .on_click(cx.listener(move |s, _, _| {
+                        s.occurrence_path = None;
+                        s.occurrence_config = None;
                         s.selected = i;
                         s.config = 0;
                         s.configs.clear();
@@ -78,6 +82,7 @@ impl View for Model {
                 if let Some(index) =
                     (0..s.configs.len()).find(|i| Key::from(i.to_string()) == e.key)
                 {
+                    s.occurrence_config = None;
                     s.config = index;
                 }
             }));
@@ -105,7 +110,7 @@ impl View for Model {
             .child(label("").key("search-slot").fill_width().height(34.))
             .child(scroll_area(files).key("documents").fill_width().height(220.))
             .child(scroll_area(column().fill_width().gap(10.).child(configs).child(details)).fill_width().fill_height().min_height(0.))
-            .child(label("Saved display cache · diagnostic colors\nPhysical units and source frames need review.").font_size(11.).color(ThemeColor::TextMuted))
+            .child(label("Saved display cache · approximate material presets\nPhysical units and source frames need review.").font_size(11.).color(ThemeColor::TextMuted))
     }
 }
 /// RXUI sidebar hosted by an application-owned WebGPU canvas.
@@ -246,12 +251,32 @@ impl WebApp {
         self.runtime.update(|cx| {
             entity.update(cx, |m, _| {
                 m.paths = paths;
+                m.occurrence_path = None;
+                m.occurrence_config = None;
                 m.selected = 0;
                 m.config = 0;
                 m.status = "Reading document…".into();
             })
         });
         Ok(())
+    }
+    /// Open a document or an embedded occurrence discovered by worker traversal.
+    pub fn select_document(&mut self, path: String, configuration: Option<String>) {
+        let entity = self.ui.entity().clone();
+        self.runtime.update(|cx| {
+            entity.update(cx, |m, _| {
+                m.selected = m
+                    .paths
+                    .iter()
+                    .position(|p| p == &path)
+                    .unwrap_or(usize::MAX);
+                m.occurrence_path = Some(path);
+                m.occurrence_config = configuration;
+                m.config = 0;
+                m.configs.clear();
+                m.status = "Loading document…".into();
+            })
+        });
     }
     /// Filter the document list without changing the selected document or scene.
     pub fn set_search(&mut self, query: String) {
@@ -280,10 +305,15 @@ impl WebApp {
             .map(|v| v.as_str().unwrap_or("").to_owned())
             .collect();
         let status = scene["status"].as_str().unwrap_or_default().to_owned();
+        let selected_config = scene["selectedConfiguration"]
+            .as_u64()
+            .and_then(|i| usize::try_from(i).ok())
+            .unwrap_or(0);
         let entity = self.ui.entity().clone();
         self.runtime.update(|cx| {
             entity.update(cx, |m, _| {
                 m.configs = configs;
+                m.config = selected_config;
                 m.info = info;
                 m.issues = issues;
                 m.status = status;
@@ -295,7 +325,7 @@ impl WebApp {
         let entity = self.ui.entity().clone();
         self.runtime.update(|cx|entity.update(cx,|m,cx|{
             let unchanged=!(m.open || m.demo || m.reset);
-            let out=serde_json::json!({"path":m.paths.get(m.selected),"config":m.config,"hidden":m.hidden,"wire":m.wire,"fit":m.reset,"demo":m.demo,"open":m.open});m.open=false;m.demo=false;m.reset=false;if unchanged {cx.unchanged();}out.to_string()
+            let out=serde_json::json!({"path":m.occurrence_path.as_ref().or_else(||m.paths.get(m.selected)),"configurationName":m.occurrence_config,"config":m.config,"hidden":m.hidden,"wire":m.wire,"fit":m.reset,"demo":m.demo,"open":m.open});m.open=false;m.demo=false;m.reset=false;if unchanged {cx.unchanged();}out.to_string()
         }))
     }
     pub fn animating(&self) -> bool {
@@ -358,7 +388,7 @@ impl WebApp {
     pub fn snapshot(&mut self) -> String {
         let _ = self.prepare_input();
         let entity = self.ui.entity().clone();
-        let state=self.runtime.update(|cx|{let m=entity.read(cx);serde_json::json!({"documents":m.paths.len(),"selected":m.paths.get(m.selected),"status":m.status,"info":m.info,"diagnostics":m.issues})});
+        let state=self.runtime.update(|cx|{let m=entity.read(cx);serde_json::json!({"documents":m.paths.len(),"selected":m.occurrence_path.as_ref().or_else(||m.paths.get(m.selected)),"status":m.status,"info":m.info,"diagnostics":m.issues})});
         let elements:Vec<_>=self.ui.elements().map(|e|serde_json::json!({"key":e.key.map(|k|format!("{k:?}")),"text":e.text,"bounds":[e.bounds.x,e.bounds.y,e.bounds.width,e.bounds.height]})).collect();
         serde_json::json!({"state":state,"elements":elements}).to_string()
     }
@@ -435,7 +465,17 @@ impl ArchiveProject {
         });
         serde_json::to_string(&paths).unwrap()
     }
-    pub fn scene(&mut self, path: &str, config: usize, hidden: bool) -> String {
+    pub fn scene(
+        &mut self,
+        path: &str,
+        config: usize,
+        hidden: bool,
+        configuration_name: Option<String>,
+    ) -> String {
+        let config = configuration_name
+            .as_deref()
+            .map(|name| self.project.configuration_index(path, name))
+            .unwrap_or(config);
         self.scene = self.project.scene(path, config, hidden);
         let triangles = self.scene.vertices.len() / 27;
         let mut info = vec![
@@ -452,11 +492,18 @@ impl ArchiveProject {
                 self.scene.occurrences
             ),
         ];
+        if !self.scene.materials.is_empty() {
+            info.push(format!(
+                "{} saved material preset(s) · approximate appearances",
+                self.scene.materials.len()
+            ));
+        }
         if let Some(mass) =
             self.scene.metadata["configurations"][config]["mass_properties"]["mass"].as_f64()
         {
             info.push(format!("Cached mass token: {mass:.5} (units unverified)"));
         }
+        info.extend(crate::material_info::lines(&self.scene.metadata, config));
         if let Some(props) = self.scene.metadata["global_properties"].as_object() {
             for (key, value) in props.iter().take(8) {
                 info.push(
@@ -490,7 +537,7 @@ impl ArchiveProject {
         } else {
             "Metadata only · no supported mesh".into()
         };
-        serde_json::json!({"configurations":self.scene.configurations,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
+        serde_json::json!({"metadata":self.scene.metadata,"hierarchy":self.scene.hierarchy,"materials":self.scene.materials,"batches":self.scene.batches,"configurations":self.scene.configurations,"selectedConfiguration":config,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
     }
     pub fn take_vertices(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.scene.vertices)

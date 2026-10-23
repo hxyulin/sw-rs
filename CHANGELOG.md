@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+- Choose an assembly when opening archives with multiple assemblies, reopen the
+  chooser, and browse an expandable occurrence hierarchy with component status.
+- Expose saved physical-material definitions and exact configuration references,
+  including source paths and raw density tokens, and show them in the inspector.
+- Render assigned aluminum and carbon fiber with procedural brushed-metal and
+  weave presets, generic materials with saved swatches, and provide diagnostic colors.
+- Distinguish missing display carriers, absent recognized faces and unreadable
+  face records; add a private-corpus stream-inventory example for further decoding.
+
 - Initially select the largest shallow assembly, so archives with a full model
   and many small subassemblies open the main model first.
 

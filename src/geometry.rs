@@ -78,10 +78,14 @@ pub fn geometry_with_limits(
         .iter()
         .filter(|(name, _)| name.rsplit('/').next() == Some("DisplayLists"))
         .collect();
+    if carriers.is_empty() {
+        return Err(ParseError("Part has no DisplayLists carrier".into()));
+    }
     if carriers.len() != 1 {
-        return Err(ParseError(
-            "missing or ambiguous Part DisplayLists carrier".into(),
-        ));
+        return Err(ParseError(format!(
+            "ambiguous Part DisplayLists carriers: found {}",
+            carriers.len()
+        )));
     }
     let (name, data) = carriers[0];
     let mut meshes: Vec<_> = mesh::section_meshes(data).into_iter().enumerate().collect();
@@ -89,9 +93,17 @@ pub fn geometry_with_limits(
     // order so exact project/review signatures survive a backend replacement.
     meshes.sort_by_cached_key(|(index, _)| index.to_string());
     if meshes.is_empty() {
-        return Err(ParseError(
-            "Part has no supported cached display tessellation".into(),
-        ));
+        // A saved environment/lighting-only DisplayLists is not malformed mesh
+        // data. Keep it distinct from a known face class whose tables fail the
+        // supported grammar; neither case licenses inventing B-Rep geometry.
+        let reason = if mesh::has_face_tessellation_marker(data) {
+            "face-class markers exist but their headers or descriptor tables are unsupported or invalid"
+        } else {
+            "DisplayLists has no uoTempFaceTessData_c records; no cached faces in the supported profile"
+        };
+        return Err(ParseError(format!(
+            "Part has no supported cached display tessellation: {reason}"
+        )));
     }
     let mut tessellations = Vec::new();
     for (_, (offset, m)) in meshes {

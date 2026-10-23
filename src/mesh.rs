@@ -412,6 +412,14 @@ fn face_header_agrees(payload: &[u8], at: usize, mesh: &Mesh) -> bool {
             .is_some_and(|count| count as usize == mesh.strip_lengths.len())
 }
 
+/// Whether the saved carrier mentions the face class recognized by this decoder.
+/// This does not certify a valid class declaration, header or descriptor table.
+pub(crate) fn has_face_tessellation_marker(payload: &[u8]) -> bool {
+    payload
+        .windows(FACE_TESSELLATION_CLASS.len())
+        .any(|bytes| bytes == FACE_TESSELLATION_CLASS)
+}
+
 pub(crate) fn section_meshes(payload: &[u8]) -> Vec<(usize, Mesh)> {
     section_display_faces(payload)
         .into_iter()

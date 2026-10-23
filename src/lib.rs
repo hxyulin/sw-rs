@@ -14,8 +14,8 @@ mod mesh;
 mod xml;
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
-    Component, Configuration, CutListItem, Document, MassProperties, ReferenceReplacement, Sheet,
-    SheetView,
+    Component, Configuration, CutListItem, Document, MassProperties, MaterialAssignment,
+    MaterialData, MaterialDensity, ReferenceReplacement, SavedMaterial, Sheet, SheetView,
 };
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,

@@ -15,7 +15,7 @@ def container(streams):
         out.extend(b'\x14\0\x06\0\x08\0'+u32(1,zlib.crc32(data),len(packed),len(data),len(name))+encoded+packed)
     return bytes(out)
 def descriptor(size,kind,count,data):return u32(size,kind,2,count)+data
-def part(size):
+def part(size, material=False):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
@@ -26,7 +26,10 @@ def part(size):
            descriptor(4,8,48,bytes(192))+descriptor(4,8,12,u32(*([4]*12)))+descriptor(1,8,48,bytes(48)))
     cls=b'uoTempFaceTessData_c';display=b'\xff\xff\x01\0'+struct.pack('<H',len(cls))+cls+u32(12,12)+table
     info=b'<swSolidWorks><swHeader><swFile id="p"/></swHeader><swModelList><swModel id="m" swFileRef="p" swConfigurationId="0" swConfigurationName="Default"/></swModelList></swSolidWorks>'
-    return container([('swXmlContents/COMPINSTANCETREE',info),('Contents/DisplayLists',display)])
+    streams = [('swXmlContents/COMPINSTANCETREE',info),('Contents/DisplayLists',display)]
+    if material:
+        streams.append(('swXmlContents/MATERIALTREE', b'<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials"><classification name="Aluminum"><material name="test materials|6061 Alloy" matid="21"><physicalproperties><DENS value="2700"/></physicalproperties></material></classification><configurationslist><configuration name="Default" material="test materials|6061 Alloy|21"/></configurationslist></mstns:materials>'))
+    return container(streams)
 def assembly(missing=False):
     files='<swFile id="root" swPath="Demo.SLDASM"/>'
     models=''
@@ -49,7 +52,7 @@ for suffix in ['zip','tar','tar.gz']:
         with tarfile.open(path,'w:gz' if suffix=='tar.gz' else 'w') as archive:
             for name,data in files.items():
                 entry=tarfile.TarInfo(name);entry.size=len(data);archive.addfile(entry,io.BytesIO(data))
-(OUT/'single.SLDPRT').write_bytes(files['Base.SLDPRT'])
+(OUT/'single.SLDPRT').write_bytes(part([.18,.10,.02], material=True))
 (OUT/'invalid.zip').write_bytes(b'PK invalid')
 (ROOT/'web/demo.zip').write_bytes((OUT/'demo.zip').read_bytes())
 
@@ -62,14 +65,15 @@ with zipfile.ZipFile(OUT/'unicode-search.zip','w',zipfile.ZIP_DEFLATED) as archi
     for name in ['零件/支架.SLDPRT', 'components/Base.SLDPRT']:
         archive.writestr(name, files['Base.SLDPRT'])
 
-def linked_assembly(name, references, extra_streams=()):
+def linked_assembly(name, references, extra_streams=(), flags=None):
     files=f'<swFile id="self" swPath="{name}"/>'
     models=''
     children=''
     for i,reference in enumerate(references):
         files+=f'<swFile id="f{i}" swPath="{reference}"/>'
         models+=f'<swModel id="m{i}" swFileRef="f{i}" swConfigurationName="Default"/>'
-        children+=f'<swReference swName="child{i}" swModelRef="m{i}" swConfigurationName="Default" swSuppressed="NO" swHidden="NO" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>'
+        suppressed, hidden = (flags or {}).get(i, ('NO', 'NO'))
+        children+=f'<swReference swName="child{i}" swModelRef="m{i}" swConfigurationName="Default" swSuppressed="{suppressed}" swHidden="{hidden}" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>'
     xml=f'<swSolidWorks><swHeader>{files}</swHeader><swModelList><swModel id="root" swFileRef="self" swConfigurationId="0" swConfigurationName="Default">{children}</swModel>{models}</swModelList></swSolidWorks>'
     return container([('swXmlContents/COMPINSTANCETREE',xml.encode()),*extra_streams])
 def mfc_string(text):
@@ -87,3 +91,25 @@ for archive_name,documents in [('renamed.zip',{'Renamed.SLDASM':renamed,'New.SLD
     ('embedded.zip',{'Embedded.SLDASM':embedded}),('virtual.zip',{'Virtual.SLDASM':virtual})]:
     with zipfile.ZipFile(OUT/archive_name,'w',zipfile.ZIP_DEFLATED) as archive:
         for name,data in documents.items():archive.writestr(name,data)
+
+# Nested occurrence tree, repeated subassemblies and retained excluded/error nodes.
+nested = linked_assembly('Sub.SLDASM', ['Base.SLDPRT', 'Missing.SLDPRT', 'Unsupported.SLDPRT'])
+# Keep statuses in the native metadata instead of constructing a UI-only tree.
+root_refs = ['Sub.SLDASM', 'Sub.SLDASM', 'Suppressed.SLDPRT', 'Hidden.SLDPRT']
+root = linked_assembly('Root.SLDASM', root_refs, flags={2: ('YES', 'NO'), 3: ('NO', 'YES')})
+unsupported = container([('swXmlContents/COMPINSTANCETREE', b'<swSolidWorks><swHeader><swFile id="p"/></swHeader><swModelList><swModel id="m" swFileRef="p" swConfigurationId="0" swConfigurationName="Default"/></swModelList></swSolidWorks>')])
+with zipfile.ZipFile(OUT/'hierarchy.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+    for name, data in {'Root.SLDASM': root, 'Sub.SLDASM': nested,
+                       'Base.SLDPRT': files['Base.SLDPRT'],
+                       'Hidden.SLDPRT': files['Base.SLDPRT'],
+                       'Unsupported.SLDPRT': unsupported}.items():
+        archive.writestr(name, data)
+
+# Open a referenced assembly's nondefault configuration, then keep the RXUI
+# configuration selector and inspector aligned with the displayed occurrence.
+config_sub_xml = b'<swSolidWorks><swHeader><swFile id="self" swPath="ConfigSub.SLDASM"/><swFile id="p" swPath="Base.SLDPRT"/></swHeader><swModelList><swModel id="default" swFileRef="self" swConfigurationId="0" swConfigurationName="Default"/><swModel id="alternate" swFileRef="self" swConfigurationId="1" swConfigurationName="Alternate"><swReference swName="Alternate part" swModelRef="part" swConfigurationName="Default" swSuppressed="NO" swHidden="NO" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/></swModel><swModel id="part" swFileRef="p" swConfigurationName="Default"/></swModelList></swSolidWorks>'
+config_root_xml = b'<swSolidWorks><swHeader><swFile id="self" swPath="ConfigRoot.SLDASM"/><swFile id="sub" swPath="ConfigSub.SLDASM"/></swHeader><swModelList><swModel id="root" swFileRef="self" swConfigurationId="0" swConfigurationName="Default"><swReference swName="Configured subassembly" swModelRef="submodel" swConfigurationName="Alternate" swSuppressed="NO" swHidden="NO" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/></swModel><swModel id="submodel" swFileRef="sub" swConfigurationName="Alternate"/></swModelList></swSolidWorks>'
+with zipfile.ZipFile(OUT/'configuration-hierarchy.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr('ConfigRoot.SLDASM', container([('swXmlContents/COMPINSTANCETREE', config_root_xml)]))
+    archive.writestr('ConfigSub.SLDASM', container([('swXmlContents/COMPINSTANCETREE', config_sub_xml), ('Contents/Config-0', b'x'), ('Contents/Config-1', b'x')]))
+    archive.writestr('Base.SLDPRT', files['Base.SLDPRT'])

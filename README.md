@@ -27,6 +27,8 @@ noncommercial sldkit code or source CAD is included.
 - Assembly occurrence names, external paths, referenced configurations,
   suppression/visibility/BOM flags, and optional saved 16-value transforms.
 - Saved weldment cut lists and basic drawing-sheet/view/reference metadata.
+- Saved physical-material definitions, explicit configuration assignments and
+  density tokens from `MATERIALTREE`, with source paths and unresolved references.
 - Cached Part DisplayLists meshes, normals, source offsets and preserved winding,
   with single-configuration ownership and validated decoding.
 - Raw decoded streams and diagnostics for later format work.
@@ -42,6 +44,18 @@ and cache freshness are unverified. Do not feed these directly to physics.
 Transforms use openswx's column-major interpretation; agreement with upstream
 is not independent placement validation. Absent/malformed transforms are `None`
 (JSON `null`), rather than fabricated identity matrices.
+
+`Document::materials` retains material definitions and configuration references.
+`Configuration::material` selects only a unique exact saved reference;
+`definition_index` resolves a unique definition within that document. Definitions
+alone do not prove assignment, and no parent-configuration or body assignment is
+inferred. Density retains its raw token and explicitly saved units, if any.
+Physical material labels and display appearances are separate. The viewer maps
+explicit aluminum/carbon-fiber assignments to its own procedural brushed-metal
+and woven-composite presets; other assignments use a generic saved-swatch preset.
+These are approximate visualizations, not recovered SolidWorks shaders or UVs.
+Unassigned parts retain diagnostic colors, and a toolbar control switches the
+whole scene back to diagnostic colors.
 
 ## Native use
 
@@ -153,7 +167,10 @@ python3 scripts/compare-geometry.py /path/to/native-files \
 
 [SW Explorer](viewer/README.md) is a separate RXUI/WASM app for ZIP, TAR and
 TAR.GZ native CAD archives, with a document/configuration inspector and an
-orbitable 3D viewport. Parsing runs in a cancelable worker; uploads stay local.
+orbitable 3D viewport. An assembly chooser and expandable occurrence hierarchy
+expose nested components, including missing and unsupported references. The
+inspector reports saved material assignments for the opened configuration.
+Parsing runs in a cancelable worker; uploads stay local.
 
 ```sh
 sh viewer/build.sh
