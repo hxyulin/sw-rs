@@ -4,6 +4,12 @@ import { test, expect } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const fixtures = fileURLToPath(new URL("../test-fixtures/", import.meta.url));
+test.beforeEach(async ({ page }) => {
+  page.on("console", (message) => {
+    if (message.type() === "error") console.error(message.text());
+  });
+  page.on("pageerror", (error) => console.error(error));
+});
 async function ready(page) {
   await page.goto("./");
   await expect(page.locator("#status")).toHaveAttribute("data-state", "ready");

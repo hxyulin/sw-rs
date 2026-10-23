@@ -46,6 +46,12 @@ jobs:
       - run: google-chrome --version
       - name: Browser smoke tests
         run: npm test
+      - name: Upload browser failure details
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-browser-results
+          path: viewer/test-results
       - name: Upload static viewer
         uses: actions/upload-pages-artifact@v4
         with:
