@@ -21,6 +21,17 @@ pub struct Limits {
     pub max_records: usize,
 }
 impl Limits {
+    /// Remove byte and record-count policy caps for caller-owned local parsing.
+    /// Payload lengths, checksums and numeric validity are still verified.
+    pub const fn unlimited() -> Self {
+        Self {
+            max_file_bytes: usize::MAX,
+            max_compressed_bytes: usize::MAX,
+            max_stream_bytes: usize::MAX,
+            max_total_bytes: usize::MAX,
+            max_records: usize::MAX,
+        }
+    }
     /// Remove byte policy caps for local imports while retaining the malformed
     /// record scan bound. Actual allocations remain limited by the platform.
     pub fn without_byte_limits() -> Self {
@@ -121,10 +132,10 @@ impl Container {
             // the inline header. Recognize them before trying to inflate bytes.
             if crc == 0
                 && expected == 0
-                && (1..500).contains(&name_len)
+                && name_len != 0
                 && let Some(record) = data
                     .get(at..)
-                    .and_then(|tail| tail.get(..40 + name_len + 6))
+                    .and_then(|tail| tail.get(..name_len.checked_add(46)?))
                 && record[40..40 + name_len]
                     .iter()
                     .all(|b| (0x20..0x7f).contains(&b.rotate_left(u32::from(data[7]) & 7)))
@@ -134,7 +145,7 @@ impl Container {
             }
             let name_start = at + 26;
             // Subtraction checks avoid overflow on wasm32.
-            if name_len == 0 || name_len > 512 || name_len > data.len() - name_start {
+            if name_len == 0 || name_len > data.len() - name_start {
                 warn("invalid or truncated stream name");
                 continue;
             }
@@ -142,11 +153,14 @@ impl Container {
                 .iter()
                 .map(|b| b.rotate_left(u32::from(data[7]) & 7))
                 .collect();
-            if !decoded.iter().all(|b| (0x20..0x7f).contains(b)) {
-                warn("non-ASCII stream name or index record");
+            let Ok(name) = String::from_utf8(decoded) else {
+                warn("invalid UTF-8 stream name or index record");
+                continue;
+            };
+            if name.chars().any(char::is_control) {
+                warn("control character in stream name or index record");
                 continue;
             }
-            let name = String::from_utf8(decoded).expect("ASCII checked");
             // Non-inline record families must not be treated as deflate data.
             if expected != 0
                 && crc == (expected as u32).wrapping_mul(2)

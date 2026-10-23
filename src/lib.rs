@@ -14,7 +14,8 @@ mod mesh;
 mod xml;
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
-    Component, Configuration, CutListItem, Document, MassProperties, Sheet, SheetView,
+    Component, Configuration, CutListItem, Document, MassProperties, ReferenceReplacement, Sheet,
+    SheetView,
 };
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
@@ -34,6 +35,12 @@ pub fn parse_with_limits(
 ) -> Result<Document, ParseError> {
     let container = Container::parse(bytes, limits)?;
     Ok(document::build(container, filename))
+}
+
+/// Interpret metadata from an already decoded container, consuming its streams.
+/// This lets hosts retain embedded native documents without inflating twice.
+pub fn metadata_from_container(container: Container, filename: &str) -> Document {
+    document::build(container, filename)
 }
 
 /// Parse an uploaded Uint8Array into JSON. Errors become JavaScript exceptions.

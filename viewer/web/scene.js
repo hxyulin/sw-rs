@@ -47,6 +47,7 @@ export class SceneView {
     this.matrix = gl.getUniformLocation(program, "camera");
     this.buffer = gl.createBuffer();
     this.lines = gl.createBuffer();
+    this.lineCount = 0;
     this.data = new Float32Array();
     this.wire = false;
     this.yaw = -0.85;
@@ -124,22 +125,28 @@ export class SceneView {
     this.data = data;
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, data, this.gl.STATIC_DRAW);
-    // Indices retain the exact supplied triangle coordinates; wireframe is derived only for drawing.
-    const lines = new Float32Array(data.length * 2);
-    let at = 0;
-    for (let t = 0; t < data.length; t += 27)
-      for (const [a, b] of [
-        [0, 9],
-        [9, 18],
-        [18, 0],
-      ])
-        for (const p of [a, b]) {
-          lines.set(data.subarray(t + p, t + p + 9), at);
-          at += 9;
-        }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.lines);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, lines, this.gl.STATIC_DRAW);
+    // Wireframe shares the supplied vertex buffer and builds only indices on demand.
+    this.lineCount = 0;
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.lines);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, 0, this.gl.STATIC_DRAW);
+    if (this.gl.getError() !== this.gl.NO_ERROR)
+      throw Error("Unable to upload mesh to the GPU. Available GPU memory may be exhausted.");
     this.fit();
+  }
+  prepareWireframe() {
+    if (this.lineCount) return;
+    const count = this.data.length / 9;
+    const indices = new Uint32Array(count * 2);
+    for (let vertex = 0, at = 0; vertex < count; vertex += 3) {
+      indices.set([vertex, vertex + 1, vertex + 1, vertex + 2, vertex + 2, vertex], at);
+      at += 6;
+    }
+    const gl = this.gl;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lines);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    if (gl.getError() !== gl.NO_ERROR)
+      throw Error("Unable to build wireframe. Available GPU memory may be exhausted.");
+    this.lineCount = indices.length;
   }
   fit() {
     const lo = [Infinity, Infinity, Infinity],
@@ -193,16 +200,18 @@ export class SceneView {
     gl.uniformMatrix4fv(this.matrix, false, camera);
     gl.enable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.wire ? this.lines : this.buffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     for (let i = 0; i < 3; i++) {
       gl.enableVertexAttribArray(i);
       gl.vertexAttribPointer(i, 3, gl.FLOAT, false, 36, i * 12);
     }
-    gl.drawArrays(
-      this.wire ? gl.LINES : gl.TRIANGLES,
-      0,
-      (this.data.length / 9) * (this.wire ? 2 : 1),
-    );
+    if (this.wire) {
+      this.prepareWireframe();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lines);
+      gl.drawElements(gl.LINES, this.lineCount, gl.UNSIGNED_INT, 0);
+    } else {
+      gl.drawArrays(gl.TRIANGLES, 0, this.data.length / 9);
+    }
   }
 }
 function multiply(a, b) {

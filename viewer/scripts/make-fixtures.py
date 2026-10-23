@@ -52,3 +52,38 @@ for suffix in ['zip','tar','tar.gz']:
 (OUT/'single.SLDPRT').write_bytes(files['Base.SLDPRT'])
 (OUT/'invalid.zip').write_bytes(b'PK invalid')
 (ROOT/'web/demo.zip').write_bytes((OUT/'demo.zip').read_bytes())
+
+# Partial assembly: omit Upright, keeping both Base and Cap available.
+with zipfile.ZipFile(OUT/'missing-references.zip','w',zipfile.ZIP_DEFLATED) as archive:
+    for name,data in files.items():
+        if name != 'Upright.SLDPRT': archive.writestr(name,data)
+# Unicode paths exercise the same filter used for large archive document lists.
+with zipfile.ZipFile(OUT/'unicode-search.zip','w',zipfile.ZIP_DEFLATED) as archive:
+    for name in ['零件/支架.SLDPRT', 'components/Base.SLDPRT']:
+        archive.writestr(name, files['Base.SLDPRT'])
+
+def linked_assembly(name, references, extra_streams=()):
+    files=f'<swFile id="self" swPath="{name}"/>'
+    models=''
+    children=''
+    for i,reference in enumerate(references):
+        files+=f'<swFile id="f{i}" swPath="{reference}"/>'
+        models+=f'<swModel id="m{i}" swFileRef="f{i}" swConfigurationName="Default"/>'
+        children+=f'<swReference swName="child{i}" swModelRef="m{i}" swConfigurationName="Default" swSuppressed="NO" swHidden="NO" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>'
+    xml=f'<swSolidWorks><swHeader>{files}</swHeader><swModelList><swModel id="root" swFileRef="self" swConfigurationId="0" swConfigurationName="Default">{children}</swModel>{models}</swModelList></swSolidWorks>'
+    return container([('swXmlContents/COMPINSTANCETREE',xml.encode()),*extra_streams])
+def mfc_string(text):
+    data=text.encode('utf-16le');n=len(data)//2
+    return b'\xff\xfe\xff'+(bytes([n]) if n<254 else b'\xfe'+struct.pack('<H',n))+data
+old='C:/source/Old.SLDPRT';middle='C:/copy/Middle.SLDPRT';new='C:/export/New.SLDPRT'
+remaps=u32(2)+b''.join(map(mfc_string,[old,middle,middle,new]))
+renamed=linked_assembly('Renamed.SLDASM',[old],[('SwDocMgrTempStorage/ReplaceRef',remaps)])
+inner=linked_assembly('嵌入.SLDASM',['C:/Temp/IC~~/嵌入零件.SLDPRT'])
+embedded=linked_assembly('Embedded.SLDASM',['C:/Temp/IC~~/嵌入.SLDASM'],
+    [('ImportedComp/嵌入.SLDASM',inner),('ImportedComp/嵌入零件.SLDPRT',files['Base.SLDPRT'])])
+virtual=linked_assembly('Virtual.SLDASM',['C:/Temp/VC~~/部件^Virtual.SLDPRT'],
+    [('VirtualComp/部件-sldprt',files['Base.SLDPRT'])])
+for archive_name,documents in [('renamed.zip',{'Renamed.SLDASM':renamed,'New.SLDPRT':files['Base.SLDPRT']}),
+    ('embedded.zip',{'Embedded.SLDASM':embedded}),('virtual.zip',{'Virtual.SLDASM':virtual})]:
+    with zipfile.ZipFile(OUT/archive_name,'w',zipfile.ZIP_DEFLATED) as archive:
+        for name,data in documents.items():archive.writestr(name,data)

@@ -4,9 +4,7 @@
 // See NOTICE-cadmpeg.md and LICENSE-Apache-2.0 for provenance and terms.
 //! Portable cached descriptor tables; no B-Rep/ownership inference.
 use serde::Serialize;
-use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
-const MAX_VERTICES: usize = 250_000;
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct Mesh {
@@ -78,7 +76,7 @@ fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
         .filter(|(_, w)| *w == [255, 255, 1, 0])
         .filter_map(|(at, _)| {
             let len = View::u16_le_at(payload, at + 4)? as usize;
-            if !(1..=128).contains(&len) {
+            if len == 0 {
                 return None;
             }
             let bytes = payload.get(at + 6..at + 6 + len)?;
@@ -150,19 +148,7 @@ fn auxiliary_channels_are_consistent(strips: &[usize], channels: &[TessellationC
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
 
-#[derive(Default)]
-struct Budget {
-    attempts: Cell<usize>,
-    vertices: Cell<usize>,
-    exhausted: Cell<bool>,
-}
-fn parse_table(bytes: &[u8], mut at: usize, budget: &Budget) -> Option<(Mesh, usize)> {
-    budget.attempts.set(budget.attempts.get() + 1);
-    if budget.attempts.get() > 100_000 || budget.exhausted.get() {
-        budget.exhausted.set(true);
-        return None;
-    }
-
+fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
@@ -172,7 +158,7 @@ fn parse_table(bytes: &[u8], mut at: usize, budget: &Budget) -> Option<(Mesh, us
         let kind = View::u32_le_at(bytes, at + 4)?;
         let flags = View::u32_le_at(bytes, at + 8)?;
         let count = View::u32_le_at(bytes, at + 12)? as usize;
-        if count > MAX_VERTICES * 4 || item_size > 16 {
+        if item_size > 16 {
             return None;
         }
         let data = at.checked_add(16)?;
@@ -192,11 +178,6 @@ fn parse_table(bytes: &[u8], mut at: usize, budget: &Budget) -> Option<(Mesh, us
                 .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
                 .collect::<Option<Vec<_>>>()?;
         } else if index == 1 && item_size == 12 && kind == 100 {
-            if count > MAX_VERTICES || budget.vertices.get().saturating_add(count) > 2_000_000 {
-                budget.exhausted.set(true);
-                return None;
-            }
-            budget.vertices.set(budget.vertices.get() + count);
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -234,7 +215,6 @@ fn parse_table(bytes: &[u8], mut at: usize, budget: &Budget) -> Option<(Mesh, us
         return None;
     }
     if strips.iter().any(|n| *n < 3)
-        || vertices.len() > MAX_VERTICES
         || strips.is_empty()
         || vertices.is_empty()
         || vertex_count != vertices.len()
@@ -271,7 +251,7 @@ fn parse_table(bytes: &[u8], mut at: usize, budget: &Budget) -> Option<(Mesh, us
     ))
 }
 
-fn section_display_faces(payload: &[u8], budget: &Budget) -> Vec<DisplayFace> {
+fn section_display_faces(payload: &[u8]) -> Vec<DisplayFace> {
     let classes = class_intervals(payload);
     let markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
@@ -300,7 +280,7 @@ fn section_display_faces(payload: &[u8], budget: &Budget) -> Vec<DisplayFace> {
                 |class| class.content.end,
             );
         let start = header + descriptor_table_offset(payload, header);
-        let Some(tables) = parse_table_sequence(payload, start, limit, budget) else {
+        let Some(tables) = parse_table_sequence(payload, start, limit) else {
             continue;
         };
         if !tables.first().is_some_and(|(_, _, mesh)| {
@@ -321,7 +301,7 @@ fn section_display_faces(payload: &[u8], budget: &Budget) -> Vec<DisplayFace> {
             });
         }
     }
-    append_referenced_faces(payload, &classes, &mut faces, budget);
+    append_referenced_faces(payload, &classes, &mut faces);
     faces.sort_by_key(|face| face.table.start);
     for index in 0..faces.len() {
         let metadata_end = faces
@@ -341,7 +321,6 @@ fn append_referenced_faces(
     payload: &[u8],
     classes: &[ClassInterval],
     faces: &mut Vec<DisplayFace>,
-    budget: &Budget,
 ) {
     let mut tags = HashSet::new();
     for face in faces.iter() {
@@ -405,7 +384,7 @@ fn append_referenced_faces(
             .iter()
             .find(|class| class.class_offset > at)
             .map_or(payload.len(), |class| class.class_offset);
-        if let Some((mesh, end)) = parse_table(payload, start, budget)
+        if let Some((mesh, end)) = parse_table(payload, start)
             && end <= limit
             && !mesh.vertices.is_empty()
             && face_header_agrees(payload, header, &mesh)
@@ -433,18 +412,11 @@ fn face_header_agrees(payload: &[u8], at: usize, mesh: &Mesh) -> bool {
             .is_some_and(|count| count as usize == mesh.strip_lengths.len())
 }
 
-pub(crate) fn section_meshes(payload: &[u8]) -> Result<Vec<(usize, Mesh)>, crate::ParseError> {
-    let budget = Budget::default();
-    let faces = section_display_faces(payload, &budget);
-    if budget.exhausted.get() {
-        return Err(crate::ParseError(
-            "Part descriptor decode resource limit exceeded".into(),
-        ));
-    }
-    Ok(faces
+pub(crate) fn section_meshes(payload: &[u8]) -> Vec<(usize, Mesh)> {
+    section_display_faces(payload)
         .into_iter()
         .map(|face| (face.table.start, face.mesh))
-        .collect())
+        .collect()
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.
@@ -471,10 +443,9 @@ fn parse_table_sequence(
     payload: &[u8],
     at: usize,
     limit: usize,
-    budget: &Budget,
 ) -> Option<Vec<(usize, usize, Mesh)>> {
     let first_start = at;
-    let (mesh, mut at) = parse_table(payload, at, budget)?;
+    let (mesh, mut at) = parse_table(payload, at)?;
     if at > limit {
         return None;
     }
@@ -491,7 +462,7 @@ fn parse_table_sequence(
         };
         at += relative;
         let start = at;
-        if let Some((next, end)) = parse_table(payload, at, budget) {
+        if let Some((next, end)) = parse_table(payload, at) {
             if end <= limit && !next.vertices.is_empty() {
                 meshes.push((start, end, next));
                 at = end;

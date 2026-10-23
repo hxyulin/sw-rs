@@ -15,6 +15,7 @@ fn error(e: impl std::fmt::Display) -> JsValue {
 #[derive(Default)]
 struct Model {
     paths: Vec<String>,
+    search: String,
     selected: usize,
     config: usize,
     configs: Vec<String>,
@@ -30,7 +31,13 @@ struct Model {
 impl View for Model {
     fn view(&self, cx: &mut ViewContext<'_, Self>) -> impl IntoElement {
         let mut files = column().fill_width().gap(4.);
+        let query = self.search.trim().to_lowercase();
+        let mut matches = 0;
         for (i, path) in self.paths.iter().enumerate() {
+            if !path.to_lowercase().contains(&query) {
+                continue;
+            }
+            matches += 1;
             let short = path.rsplit('/').next().unwrap_or(path);
             files = files.child(
                 button(short)
@@ -48,6 +55,9 @@ impl View for Model {
                         s.status = "Loading document…".into();
                     })),
             );
+        }
+        if matches == 0 && !query.is_empty() {
+            files = files.child(label("No matching documents").color(ThemeColor::TextMuted));
         }
         let options: Vec<_> = self
             .configs
@@ -89,7 +99,10 @@ impl View for Model {
                 .child(button("Fit view").width(135.).key("fit").on_click(cx.listener(|s,_,_|s.reset=true)))
                 .child(button(if self.wire{"Shaded"}else{"Wireframe"}).key("wire").on_click(cx.listener(|s,_,_|s.wire = !s.wire))))
             .child(button(if self.hidden{"Hide hidden Parts"}else{"Show hidden Parts"}).key("hidden").on_click(cx.listener(|s,_,_|s.hidden = !s.hidden)))
-            .child(label(format!("DOCUMENTS / {}",self.paths.len())).font_size(12.).color(ThemeColor::TextMuted))
+            .child(label(if query.is_empty() { format!("DOCUMENTS / {}", self.paths.len()) }
+                else { format!("DOCUMENTS / {matches} OF {}", self.paths.len()) }).key("document-count").font_size(12.).color(ThemeColor::TextMuted))
+            // The host overlays a native search input here for browser IME and accessibility.
+            .child(label("").key("search-slot").fill_width().height(34.))
             .child(scroll_area(files).key("documents").fill_width().height(220.))
             .child(scroll_area(column().fill_width().gap(10.).child(configs).child(details)).fill_width().fill_height().min_height(0.))
             .child(label("Saved display cache · diagnostic colors\nPhysical units and source frames need review.").font_size(11.).color(ThemeColor::TextMuted))
@@ -240,6 +253,12 @@ impl WebApp {
         });
         Ok(())
     }
+    /// Filter the document list without changing the selected document or scene.
+    pub fn set_search(&mut self, query: String) {
+        let entity = self.ui.entity().clone();
+        self.runtime
+            .update(|cx| entity.update(cx, |m, _| m.search = query));
+    }
     pub fn show_scene(&mut self, json: &str) -> Result<(), JsValue> {
         let scene: serde_json::Value = serde_json::from_str(json).map_err(error)?;
         let configs = scene["configurations"]
@@ -326,6 +345,15 @@ impl WebApp {
         frame.finish().map_err(error)?;
         Ok(true)
     }
+    /// Logical bounds for the browser-native search field over the RXUI list.
+    pub fn search_bounds(&self) -> Vec<f32> {
+        let key = Key::from("search-slot");
+        self.ui
+            .elements()
+            .find(|e| e.key == Some(&key))
+            .map(|e| vec![e.bounds.x, e.bounds.y, e.bounds.width, e.bounds.height])
+            .unwrap_or_default()
+    }
     /// Inspector snapshot used by browser tests; no raw CAD is returned.
     pub fn snapshot(&mut self) -> String {
         let _ = self.prepare_input();
@@ -397,6 +425,11 @@ impl ArchiveProject {
             (
                 !p.to_ascii_lowercase().ends_with(".sldasm"),
                 p.matches('/').count(),
+                std::cmp::Reverse(if p.to_ascii_lowercase().ends_with(".sldasm") {
+                    self.project.files.documents[*p].len()
+                } else {
+                    0
+                }),
                 p.to_lowercase(),
             )
         });
@@ -434,7 +467,22 @@ impl ArchiveProject {
                 );
             }
         }
-        let status = if triangles > 0 {
+        if self.scene.missing_references > 0 {
+            info.insert(
+                0,
+                format!(
+                    "Partial assembly · {} missing reference(s) skipped",
+                    self.scene.missing_references
+                ),
+            );
+        }
+        let status = if self.scene.missing_references > 0 {
+            format!(
+                "Partial assembly · {triangles} triangles · {} missing reference(s) · {} issue(s)",
+                self.scene.missing_references,
+                self.scene.diagnostics.len()
+            )
+        } else if triangles > 0 {
             format!(
                 "{triangles} triangles · {} issue(s)",
                 self.scene.diagnostics.len()
@@ -442,7 +490,7 @@ impl ArchiveProject {
         } else {
             "Metadata only · no supported mesh".into()
         };
-        serde_json::json!({"configurations":self.scene.configurations,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences}).to_string()
+        serde_json::json!({"configurations":self.scene.configurations,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
     }
     pub fn take_vertices(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.scene.vertices)

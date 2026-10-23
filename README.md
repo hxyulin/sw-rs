@@ -28,7 +28,7 @@ noncommercial sldkit code or source CAD is included.
   suppression/visibility/BOM flags, and optional saved 16-value transforms.
 - Saved weldment cut lists and basic drawing-sheet/view/reference metadata.
 - Cached Part DisplayLists meshes, normals, source offsets and preserved winding,
-  with single-configuration ownership and bounded decoding.
+  with single-configuration ownership and validated decoding.
 - Raw decoded streams and diagnostics for later format work.
 
 This is **not a complete openswx port** or a CAD kernel. OLE2 and ZIP/OPC return
@@ -67,7 +67,7 @@ for config in document.configurations {
 `parse_with_limits` and `Container::parse` accept `Limits`. Defaults allow 256 MiB
 of input, 64 MiB per compressed stream, 128 MiB per decoded stream, 512 MiB
 cumulative decoded output (including duplicates), and 100,000 marker candidates.
-Local callers can use `Limits::without_byte_limits()`; the web viewer does so. These bound decoding, not total
+Local callers can use `Limits::unlimited()`; the web viewer does so. Defaults bound decoding, not total
 process memory: XML trees, JSON serialization, and host copies add overhead.
 Choose smaller limits for constrained hosts. Use a Web Worker for large files;
 parsing is synchronous and does not promise fast processing of arbitrary input.
@@ -132,10 +132,10 @@ including validated class reuse. Output coordinates are millimetres; source
 stream/table offsets and normals are retained. Tables follow the old CAD IR's
 lexicographic table-key order so prepared project signatures remain stable.
 Unsupported carriers, multi-configuration ownership and missing meshes return
-errors. Limits include 250,000 vertices per descriptor table, two million raw
-vertex decode visits, 100,000 table attempts, and 500,000 output triangles.
-The simulator adapter independently enforces 250,000 unique vertices per Part.
-A limit failure rejects the entire query rather than returning a truncated mesh.
+errors. There are no fixed mesh-count, table-attempt or triangle policy caps;
+descriptor lengths, finite coordinates and index ranges are checked against the
+actual payload. The simulator adapter independently enforces 250,000 unique
+vertices per Part; that external adapter does not limit this viewer.
 
 The profile recovers saved display caches only: they may be partial or stale and
 have no inferred B-Rep ownership or mass. It does not evaluate features or certify

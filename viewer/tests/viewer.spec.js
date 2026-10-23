@@ -252,3 +252,72 @@ test("cancelling a pending read hides progress and rejects its stale result", as
   await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator("#status")).toHaveText("Import cancelled");
 });
+
+test("missing references leave available assembly parts rendered", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "missing-references.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(24);
+  await expect(page.locator("#status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#status")).toContainText("Partial assembly");
+  await expect(page.locator("#status")).toContainText("2 missing reference(s)");
+  const state = await page.evaluate(() => window.viewer.snapshot().state);
+  expect(state.diagnostics).toHaveLength(2);
+  expect(state.diagnostics.every(d => d.includes("Upright.SLDPRT"))).toBe(true);
+  await expect(page.locator("#empty")).toBeHidden();
+  await expect(page.locator("#loading")).toBeHidden();
+});
+test("parts search filters filenames without changing the rendered selection", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "demo.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(48);
+  const search = page.getByRole("searchbox", { name: "Search parts" });
+  const listFiles = () => page.evaluate(() => window.viewer.snapshot().elements
+    .filter(e => e.key?.startsWith('String("file-')));
+  await search.fill("uPrIgHt");
+  await expect.poll(async () => (await listFiles()).map(e => e.text)).toEqual(["Upright.SLDPRT"]);
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(48);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("Demo.SLDASM");
+  await clickRxui(page, "file-3");
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await search.fill("not a part");
+  await expect.poll(async () => (await listFiles()).length).toBe(0);
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(12);
+  expect((await page.evaluate(() => window.viewer.snapshot())).elements
+    .some(e => e.text === "No matching documents")).toBe(true);
+  await page.getByRole("button", { name: "Clear parts search" }).click();
+  await expect(search).toHaveValue("");
+  await expect.poll(async () => (await listFiles()).length).toBe(4);
+  expect(await page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("Upright.SLDPRT");
+});
+test("search supports Unicode paths, keyboard focus and resized canvas bounds", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "unicode-search.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await page.locator("#sidebar").focus();
+  await page.keyboard.press("/");
+  const search = page.getByRole("searchbox", { name: "Search parts" });
+  await expect(search).toBeFocused();
+  await search.fill("零件/支架");
+  await expect.poll(() => page.evaluate(() => window.viewer.snapshot().elements
+    .filter(e => e.key?.startsWith('String("file-')).map(e => e.text))).toEqual(["支架.SLDPRT"]);
+  await page.setViewportSize({ width: 960, height: 700 });
+  await expect.poll(async () => {
+    const input = await page.locator("#parts-search").boundingBox();
+    const sidebar = await page.locator("#sidebar").boundingBox();
+    const bounds = await page.evaluate(() => window.viewer.snapshot().elements
+      .find(e => e.key === 'String("search-slot")').bounds);
+    return Math.abs(input.y - sidebar.y - bounds[1]) + Math.abs(input.x - sidebar.x - bounds[0]);
+  }).toBeLessThan(2);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "demo.zip"));
+  await expect(search).toHaveValue("");
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(48);
+});
+
+for (const name of ["renamed", "embedded", "virtual"])
+  test(`resolves ${name} native references without external files or filename guessing`, async ({ page }) => {
+    await ready(page);
+    await page.locator("#file").setInputFiles(path.join(fixtures, name + ".zip"));
+    await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+    expect(await page.evaluate(() => window.viewer.snapshot().state.diagnostics)).toEqual([]);
+    await expect(page.locator("#status")).toHaveAttribute("data-state", "ready");
+  });

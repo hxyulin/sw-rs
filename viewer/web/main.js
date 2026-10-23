@@ -8,7 +8,10 @@ const sidebar = document.querySelector("#sidebar"),
   empty = document.querySelector("#empty"),
   loading = document.querySelector("#loading"),
   loadingLabel = document.querySelector("#loading-label"),
-  loadingBar = document.querySelector("#loading-progress");
+  loadingBar = document.querySelector("#loading-progress"),
+  partsSearch = document.querySelector("#parts-search"),
+  searchInput = document.querySelector("#part-search"),
+  clearSearch = document.querySelector("#clear-search");
 let app,
   scene,
   worker,
@@ -63,6 +66,20 @@ function readFile(file, token) {
     active.readAsArrayBuffer(file);
   });
 }
+function layoutSearch() {
+  const [x, y, width, height] = app.search_bounds();
+  if (!width || !height) { partsSearch.hidden = true; return; }
+  const rect = sidebar.getBoundingClientRect();
+  partsSearch.hidden = false;
+  Object.assign(partsSearch.style, {
+    left: `${rect.left + x}px`, top: `${rect.top + y}px`,
+    width: `${width}px`, height: `${height}px`,
+  });
+}
+function resetSearch() {
+  searchInput.value = "";
+  clearSearch.hidden = true;
+}
 function fail(error) {
   busy = false;
   finishProgress();
@@ -87,6 +104,7 @@ function draw(time) {
       app.resize(w, h);
     }
     if (!app.draw(time, scale) || app.animating()) invalidate();
+    layoutSearch();
     poll();
   } catch (error) {
     status.textContent = String(error);
@@ -174,7 +192,9 @@ function startWorker() {
         empty.hidden = data.vertices.length > 0;
         empty.textContent = data.vertices.length
           ? ""
-          : "No supported display mesh. See document diagnostics.";
+          : data.scene.missing_references > 0
+            ? "No available display meshes · referenced files are missing. See document diagnostics."
+            : "No supported display mesh. See document diagnostics.";
         status.textContent = currentFile + " · " + data.scene.status;
         status.dataset.state = "ready";
       }
@@ -202,6 +222,7 @@ async function load(file) {
   lastKey = "";
   currentFile = file.name;
   app.clear();
+  resetSearch();
   scene.setMesh(new Float32Array());
   empty.hidden = false;
   empty.textContent = "Reading archive in a local worker…";
@@ -227,6 +248,17 @@ try {
     );
   await init();
   app = await WebApp.create(sidebar);
+  const filterParts = () => {
+    app.set_search(searchInput.value);
+    clearSearch.hidden = searchInput.value.length === 0;
+    invalidate();
+  };
+  searchInput.addEventListener("input", filterParts);
+  clearSearch.addEventListener("click", () => {
+    resetSearch();
+    filterParts();
+    searchInput.focus();
+  });
   scene = new SceneView(document.querySelector("#scene"));
   const position = (e) => {
     const r = sidebar.getBoundingClientRect();
@@ -252,6 +284,11 @@ try {
     invalidate();
   });
   sidebar.addEventListener("keydown", (e) => {
+    if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      searchInput.focus();
+      e.preventDefault();
+      return;
+    }
     if (
       [
         "Tab",
@@ -328,6 +365,7 @@ try {
     loaded = false;
     busy = false;
     app.clear();
+    resetSearch();
     app.set_status("Import cancelled. Open another archive.");
     scene.setMesh(new Float32Array());
     empty.hidden = false;

@@ -295,7 +295,7 @@ fn drawing_sheet_and_utf16_reference_metadata_preserve_unicode() {
 }
 
 #[test]
-fn descriptor_budget_rejects_large_table_before_vertex_expansion() {
+fn incomplete_large_descriptor_table_is_rejected() {
     let count = 250_001u32;
     let mut p = display_payload();
     let table = 6 + b"uoTempFaceTessData_c".len() + 8;
@@ -304,14 +304,9 @@ fn descriptor_budget_rejects_large_table_before_vertex_expansion() {
         p.extend(n.to_le_bytes());
     }
     p.resize(p.len() + count as usize * 12, 0);
-    // The recognizable strip/position descriptors exceed the profile limit.
+    // No normal/auxiliary descriptors follow these positions; the table is incomplete.
     let bytes = file(&[("Contents/DisplayLists", &p)]);
-    assert!(
-        sw_rs::geometry(&bytes, "p.SLDPRT")
-            .unwrap_err()
-            .to_string()
-            .contains("resource limit")
-    );
+    assert!(sw_rs::geometry(&bytes, "p.SLDPRT").is_err());
 }
 
 #[test]
@@ -333,4 +328,105 @@ fn local_byte_override_retains_record_integrity_and_honors_compressed_limits() {
     let local = Container::parse(&corrupt, Limits::without_byte_limits()).unwrap();
     assert!(!local.streams.contains_key("saved"));
     assert!(local.diagnostics.iter().any(|d| d.message.contains("CRC")));
+}
+
+#[test]
+fn utf8_embedded_stream_names_and_explicit_replacement_chains_are_preserved() {
+    fn string(out: &mut Vec<u8>, text: &str) {
+        let units: Vec<_> = text.encode_utf16().collect();
+        out.extend([255, 254, 255]);
+        if units.len() < 254 {
+            out.push(units.len() as u8);
+        } else {
+            out.push(254);
+            out.extend((units.len() as u16).to_le_bytes());
+        }
+        for unit in units {
+            out.extend(unit.to_le_bytes());
+        }
+    }
+    let mut replacements = 2u32.to_le_bytes().to_vec();
+    for path in [
+        r"C:\source\部件.SLDPRT",
+        r"C:\export\部件-v2.SLDPRT",
+        r"C:\export\部件-v2.SLDPRT",
+        r"C:\export\部件-final.SLDPRT",
+    ] {
+        string(&mut replacements, path);
+    }
+    let bytes = file(&[
+        ("ImportedComp/嵌入零件.SLDPRT", b"native child"),
+        ("SwDocMgrTempStorage/ReplaceRef", &replacements),
+    ]);
+    let container = Container::parse(&bytes, Limits::unlimited()).unwrap();
+    assert_eq!(
+        container.streams["ImportedComp/嵌入零件.SLDPRT"],
+        b"native child"
+    );
+    let doc = sw_rs::metadata_from_container(container, "root.SLDASM");
+    assert_eq!(doc.reference_replacements.len(), 2);
+    assert_eq!(
+        doc.reference_replacements[0].replacement_path,
+        doc.reference_replacements[1].original_path
+    );
+    replacements.pop();
+    let bytes = file(&[("SwDocMgrTempStorage/ReplaceRef", &replacements)]);
+    let doc = sw_rs::parse(&bytes, "root.SLDASM").unwrap();
+    assert!(doc.reference_replacements.is_empty());
+    assert!(
+        doc.diagnostics
+            .iter()
+            .any(|d| d.message.contains("replacement-reference"))
+    );
+}
+
+#[test]
+fn valid_cached_mesh_can_exceed_former_table_and_triangle_caps() {
+    let triangles = 500_001u32;
+    let vertices = triangles * 3;
+    let mut table = Vec::new();
+    let mut descriptor = |size: u32, kind: u32, count: u32, data: &[u8]| {
+        for n in [size, kind, 2, count] {
+            table.extend(n.to_le_bytes());
+        }
+        table.extend(data);
+    };
+    descriptor(
+        4,
+        8,
+        triangles,
+        &3u32.to_le_bytes().repeat(triangles as usize),
+    );
+    let positions: Vec<u8> = [0f32, 0., 0., 1., 0., 0., 0., 1., 0.]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect();
+    descriptor(12, 100, vertices, &positions.repeat(triangles as usize));
+    descriptor(12, 100, 0, &[]);
+    descriptor(4, 8, 0, &[]);
+    descriptor(
+        4,
+        8,
+        triangles,
+        &4u32.to_le_bytes().repeat(triangles as usize),
+    );
+    descriptor(1, 8, 0, &[]);
+    let class = b"uoTempFaceTessData_c";
+    let mut payload = vec![255, 255, 1, 0];
+    payload.extend((class.len() as u16).to_le_bytes());
+    payload.extend(class);
+    payload.extend(triangles.to_le_bytes());
+    payload.extend(triangles.to_le_bytes());
+    payload.extend(table);
+    let bytes = file(&[("Contents/DisplayLists", &payload)]);
+    let geometry = sw_rs::geometry(&bytes, "large.SLDPRT").unwrap();
+    assert_eq!(geometry.model.tessellations.len(), 1);
+    assert_eq!(
+        geometry.model.tessellations[0].vertices.len(),
+        vertices as usize
+    );
+    assert_eq!(
+        geometry.model.tessellations[0].triangles.len(),
+        triangles as usize
+    );
 }

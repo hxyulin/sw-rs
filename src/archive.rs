@@ -73,7 +73,7 @@ fn native(path: &str) -> bool {
 /// Windows drive/alternate-stream syntax are rejected rather than rewritten.
 pub fn normalize_path(path: &str) -> Result<String, ParseError> {
     let path = path.replace('\\', "/");
-    if path.starts_with('/') || path.contains(':') || path.contains('\0') || path.len() > 4096 {
+    if path.starts_with('/') || path.contains(':') || path.contains('\0') {
         return Err(error("unsafe archive member path"));
     }
     let mut parts = Vec::new();

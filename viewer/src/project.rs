@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
-//! Filesystem-free assembly traversal for a bounded visual preview.
-use std::collections::{BTreeMap, BTreeSet};
+//! Filesystem-free assembly traversal of saved native display caches.
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use sw_rs::{
     Document,
     archive::{FileSet, Resolution},
@@ -9,15 +12,15 @@ use sw_rs::{
 const IDENTITY: [f64; 16] = [
     1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
 ];
-const MAX_TRIANGLES: usize = 500_000;
 #[derive(Default)]
 pub struct Scene {
     /// Interleaved world positions (metres), face normals, diagnostic RGB.
     pub vertices: Vec<f32>,
     pub occurrences: usize,
-    /// Total traversal attempts, including missing and unsupported nodes.
+    /// Unavailable referenced occurrences omitted while available siblings render.
+    pub missing_references: usize,
+    /// Total document visits, including unsupported documents and cycles.
     pub visited_nodes: usize,
-    budget_reported: bool,
     pub diagnostics: Vec<String>,
     pub metadata: serde_json::Value,
     pub configurations: Vec<String>,
@@ -25,6 +28,8 @@ pub struct Scene {
 pub struct Project {
     pub files: FileSet,
     metadata: BTreeMap<String, Document>,
+    embedded_documents: BTreeMap<String, Arc<[u8]>>,
+    embedded_files: BTreeMap<String, FileSet>,
     geometry: BTreeMap<String, Result<sw_rs::GeometryDocument, String>>,
 }
 impl Project {
@@ -32,6 +37,8 @@ impl Project {
         Self {
             files,
             metadata: BTreeMap::new(),
+            embedded_documents: BTreeMap::new(),
+            embedded_files: BTreeMap::new(),
             geometry: BTreeMap::new(),
         }
     }
@@ -41,10 +48,51 @@ impl Project {
                 .files
                 .documents
                 .get(path)
+                .or_else(|| self.embedded_documents.get(path))
+                .cloned()
                 .ok_or("document not present")?;
-            let mut doc =
-                sw_rs::parse_with_limits(bytes, path, sw_rs::Limits::without_byte_limits())
-                    .map_err(|e| e.to_string())?;
+            let mut container = sw_rs::Container::parse(&bytes, sw_rs::Limits::unlimited())
+                .map_err(|e| e.to_string())?;
+            let stream_names = container.streams.keys().cloned().collect();
+            let names: Vec<_> = container
+                .streams
+                .keys()
+                .filter(|name| {
+                    name.starts_with("ImportedComp/") || name.starts_with("VirtualComp/")
+                })
+                .cloned()
+                .collect();
+            let mut embedded = FileSet::default();
+            for stream in names {
+                let name = if let Some(name) = stream.strip_prefix("ImportedComp/") {
+                    name.to_owned()
+                } else {
+                    let name = stream.strip_prefix("VirtualComp/").unwrap();
+                    if let Some(stem) = name.strip_suffix("-sldasm") {
+                        format!("{stem}.SLDASM")
+                    } else if let Some(stem) = name.strip_suffix("-sldprt") {
+                        format!("{stem}.SLDPRT")
+                    } else {
+                        continue;
+                    }
+                };
+                let Ok(name) = sw_rs::archive::normalize_path(&name) else {
+                    continue;
+                };
+                if ![".sldprt", ".sldasm"]
+                    .iter()
+                    .any(|ext| name.to_ascii_lowercase().ends_with(ext))
+                {
+                    continue;
+                }
+                let bytes: Arc<[u8]> = container.streams.remove(&stream).unwrap().into();
+                self.embedded_documents
+                    .insert(format!("{path}/@embedded/{name}"), bytes.clone());
+                embedded.documents.insert(name, bytes);
+            }
+            self.embedded_files.insert(path.into(), embedded);
+            let mut doc = sw_rs::metadata_from_container(container, path);
+            doc.stream_names = stream_names;
             // The inspector does not display PNGs; do not retain duplicate caches.
             doc.preview_png = Vec::new();
             for config in &mut doc.configurations {
@@ -90,30 +138,9 @@ impl Project {
         ancestors: &mut BTreeSet<(String, String)>,
         scene: &mut Scene,
     ) {
-        if scene.visited_nodes >= 4096 {
-            if !scene.budget_reported {
-                scene
-                    .diagnostics
-                    .push("Preview traversal budget reached; scene is incomplete".into());
-                scene.budget_reported = true;
-            }
-            return;
-        }
         scene.visited_nodes += 1;
-        if ancestors.len() >= 48 || ancestors.contains(&(path.into(), name.into())) {
-            scene.diagnostics.push(format!("Cycle/depth limit: {path}"));
-            return;
-        }
-        if scene.occurrences >= 1024 || scene.vertices.len() / 27 >= MAX_TRIANGLES {
-            if !scene
-                .diagnostics
-                .iter()
-                .any(|s| s == "Preview budget reached; remaining occurrences omitted")
-            {
-                scene
-                    .diagnostics
-                    .push("Preview budget reached; remaining occurrences omitted".into());
-            }
+        if ancestors.contains(&(path.into(), name.into())) {
+            scene.diagnostics.push(format!("Cyclic reference: {path}"));
             return;
         }
         let doc = match self.document(path) {
@@ -142,6 +169,7 @@ impl Project {
             return;
         }
         if kind == "assembly" {
+            let replacements = doc.reference_replacements.clone();
             let children: Vec<_> = matching[0]
                 .components
                 .iter()
@@ -167,7 +195,28 @@ impl Project {
                         .push(format!("Unchecked transform: {label}"));
                     continue;
                 };
-                match self.files.resolve(path, &reference) {
+                let mut resolved = resolve_reference(&self.files, path, &reference, &replacements);
+                if resolved == Resolution::Missing {
+                    let mut scope = Some(path);
+                    while let Some(owner) = scope {
+                        if let Some(files) = self.embedded_files.get(owner) {
+                            let virtual_reference = virtual_reference(owner, &reference);
+                            let local_reference =
+                                virtual_reference.as_deref().unwrap_or(&reference);
+                            resolved = match files.resolve("", local_reference) {
+                                Resolution::Found(name) => {
+                                    Resolution::Found(format!("{owner}/@embedded/{name}"))
+                                }
+                                other => other,
+                            };
+                            if resolved != Resolution::Missing {
+                                break;
+                            }
+                        }
+                        scope = owner.rsplit_once("/@embedded/").map(|(root, _)| root);
+                    }
+                }
+                match resolved {
                     Resolution::Found(child) => self.visit(
                         &child,
                         &config,
@@ -176,9 +225,12 @@ impl Project {
                         ancestors,
                         scene,
                     ),
-                    Resolution::Missing => scene
-                        .diagnostics
-                        .push(format!("Missing reference: {label}")),
+                    Resolution::Missing => {
+                        scene.missing_references += 1;
+                        scene.diagnostics.push(format!(
+                            "Missing reference (skipped): {label} · {reference}"
+                        ));
+                    }
                     Resolution::Ambiguous(_) => scene
                         .diagnostics
                         .push(format!("Ambiguous reference: {label}")),
@@ -199,10 +251,15 @@ impl Project {
                 self.geometry.clear();
             }
 
-            let bytes = &self.files.documents[path];
+            let bytes = self
+                .files
+                .documents
+                .get(path)
+                .or_else(|| self.embedded_documents.get(path))
+                .expect("parsed document source");
             self.geometry.insert(
                 path.into(),
-                sw_rs::geometry_with_limits(bytes, path, sw_rs::Limits::without_byte_limits())
+                sw_rs::geometry_with_limits(bytes, path, sw_rs::Limits::unlimited())
                     .map(|mut g| {
                         for c in &mut g.configurations {
                             c.preview_png = Vec::new();
@@ -234,12 +291,6 @@ impl Project {
         scene.occurrences += 1;
         for mesh in &g.model.tessellations {
             for triangle in &mesh.triangles {
-                if scene.vertices.len() / 27 >= MAX_TRIANGLES {
-                    scene
-                        .diagnostics
-                        .push("Preview triangle budget reached; mesh is incomplete".into());
-                    return;
-                }
                 let p = triangle.map(|i| point(pose, mesh.vertices[i as usize]));
                 let a = std::array::from_fn::<_, 3, _>(|i| p[1][i] - p[0][i]);
                 let b = std::array::from_fn::<_, 3, _>(|i| p[2][i] - p[0][i]);
@@ -249,7 +300,7 @@ impl Project {
                     a[0] * b[1] - a[1] * b[0],
                 ];
                 let length = n.iter().map(|x| x * x).sum::<f64>().sqrt();
-                if length < 1e-20 || p.iter().flatten().any(|x| !x.is_finite() || x.abs() > 1e6) {
+                if length < 1e-20 || p.iter().flatten().any(|x| !x.is_finite()) {
                     continue;
                 }
                 for v in p {
@@ -258,6 +309,48 @@ impl Project {
                     scene.vertices.extend(color);
                 }
             }
+        }
+    }
+}
+fn virtual_reference(owner: &str, reference: &str) -> Option<String> {
+    let reference = reference.replace('\\', "/");
+    let basename = reference.rsplit('/').next()?;
+    let (name, parent) = basename.rsplit_once('^')?;
+    let (parent, extension) = parent.rsplit_once('.')?;
+    let owner = owner.rsplit('/').next()?.rsplit_once('.')?.0;
+    (parent.to_lowercase() == owner.to_lowercase()
+        && matches!(extension.to_ascii_lowercase().as_str(), "sldprt" | "sldasm"))
+    .then(|| format!("{name}.{extension}"))
+}
+fn resolve_reference(
+    files: &FileSet,
+    owner: &str,
+    reference: &str,
+    replacements: &[sw_rs::ReferenceReplacement],
+) -> Resolution {
+    let normalize = |p: &str| p.replace('\\', "/").to_lowercase();
+    let mut target = reference.to_owned();
+    let mut seen = BTreeSet::new();
+    loop {
+        let original = normalize(&target);
+        if !seen.insert(original.clone()) {
+            return Resolution::Ambiguous(seen.into_iter().collect());
+        }
+        let targets: BTreeSet<_> = replacements
+            .iter()
+            .filter(|r| normalize(&r.original_path) == original)
+            .map(|r| normalize(&r.replacement_path))
+            .collect();
+        match targets.len() {
+            0 => return files.resolve(owner, &target),
+            1 => {
+                let next = targets.first().unwrap();
+                if *next == original {
+                    return files.resolve(owner, &target);
+                }
+                target = next.clone();
+            }
+            _ => return Resolution::Ambiguous(targets.into_iter().collect()),
         }
     }
 }
@@ -295,7 +388,7 @@ fn rigid(m: &[f64; 16]) -> bool {
     }
     let determinant = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9])
         + m[8] * (m[1] * m[6] - m[2] * m[5]);
-    (determinant - 1.).abs() < 1e-6
+    (determinant.abs() - 1.).abs() < 1e-6
 }
 #[cfg(test)]
 mod tests {
@@ -309,6 +402,8 @@ mod tests {
         assert_eq!(point(multiply(a, b), [1000., 0., 0.]), [3., 3., 0.]);
         assert!(rigid(&a));
         a[0] = -1.;
+        assert!(rigid(&a)); // Saved mirrored occurrences remain valid isometries.
+        a[3] = 1.;
         assert!(!rigid(&a));
     }
 }
@@ -335,6 +430,7 @@ mod traversal_tests {
             stream_names: vec![],
             diagnostics: vec![],
             sheets: vec![],
+            reference_replacements: vec![],
             replacement_references: vec![],
             header_references: vec![],
             schema: "sw-rs-metadata-v1",
@@ -404,6 +500,78 @@ mod traversal_tests {
         assert_eq!(p.geometry.len(), 1);
     }
     #[test]
+    fn missing_references_do_not_discard_available_siblings() {
+        let mut p = fixture(vec![
+            component("missing.SLDPRT", Some(IDENTITY), false),
+            component("part.SLDPRT", Some(IDENTITY), false),
+            component("missing-subassembly.SLDASM", Some(IDENTITY), false),
+            component("part.SLDPRT", Some(IDENTITY), false),
+        ]);
+        let s = p.scene("root.SLDASM", 0, false);
+        assert_eq!(s.missing_references, 2);
+        assert_eq!(s.occurrences, 2);
+        assert_eq!(s.vertices.len(), 54);
+        assert_eq!(s.diagnostics.len(), 2);
+        assert!(
+            s.diagnostics
+                .iter()
+                .all(|d| d.contains("Missing reference (skipped)"))
+        );
+    }
+    #[test]
+    fn explicit_export_chains_resolve_without_fuzzy_filename_guesses() {
+        let files = FileSet {
+            documents: [("new.SLDPRT".into(), Vec::new().into())].into(),
+            ignored_files: 0,
+        };
+        let mut pairs = vec![
+            sw_rs::ReferenceReplacement {
+                original_path: "C:/old.SLDPRT".into(),
+                replacement_path: "C:/middle.SLDPRT".into(),
+            },
+            sw_rs::ReferenceReplacement {
+                original_path: "C:/middle.SLDPRT".into(),
+                replacement_path: "C:/new.SLDPRT".into(),
+            },
+        ];
+        assert_eq!(
+            resolve_reference(&files, "root.SLDASM", "C:/old.SLDPRT", &pairs),
+            Resolution::Found("new.SLDPRT".into())
+        );
+        pairs.push(sw_rs::ReferenceReplacement {
+            original_path: "C:/middle.SLDPRT".into(),
+            replacement_path: "C:/other.SLDPRT".into(),
+        });
+        assert!(matches!(
+            resolve_reference(&files, "root.SLDASM", "C:/old.SLDPRT", &pairs),
+            Resolution::Ambiguous(_)
+        ));
+        pairs.pop();
+        pairs[1].replacement_path = "C:/old.SLDPRT".into();
+        assert!(matches!(
+            resolve_reference(&files, "root.SLDASM", "C:/old.SLDPRT", &pairs),
+            Resolution::Ambiguous(_)
+        ));
+        assert_eq!(
+            files.resolve("root.SLDASM", "new-old.SLDPRT"),
+            Resolution::Missing
+        );
+    }
+    #[test]
+    fn large_valid_scenes_are_not_cut_off_at_old_triangle_or_occurrence_caps() {
+        let mut p = fixture(
+            (0..2000)
+                .map(|_| component("part.SLDPRT", Some(IDENTITY), false))
+                .collect(),
+        );
+        let g = p.geometry.get_mut("part.SLDPRT").unwrap().as_mut().unwrap();
+        g.model.tessellations[0].triangles = vec![[0, 1, 2]; 300];
+        let s = p.scene("root.SLDASM", 0, false);
+        assert_eq!(s.occurrences, 2000);
+        assert_eq!(s.vertices.len() / 27, 600_000);
+        assert!(s.diagnostics.is_empty());
+    }
+    #[test]
     fn cycles_and_unknown_transforms_remain_explicit() {
         let mut p = fixture(vec![
             component("root.SLDASM", Some(IDENTITY), false),
@@ -412,7 +580,7 @@ mod traversal_tests {
         let s = p.scene("root.SLDASM", 0, false);
         assert_eq!(s.occurrences, 0);
         assert_eq!(s.diagnostics.len(), 2);
-        assert!(s.diagnostics.iter().any(|s| s.contains("Cycle")));
+        assert!(s.diagnostics.iter().any(|s| s.contains("Cyclic")));
         assert!(
             s.diagnostics
                 .iter()
@@ -420,7 +588,7 @@ mod traversal_tests {
         );
     }
     #[test]
-    fn traversal_budget_counts_failed_nodes_not_just_rendered_parts() {
+    fn traversal_does_not_truncate_large_assemblies() {
         let mut p = fixture(
             (0..5000)
                 .map(|_| component("missing.SLDPRT", Some(IDENTITY), false))
@@ -434,8 +602,7 @@ mod traversal_tests {
         p.geometry
             .insert("part.SLDPRT".into(), Err("unsupported".into()));
         let s = p.scene("root.SLDASM", 0, false);
-        assert_eq!(s.visited_nodes, 4096);
-        assert!(s.budget_reported);
+        assert_eq!(s.visited_nodes, 5001);
         assert_eq!(s.occurrences, 0);
     }
 }

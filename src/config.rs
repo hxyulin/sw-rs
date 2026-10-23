@@ -76,9 +76,6 @@ pub(crate) fn names(data: &[u8], version: u32) -> BTreeMap<u32, (String, Option<
             65535 => r.u32()?,
             n => u32::from(n),
         };
-        if count > 10_000 {
-            return None;
-        }
         for _ in 0..count {
             r.class()?;
             r.u32()?;
@@ -110,4 +107,30 @@ pub(crate) fn names(data: &[u8], version: u32) -> BTreeMap<u32, (String, Option<
     };
     let _ = parse();
     output
+}
+
+/// Decode the count-prefixed MFC string pairs in the saved ReplaceRef stream.
+/// Reject incomplete/unknown layouts atomically; partial pairs are not mappings.
+pub(crate) fn replacement_references(data: &[u8]) -> Option<Vec<crate::ReferenceReplacement>> {
+    let mut r = Reader {
+        bytes: data,
+        pos: 0,
+    };
+    let count = r.u32()? as usize;
+    if count > data.len().saturating_sub(4) / 2 {
+        return None;
+    }
+    let mut pairs = Vec::new();
+    for _ in 0..count {
+        let original_path = r.string()?;
+        let replacement_path = r.string()?;
+        if original_path.is_empty() || replacement_path.is_empty() {
+            return None;
+        }
+        pairs.push(crate::ReferenceReplacement {
+            original_path,
+            replacement_path,
+        });
+    }
+    (r.pos == data.len()).then_some(pairs)
 }

@@ -41,10 +41,19 @@ three Part definitions, not a SolidWorks-authored model. Its source generator is
 
 ## Use
 
-Open or drop an archive. The shallowest assembly is initially selected; choose
+Open or drop an archive. The largest of the shallowest assemblies is initially
+selected (rather than the first alphabetic subassembly); choose
 another document or saved configuration in the RXUI sidebar. Suppressed
 occurrences stay excluded. **Show hidden Parts** controls saved hidden flags.
 Repeated occurrences retain distinct source poses while sharing decoded geometry.
+Missing references are allowed: available sibling parts still render, while the
+header and inspector label the assembly as partial and list omitted references.
+Missing files are never replaced with invented geometry.
+
+Use **Search parts** above the document list to filter filenames or full archive
+paths, ignoring case. Unicode names are supported. Press **/** with the sidebar
+focused to jump to search. Filtering keeps the current scene; selecting a result
+opens it. **Clear** restores the list, and opening a new archive resets the search.
 
 Drag in the viewport to orbit; Shift-drag or right-drag pans. Wheel zooms, and
 **Fit view**, double-click or F fits the model. **Wireframe** changes the drawing
@@ -81,11 +90,18 @@ non-CAD members still undergo integrity checks. Absolute paths, parent traversal
 case-insensitive duplicates are rejected. Files are never extracted to disk.
 External CAD references resolve inside the uploaded file set only, preferring
 owner-relative paths and then unique longest Windows path suffixes. Ambiguous
-basenames are never selected arbitrarily.
+basenames are never selected arbitrarily. Saved `ReplaceRef` old-to-new path
+chains are followed before resolution, so copy/export renames do not require
+fuzzy filename matching. Embedded `ImportedComp` and `VirtualComp` native
+documents are resolved within their owning assembly, including Unicode names.
+Embedded caches are not mixed into the archive’s global filename search.
 
-The visual traversal is bounded to 48 assembly levels, 4,096 visits (including
-failed nodes), 1,024 rendered occurrences and 500,000 output triangles. Bounded
-geometry-cache eviction avoids retaining every previously selected mesh.
+The viewer has no fixed traversal-depth, visit, occurrence, marker-count,
+mesh-table, vertex-count or triangle policy caps. Cyclic references, malformed
+descriptors, invalid indices and non-finite transforms/coordinates remain
+explicit diagnostics. Geometry-cache eviction avoids retaining every previously
+selected mesh; it does not truncate the scene. Wireframe indices are built only
+when requested and share the shaded mesh’s vertex buffer.
 Parser output and GPU copies add memory beyond raw archive limits; these are not
 promises about peak browser heap use. CAD cache/format limitations from the core
 reader still apply, including single-configuration Part display ownership.
@@ -138,3 +154,16 @@ server startup and resolves navigation relative to that project prefix.
 
 CI uses the GitHub runner’s installed Chrome (`SW_VIEWER_BROWSER_CHANNEL=chrome`);
 local tests default to Playwright’s bundled Chromium.
+
+For native assembly diagnostics without a browser or GPU:
+
+```sh
+mbx run --manifest-path viewer/Cargo.toml --release --example inspect_project -- archive.zip
+# Optionally append a path substring to inspect selected assemblies only.
+```
+
+The JSONL report includes rendered triangles, occurrences, unresolved references,
+parser diagnostics and saved rename mappings. Keep reports and source CAD local.
+Some native files have no supported saved display tessellation; allowing missing
+references cannot reconstruct their geometry. The viewer does not regenerate
+B-Rep geometry or load external files from saved Windows paths.

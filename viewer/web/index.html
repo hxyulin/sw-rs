@@ -132,9 +132,27 @@
         outline: 3px solid #72d5c7;
         outline-offset: -3px;
       }
-      input {
-        display: none;
+      #file { display: none; }
+      #parts-search {
+        position: fixed;
+        display: flex;
+        gap: 4px;
+        z-index: 2;
       }
+      #parts-search[hidden] { display: none; }
+      #part-search {
+        min-width: 0;
+        width: 100%;
+        border: 1px solid #3e5264;
+        border-radius: 5px;
+        padding: 0 9px;
+        color: #d0dce6;
+        background: #17212b;
+        font: 13px system-ui, sans-serif;
+      }
+      #part-search:focus { outline: 2px solid #72d5c7; outline-offset: 1px; }
+      #clear-search { padding: 0 8px; }
+      #clear-search[hidden] { display: none; }
       @media (max-width: 720px) {
         main {
           grid-template-columns: 280px 1fr;
@@ -182,6 +200,11 @@
         </div>
       </section>
     </main>
+    <div id="parts-search" hidden role="search" aria-label="Parts list">
+      <input id="part-search" type="search" placeholder="Search parts or paths…"
+        aria-label="Search parts" autocomplete="off" spellcheck="false" />
+      <button id="clear-search" type="button" aria-label="Clear parts search" hidden>Clear</button>
+    </div>
     <input
       id="file"
       type="file"

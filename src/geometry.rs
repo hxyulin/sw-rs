@@ -51,8 +51,8 @@ pub struct GeometryDocument {
 ///
 /// The initial profile requires one canonical native configuration and one
 /// DisplayLists carrier. Missing or ambiguous geometry is an error, never an
-/// empty successful result. Raw strip vertices are limited to 2,000,000 and triangles to
-/// 500,000 over the whole Part. Original bytes are hashed before conversion.
+/// empty successful result. Descriptor lengths and indices are validated against
+/// the actual payload; mesh counts have no policy cap. Original bytes are hashed.
 ///
 /// ```
 /// assert!(sw_rs::geometry(b"not CAD", "part.SLDPRT").is_err());
@@ -61,7 +61,7 @@ pub fn geometry(bytes: &[u8], filename: &str) -> Result<GeometryDocument, ParseE
     geometry_with_limits(bytes, filename, Limits::default())
 }
 /// Decode saved Part geometry with caller-supplied container byte/record limits.
-/// Mesh validation and descriptor complexity bounds remain active.
+/// Descriptor lengths, finite coordinates and triangle indices remain validated.
 pub fn geometry_with_limits(
     bytes: &[u8],
     filename: &str,
@@ -84,10 +84,7 @@ pub fn geometry_with_limits(
         ));
     }
     let (name, data) = carriers[0];
-    let mut meshes: Vec<_> = mesh::section_meshes(data)?
-        .into_iter()
-        .enumerate()
-        .collect();
+    let mut meshes: Vec<_> = mesh::section_meshes(data).into_iter().enumerate().collect();
     // Legacy CAD IR sorts its generated mesh IDs lexicographically. Preserve that
     // order so exact project/review signatures survive a backend replacement.
     meshes.sort_by_cached_key(|(index, _)| index.to_string());
@@ -96,21 +93,8 @@ pub fn geometry_with_limits(
             "Part has no supported cached display tessellation".into(),
         ));
     }
-    let mut vertices = 0usize;
-    let mut triangles = 0usize;
     let mut tessellations = Vec::new();
     for (_, (offset, m)) in meshes {
-        vertices = vertices
-            .checked_add(m.vertices.len())
-            .ok_or_else(|| ParseError("vertex count overflow".into()))?;
-        triangles = triangles
-            .checked_add(m.triangles.len())
-            .ok_or_else(|| ParseError("triangle count overflow".into()))?;
-        if vertices > 2_000_000 || triangles > 500_000 {
-            return Err(ParseError(
-                "Part geometry exceeds vertex/triangle limits".into(),
-            ));
-        }
         tessellations.push(Tessellation {
             source_stream: name.clone(),
             source_offset: offset,

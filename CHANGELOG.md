@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+- Initially select the largest shallow assembly, so archives with a full model
+  and many small subassemblies open the main model first.
+
+- Follow explicit copy/export reference replacement chains and resolve embedded
+  imported/virtual native documents within their owners, including Unicode streams.
+- Remove viewer traversal, occurrence, triangle, vertex and descriptor-attempt
+  policy caps; preserve cycle and corrupt-data checks, and keep bounded library
+  container defaults available to callers.
+- Build wireframe indices lazily over shared vertex buffers to reduce large-model
+  memory use; surface GPU upload failures instead of silently showing an empty view.
+
+- Label assemblies with missing references as partial while rendering available
+  siblings; report skipped reference counts and original paths.
+- Add a parts-list search field with case-insensitive filename/path matching,
+  Unicode input, clear/no-results states and a sidebar `/` focus shortcut.
+
 - Remove fixed viewer import byte and archive-entry caps while preserving
   integrity, path and mesh-complexity validation; browser memory still applies.
 - Show local file-read bytes/percentage, ZIP extraction entry progress and
@@ -22,7 +38,7 @@
 - Add versioned metadata/geometry CLI and WASM outputs, object-shaped COM,
   cut lists, drawing references and preview-free JSON for simulator ingestion.
 - Preserve legacy mesh order and expose source hashes, normals and offsets;
-  reject ambiguous ownership and bound descriptor decoding work.
+  reject ambiguous ownership and malformed descriptor tables.
 
 - Initial MIT-licensed Rust port of openswx's modern container and metadata
   readers, including native JSON inspection and optional WebAssembly bindings.

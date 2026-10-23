@@ -66,6 +66,14 @@ pub struct Configuration {
     #[serde(skip_serializing)]
     pub preview_png: Vec<u8>,
 }
+/// An explicit saved path substitution from SolidWorks copy/export storage.
+#[derive(Clone, Debug, Serialize)]
+pub struct ReferenceReplacement {
+    /// Original component path used by the saved assembly tree.
+    pub original_path: String,
+    /// Replacement path recorded by the source application, never guessed.
+    pub replacement_path: String,
+}
 /// A partial metadata view of a modern SolidWorks document.
 #[derive(Debug, Serialize)]
 pub struct Document {
@@ -87,6 +95,8 @@ pub struct Document {
     pub diagnostics: Vec<Diagnostic>,
     /// Saved drawing-sheet names and view references, without rendering semantics.
     pub sheets: Vec<Sheet>,
+    /// Explicit original/replacement path pairs from copy/export storage.
+    pub reference_replacements: Vec<ReferenceReplacement>,
     /// Paths recovered from drawing replacement-reference storage.
     pub replacement_references: Vec<String>,
     /// Paths recovered from drawing Header2.
@@ -271,6 +281,21 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         .position(|w| w == magic)
         .map(|p| preview[p..].to_vec())
         .unwrap_or_default();
+    let reference_replacements =
+        match crate::config::replacement_references(get("SwDocMgrTempStorage/ReplaceRef")) {
+            Some(pairs) => pairs,
+            None => {
+                if !get("SwDocMgrTempStorage/ReplaceRef").is_empty() {
+                    container.diagnostics.push(Diagnostic {
+                        offset: 0,
+                        message:
+                            "unsupported or truncated replacement-reference table; mappings ignored"
+                                .into(),
+                    });
+                }
+                Vec::new()
+            }
+        };
     Document {
         schema: "sw-rs-metadata-v1",
         sheets: if kind == "drawing" {
@@ -281,6 +306,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         } else {
             Vec::new()
         },
+        reference_replacements,
         replacement_references: if kind == "drawing" {
             xml::references(get("SwDocMgrTempStorage/ReplaceRef"))
         } else {
