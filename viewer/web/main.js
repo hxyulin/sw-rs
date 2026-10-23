@@ -5,7 +5,10 @@ import { SceneView } from "./scene.js";
 const sidebar = document.querySelector("#sidebar"),
   input = document.querySelector("#file"),
   status = document.querySelector("#status"),
-  empty = document.querySelector("#empty");
+  empty = document.querySelector("#empty"),
+  loading = document.querySelector("#loading"),
+  loadingLabel = document.querySelector("#loading-label"),
+  loadingBar = document.querySelector("#loading-progress");
 let app,
   scene,
   worker,
@@ -17,8 +20,52 @@ let app,
   currentFile = "",
   generation = 0,
   fontPromise,
-  fontReady = false;
+  fontReady = false,
+  reader;
+function progress(label, fraction) {
+  loading.hidden = false;
+  loadingLabel.textContent = label;
+  if (fraction === undefined) loadingBar.removeAttribute("value");
+  else loadingBar.value = Math.max(0, Math.min(1, fraction)) * 100;
+  loadingBar.setAttribute("aria-valuetext", label);
+  document.querySelector("main").setAttribute("aria-busy", "true");
+}
+function finishProgress() {
+  loading.hidden = true;
+  document.querySelector("main").setAttribute("aria-busy", "false");
+}
+function stopRead() {
+  reader?.abort();
+  reader = null;
+}
+function readFile(file, token) {
+  // Keep caller-provided async sources usable, without a size preflight cap.
+  if (!(file instanceof Blob)) return file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const active = (reader = new FileReader());
+    active.onprogress = (event) => {
+      if (token !== generation) return;
+      const fraction = event.lengthComputable && event.total
+        ? event.loaded / event.total : undefined;
+      const amount = (event.loaded / (1024 * 1024)).toFixed(1);
+      const percentage = fraction === undefined ? "" : ` · ${Math.round(fraction * 100)}%`;
+      progress(`Reading ${file.name} · ${amount} MiB${percentage}`, fraction);
+    };
+    active.onload = () => {
+      if (reader === active) reader = null;
+      resolve(active.result);
+    };
+    active.onerror = () => {
+      if (reader === active) reader = null;
+      reject(active.error);
+    };
+    active.onabort = () => reject(new DOMException("Import cancelled", "AbortError"));
+    active.readAsArrayBuffer(file);
+  });
+}
 function fail(error) {
+  busy = false;
+  finishProgress();
   status.textContent = String(error);
   status.dataset.state = "error";
   app?.set_status(String(error));
@@ -67,6 +114,8 @@ function poll() {
     lastKey = key;
     busy = true;
     status.textContent = "Decoding " + controls.path + "…";
+    status.dataset.state = "loading";
+    progress("Decoding display meshes · " + controls.path);
     worker.postMessage({ type: "scene", key, ...controls });
   }
 }
@@ -92,13 +141,18 @@ function startWorker() {
   const active = (worker = new Worker("./worker.js", { type: "module" }));
   active.onmessage = ({ data }) => {
     if (worker !== active) return;
+    if (data.type === "progress") {
+      const fraction = data.total > 0 ? data.completed / data.total : undefined;
+      progress(data.label, fraction);
+      return;
+    }
     busy = false;
     if (data.type === "loaded") {
       ensureFont(data.paths.join("\n"));
       loaded = true;
       app.set_files(JSON.stringify(data.paths));
       status.textContent = `${currentFile} · ${data.paths.length} documents`;
-      status.dataset.state = "ready";
+      progress("Archive indexed · preparing the selected document…");
     } else if (data.type === "scene") {
       const current = JSON.stringify([
         controls.path,
@@ -114,7 +168,9 @@ function startWorker() {
           ].join("\n"),
         );
         app.show_scene(JSON.stringify(data.scene));
+        progress("Uploading mesh to the viewport…");
         scene.setMesh(data.vertices);
+        finishProgress();
         empty.hidden = data.vertices.length > 0;
         empty.textContent = data.vertices.length
           ? ""
@@ -137,11 +193,8 @@ function startWorker() {
 }
 async function load(file) {
   if (!file) return;
-  if (file.size > 128 * 1024 * 1024) {
-    fail("Upload limit: 128 MiB.");
-    return;
-  }
   const token = ++generation;
+  stopRead();
   worker?.terminate();
   worker = null;
   loaded = false;
@@ -154,14 +207,16 @@ async function load(file) {
   empty.textContent = "Reading archive in a local worker…";
   status.textContent = "Reading " + file.name + "…";
   status.dataset.state = "loading";
+  progress("Reading " + file.name + "…", 0);
   invalidate();
   try {
-    const bytes = await file.arrayBuffer();
+    const bytes = await readFile(file, token);
     if (token !== generation) return;
+    progress("Opening archive and decompressing entries…");
     startWorker();
     worker.postMessage({ type: "load", name: file.name, bytes }, [bytes]);
   } catch (error) {
-    busy = false;
+    if (token !== generation) return;
     fail(error);
   }
 }
@@ -266,6 +321,8 @@ try {
   });
   document.querySelector("#cancel").onclick = () => {
     generation++;
+    stopRead();
+    finishProgress();
     worker?.terminate();
     worker = null;
     loaded = false;
@@ -306,10 +363,12 @@ try {
     },
     load,
   };
+  finishProgress();
   status.textContent = "Ready · files stay in this browser";
   status.dataset.state = "ready";
   invalidate();
 } catch (error) {
+  finishProgress();
   status.textContent = String(error);
   status.dataset.state = "error";
   console.error(error);

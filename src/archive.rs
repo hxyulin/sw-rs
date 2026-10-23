@@ -20,6 +20,28 @@ pub struct ArchiveLimits {
     /// Maximum archive entries, including directories and ignored files.
     pub entries: usize,
 }
+impl ArchiveLimits {
+    /// Remove policy caps for caller-owned local imports. Available memory and
+    /// platform address space still bound imports; integrity checks remain active.
+    pub const fn unlimited() -> Self {
+        Self {
+            input_bytes: usize::MAX,
+            member_bytes: usize::MAX,
+            total_bytes: usize::MAX,
+            entries: usize::MAX,
+        }
+    }
+}
+/// Extraction progress after a fully validated archive entry.
+#[derive(Clone, Copy, Debug)]
+pub struct ArchiveProgress<'a> {
+    /// Validated entries, including directories and ignored members.
+    pub completed_entries: usize,
+    /// ZIP entry count; TAR does not declare a total in its header.
+    pub total_entries: Option<usize>,
+    /// Original member path, presented as text rather than a URL.
+    pub path: &'a str,
+}
 impl Default for ArchiveLimits {
     fn default() -> Self {
         Self {
@@ -86,6 +108,17 @@ impl FileSet {
         filename: &str,
         limits: ArchiveLimits,
     ) -> Result<Self, ParseError> {
+        Self::from_archive_with_progress(bytes, filename, limits, |_| {})
+    }
+    /// Import with progress notifications after each validated entry. ZIP has a
+    /// declared entry total; TAR reports completed entries without a percentage.
+    /// A final notification does not imply success until integrity checks finish.
+    pub fn from_archive_with_progress(
+        bytes: &[u8],
+        filename: &str,
+        limits: ArchiveLimits,
+        mut progress: impl FnMut(ArchiveProgress<'_>),
+    ) -> Result<Self, ParseError> {
         if bytes.len() > limits.input_bytes {
             return Err(error("archive exceeds upload byte limit"));
         }
@@ -102,7 +135,8 @@ impl FileSet {
             if archive.len() > limits.entries {
                 return Err(error("archive entry count limit exceeded"));
             }
-            for i in 0..archive.len() {
+            let total_entries = archive.len();
+            for i in 0..total_entries {
                 let mut member = archive
                     .by_index(i)
                     .map_err(|e| error(format!("unsupported or damaged ZIP member: {e}")))?;
@@ -113,21 +147,26 @@ impl FileSet {
                 let size = member.size();
                 let dir = member.is_dir();
                 loader.add(&name, size, dir, &mut member)?;
+                progress(ArchiveProgress {
+                    completed_entries: loader.count,
+                    total_entries: Some(total_entries),
+                    path: &name,
+                });
             }
         } else if filename.to_ascii_lowercase().ends_with(".tar.gz")
             || filename.to_ascii_lowercase().ends_with(".tgz")
         {
             let mut expanded = Vec::new();
             flate2::read::MultiGzDecoder::new(bytes)
-                .take(limits.total_bytes as u64 + 1)
+                .take((limits.total_bytes as u64).saturating_add(1))
                 .read_to_end(&mut expanded)
                 .map_err(|e| error(format!("invalid gzip: {e}")))?;
             if expanded.len() > limits.total_bytes {
                 return Err(error("expanded TAR byte limit exceeded"));
             }
-            loader.tar(&expanded)?;
+            loader.tar(&expanded, &mut progress)?;
         } else if filename.to_ascii_lowercase().ends_with(".tar") {
-            loader.tar(bytes)?;
+            loader.tar(bytes, &mut progress)?;
         } else {
             return Err(error("supported archives: .zip, .tar and .tar.gz (.tgz)"));
         }
@@ -239,7 +278,7 @@ impl Loader {
         // Read even ignored files: ZIP CRC and actual output length must validate.
         let mut bytes = Vec::new();
         reader
-            .take(size + 1)
+            .take(size.saturating_add(1))
             .read_to_end(&mut bytes)
             .map_err(|e| error(format!("damaged archive member: {e}")))?;
         if bytes.len() as u64 != size {
@@ -252,7 +291,11 @@ impl Loader {
         }
         Ok(())
     }
-    fn tar(&mut self, bytes: &[u8]) -> Result<(), ParseError> {
+    fn tar(
+        &mut self,
+        bytes: &[u8],
+        progress: &mut impl FnMut(ArchiveProgress<'_>),
+    ) -> Result<(), ParseError> {
         let mut archive = tar::Archive::new(Cursor::new(bytes));
         for member in archive
             .entries()
@@ -268,6 +311,11 @@ impl Loader {
                 .to_owned();
             let size = member.size();
             self.add(&name, size, kind.is_dir(), &mut member)?;
+            progress(ArchiveProgress {
+                completed_entries: self.count,
+                total_entries: None,
+                path: &name,
+            });
         }
         Ok(())
     }

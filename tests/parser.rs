@@ -313,3 +313,24 @@ fn descriptor_budget_rejects_large_table_before_vertex_expansion() {
             .contains("resource limit")
     );
 }
+
+#[test]
+fn local_byte_override_retains_record_integrity_and_honors_compressed_limits() {
+    let input = file(&[("saved", b"display cache")]);
+    let bounded = Container::parse(
+        &input,
+        Limits {
+            max_compressed_bytes: 1,
+            ..Limits::default()
+        },
+    )
+    .unwrap();
+    assert!(!bounded.streams.contains_key("saved"));
+    let local = Container::parse(&input, Limits::without_byte_limits()).unwrap();
+    assert_eq!(local.streams["saved"], b"display cache");
+    let mut corrupt = input;
+    corrupt[26] ^= 1;
+    let local = Container::parse(&corrupt, Limits::without_byte_limits()).unwrap();
+    assert!(!local.streams.contains_key("saved"));
+    assert!(local.diagnostics.iter().any(|d| d.message.contains("CRC")));
+}

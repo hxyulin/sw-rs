@@ -58,12 +58,21 @@ pub struct GeometryDocument {
 /// assert!(sw_rs::geometry(b"not CAD", "part.SLDPRT").is_err());
 /// ```
 pub fn geometry(bytes: &[u8], filename: &str) -> Result<GeometryDocument, ParseError> {
+    geometry_with_limits(bytes, filename, Limits::default())
+}
+/// Decode saved Part geometry with caller-supplied container byte/record limits.
+/// Mesh validation and descriptor complexity bounds remain active.
+pub fn geometry_with_limits(
+    bytes: &[u8],
+    filename: &str,
+    limits: Limits,
+) -> Result<GeometryDocument, ParseError> {
     if !filename.to_ascii_lowercase().ends_with(".sldprt") {
         return Err(ParseError(
             "cached geometry profile accepts Parts only".into(),
         ));
     }
-    let container = Container::parse(bytes, Limits::default())?;
+    let container = Container::parse(bytes, limits)?;
     let carriers: Vec<_> = container
         .streams
         .iter()

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Remove fixed viewer import byte and archive-entry caps while preserving
+  integrity, path and mesh-complexity validation; browser memory still applies.
+- Show local file-read bytes/percentage, ZIP extraction entry progress and
+  indeterminate decompression/mesh decoding, with cancellation and error cleanup.
+
 - Build, browser-test and deploy the viewer to GitHub Pages from main, including
   relative project-site paths and bundled license notices.
 

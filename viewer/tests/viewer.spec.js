@@ -107,6 +107,7 @@ test("native Part and failed archive recovery stay responsive", async ({
   await ready(page);
   await page.locator("#file").setInputFiles(path.join(fixtures, "invalid.zip"));
   await expect(page.locator("#status")).toHaveAttribute("data-state", "error");
+  await expect(page.locator("#loading")).toBeHidden();
   await page
     .locator("#file")
     .setInputFiles(path.join(fixtures, "single.SLDPRT"));
@@ -204,4 +205,50 @@ test("resize keeps the UI canvas and pointer coordinates aligned", async ({
   await expect
     .poll(() => page.evaluate(() => window.viewer.triangles))
     .toBe(12);
+});
+
+test("import progress tracks real worker phases and clears after rendering", async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    window.importProgress = [];
+    const loading = document.querySelector("#loading");
+    new MutationObserver(() => window.importProgress.push({
+      label: document.querySelector("#loading-label").textContent,
+      value: document.querySelector("#loading-progress").getAttribute("value"),
+      hidden: loading.hidden,
+    })).observe(loading, { subtree: true, attributes: true, childList: true, characterData: true });
+  });
+  await page.locator("#file").setInputFiles(path.join(fixtures, "demo.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(48);
+  await expect(page.locator("#loading")).toBeHidden();
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+  const events = await page.evaluate(() => window.importProgress);
+  expect(events.some(e => e.label.startsWith("Reading ") && !e.hidden)).toBe(true);
+  expect(events.some(e => e.label.startsWith("Extracting ") && e.value === "100")).toBe(true);
+  expect(events.some(e => e.label.includes("Decoding") && e.value === null)).toBe(true);
+});
+test("local sources above the former upload cap reach the parser", async ({ page }) => {
+  await ready(page);
+  await page.evaluate(async () => {
+    const bytes = await (await fetch("./demo.zip")).arrayBuffer();
+    // Virtual source avoids allocating 129 MiB just to test the size preflight.
+    await window.viewer.load({ name: "large.zip", size: 129 * 1024 * 1024,
+      arrayBuffer: async () => bytes });
+  });
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(48);
+  await expect(page.locator("#loading")).toBeHidden();
+});
+test("cancelling a pending read hides progress and rejects its stale result", async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    window.viewer.load({ name: "pending.zip", size: 1,
+      arrayBuffer: () => new Promise(resolve => window.completeRead = resolve) });
+  });
+  await expect(page.locator("#loading")).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", "0");
+  await page.getByRole("button", { name: "Cancel / clear" }).click();
+  await page.evaluate(() => window.completeRead(new ArrayBuffer(0)));
+  await expect(page.locator("#loading")).toBeHidden();
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("#status")).toHaveText("Import cancelled");
 });

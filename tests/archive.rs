@@ -183,3 +183,45 @@ fn crc_failure_is_checked_even_for_ignored_members() {
             .contains("damaged archive member")
     );
 }
+
+#[test]
+fn unlimited_import_reports_validated_entries_for_each_archive_format() {
+    let files = [
+        ("part.SLDPRT", b"CAD".as_slice()),
+        ("ignored.txt", b"text".as_slice()),
+    ];
+    let raw = tar(&files);
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gzip.write_all(&raw).unwrap();
+    for (name, bytes, total) in [
+        ("a.zip", zip(&files), Some(2)),
+        ("a.tar", raw, None),
+        ("a.tar.gz", gzip.finish().unwrap(), None),
+    ] {
+        let mut events = Vec::new();
+        let set =
+            FileSet::from_archive_with_progress(&bytes, name, ArchiveLimits::unlimited(), |p| {
+                events.push((p.completed_entries, p.total_entries, p.path.to_owned()))
+            })
+            .unwrap();
+        assert_eq!(
+            events,
+            vec![
+                (1, total, "part.SLDPRT".into()),
+                (2, total, "ignored.txt".into())
+            ]
+        );
+        assert_eq!(set.documents["part.SLDPRT"].as_ref(), b"CAD");
+    }
+}
+#[test]
+fn local_import_can_exceed_the_old_member_byte_cap() {
+    let large = vec![0; (64 << 20) + 1];
+    let z = zip(&[("large.SLDPRT", &large)]);
+    assert!(FileSet::from_archive(&z, "large.zip", ArchiveLimits::default()).is_err());
+    let set = FileSet::from_archive(&z, "large.zip", ArchiveLimits::unlimited()).unwrap();
+    assert_eq!(set.documents["large.SLDPRT"].len(), large.len());
+    // Removing policy caps must not disable path validation.
+    let bad = zip(&[("../bad.SLDPRT", b"CAD")]);
+    assert!(FileSet::from_archive(&bad, "bad.zip", ArchiveLimits::unlimited()).is_err());
+}

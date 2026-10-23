@@ -50,7 +50,10 @@ Drag in the viewport to orbit; Shift-drag or right-drag pans. Wheel zooms, and
 **Fit view**, double-click or F fits the model. **Wireframe** changes the drawing
 mode. The sidebar supports Tab/Shift-Tab navigation and Enter/Space activation;
 the viewport accepts F after focus. The header has an ordinary browser status
-region and Cancel / clear action. The canvas UI does not yet publish a full DOM
+region and Cancel / clear action. A loading panel shows file-read bytes and
+percentage, ZIP extraction entry progress, and an indeterminate bar for TAR
+extraction and mesh decoding (where no reliable total is known). Cancelling or
+finishing an import dismisses the panel. The canvas UI does not yet publish a full DOM
 accessibility tree or support touch-specific navigation.
 
 The inspector exposes saved properties, raw cached mass tokens and diagnostics.
@@ -70,9 +73,11 @@ supported in this version. Errors are explicit. Source names remain Unicode;
 a bundled, renamed Noto-derived CJK font loads on demand for Chinese paths.
 Font provenance and SIL OFL notices are in `assets/README.md` and alongside fonts.
 
-Defaults: 128 MiB upload, 64 MiB per member, 256 MiB cumulative member bytes,
-4,096 archive entries. Ignored non-CAD files count toward limits and integrity
-checks. Absolute paths, parent traversal, drive/alternate-stream syntax and
+The viewer has no fixed upload, native-document, expanded-byte or archive-entry
+count cap. The Rust library keeps bounded defaults for other callers and exposes
+explicit overrides. Browser RAM, WASM address space and GPU capacity still bound
+what can be opened; local processing does not make memory unlimited. Ignored
+non-CAD members still undergo integrity checks. Absolute paths, parent traversal, drive/alternate-stream syntax and
 case-insensitive duplicates are rejected. Files are never extracted to disk.
 External CAD references resolve inside the uploaded file set only, preferring
 owner-relative paths and then unique longest Windows path suffixes. Ambiguous

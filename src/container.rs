@@ -11,6 +11,8 @@ const MARKER: &[u8] = &[0x14, 0, 6, 0, 8, 0];
 pub struct Limits {
     /// Maximum input document bytes.
     pub max_file_bytes: usize,
+    /// Maximum compressed bytes in one stream.
+    pub max_compressed_bytes: usize,
     /// Maximum decoded bytes in one stream.
     pub max_stream_bytes: usize,
     /// Maximum cumulative decoded bytes, including duplicate streams.
@@ -18,10 +20,24 @@ pub struct Limits {
     /// Maximum marker candidates, bounding diagnostics and decode attempts.
     pub max_records: usize,
 }
+impl Limits {
+    /// Remove byte policy caps for local imports while retaining the malformed
+    /// record scan bound. Actual allocations remain limited by the platform.
+    pub fn without_byte_limits() -> Self {
+        Self {
+            max_file_bytes: usize::MAX,
+            max_compressed_bytes: usize::MAX,
+            max_stream_bytes: usize::MAX,
+            max_total_bytes: usize::MAX,
+            ..Self::default()
+        }
+    }
+}
 impl Default for Limits {
     fn default() -> Self {
         Self {
             max_file_bytes: 256 << 20,
+            max_compressed_bytes: 64 << 20,
             max_stream_bytes: 128 << 20,
             max_total_bytes: 512 << 20,
             max_records: 100_000,
@@ -140,7 +156,7 @@ impl Container {
                 continue;
             }
             let start = name_start + name_len;
-            if compressed > 64 << 20 || compressed > data.len() - start {
+            if compressed > limits.max_compressed_bytes || compressed > data.len() - start {
                 warn("invalid or truncated compressed payload");
                 continue;
             }

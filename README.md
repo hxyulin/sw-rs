@@ -65,8 +65,9 @@ for config in document.configurations {
 ```
 
 `parse_with_limits` and `Container::parse` accept `Limits`. Defaults allow 256 MiB
-of input, 128 MiB per decoded stream, 512 MiB cumulative decoded output (including
-duplicates), and 100,000 marker candidates. These bound decoding, not total
+of input, 64 MiB per compressed stream, 128 MiB per decoded stream, 512 MiB
+cumulative decoded output (including duplicates), and 100,000 marker candidates.
+Local callers can use `Limits::without_byte_limits()`; the web viewer does so. These bound decoding, not total
 process memory: XML trees, JSON serialization, and host copies add overhead.
 Choose smaller limits for constrained hosts. Use a Web Worker for large files;
 parsing is synchronous and does not promise fast processing of arbitrary input.

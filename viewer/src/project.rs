@@ -42,7 +42,9 @@ impl Project {
                 .documents
                 .get(path)
                 .ok_or("document not present")?;
-            let mut doc = sw_rs::parse(bytes, path).map_err(|e| e.to_string())?;
+            let mut doc =
+                sw_rs::parse_with_limits(bytes, path, sw_rs::Limits::without_byte_limits())
+                    .map_err(|e| e.to_string())?;
             // The inspector does not display PNGs; do not retain duplicate caches.
             doc.preview_png = Vec::new();
             for config in &mut doc.configurations {
@@ -200,7 +202,7 @@ impl Project {
             let bytes = &self.files.documents[path];
             self.geometry.insert(
                 path.into(),
-                sw_rs::geometry(bytes, path)
+                sw_rs::geometry_with_limits(bytes, path, sw_rs::Limits::without_byte_limits())
                     .map(|mut g| {
                         for c in &mut g.configurations {
                             c.preview_png = Vec::new();

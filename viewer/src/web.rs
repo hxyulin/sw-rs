@@ -347,6 +347,11 @@ impl WebApp {
     }
 }
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = self, js_name = reportImportProgress)]
+    fn report_import_progress(completed: f64, total: f64, path: &str);
+}
 /// Worker-local parser state; never constructs a graphics device or reads disk.
 #[wasm_bindgen]
 pub struct ArchiveProject {
@@ -362,18 +367,22 @@ impl ArchiveProject {
             .iter()
             .any(|s| lower.ends_with(s))
         {
-            if bytes.len() > 64 << 20 {
-                return Err(error("native document exceeds 64 MiB"));
-            }
             let mut files = sw_rs::archive::FileSet::default();
             let name = sw_rs::archive::normalize_path(filename).map_err(error)?;
             files.documents.insert(name, bytes.to_vec().into());
             files
         } else {
-            sw_rs::archive::FileSet::from_archive(
+            sw_rs::archive::FileSet::from_archive_with_progress(
                 bytes,
                 filename,
-                sw_rs::archive::ArchiveLimits::default(),
+                sw_rs::archive::ArchiveLimits::unlimited(),
+                |p| {
+                    report_import_progress(
+                        p.completed_entries as f64,
+                        p.total_entries.map(|n| n as f64).unwrap_or(0.),
+                        p.path,
+                    )
+                },
             )
             .map_err(error)?
         };

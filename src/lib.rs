@@ -16,7 +16,9 @@ pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
     Component, Configuration, CutListItem, Document, MassProperties, Sheet, SheetView,
 };
-pub use geometry::{GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry};
+pub use geometry::{
+    GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
+};
 
 /// Parse a modern document using bounded default resource limits.
 /// `filename` supplies the document kind; it is never opened or resolved.
