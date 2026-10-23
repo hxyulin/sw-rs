@@ -130,3 +130,6 @@ SW_VIEWER_BASE_URL=https://hxyulin.github.io/sw-rs/ npm test
 
 Keep the trailing slash. The external-URL setting disables Playwright's local
 server startup and resolves navigation relative to that project prefix.
+
+CI uses the GitHub runner’s installed Chrome (`SW_VIEWER_BROWSER_CHANNEL=chrome`);
+local tests default to Playwright’s bundled Chromium.

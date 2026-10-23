@@ -10,6 +10,7 @@ export default defineConfig({
   timeout: 60000,
   workers: 1,
   use: {
+    channel: process.env.SW_VIEWER_BROWSER_CHANNEL || undefined,
     baseURL: process.env.SW_VIEWER_BASE_URL || "http://127.0.0.1:8097/",
     viewport: { width: 1280, height: 850 },
     launchOptions: {

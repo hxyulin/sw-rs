@@ -20,6 +20,8 @@ jobs:
       - run: node scripts/wasm-smoke.cjs
   viewer:
     runs-on: ubuntu-latest
+    env:
+      SW_VIEWER_BROWSER_CHANNEL: chrome
     defaults:
       run:
         working-directory: viewer
@@ -39,7 +41,7 @@ jobs:
       - run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
       - run: sh build.sh
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: google-chrome --version
       - run: npm test
       - uses: actions/upload-artifact@v4
         if: failure()

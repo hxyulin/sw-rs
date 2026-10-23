@@ -14,6 +14,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SW_VIEWER_BROWSER_CHANNEL: chrome
     defaults:
       run:
         working-directory: viewer
@@ -41,7 +43,7 @@ jobs:
       - name: Build static viewer
         run: sh build.sh
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: google-chrome --version
       - name: Browser smoke tests
         run: npm test
       - name: Upload static viewer
