@@ -2,6 +2,10 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # SW Explorer — RXUI web viewer
 
+Live app: **https://hxyulin.github.io/sw-rs/**
+
+Source: https://github.com/hxyulin/sw-rs
+
 A local-first browser viewer for native SolidWorks documents in ZIP, TAR and
 TAR.GZ/TGZ archives, or an individual SLDPRT/SLDASM/SLDDRW file. RXUI draws the
 browser and inspector through WebGPU. An app-owned WebGL 2 viewport renders
@@ -109,3 +113,20 @@ sent to a service. Rebuild before browser tests after Rust changes. Worker
 cancellation, font loading, high-DPI and error tests do not establish cross-browser
 or mobile certification; Chromium is the validated target. Graphics device or
 context loss currently requires reloading the viewer.
+
+## GitHub Pages
+
+`.github/workflows/pages.yml` builds and smoke-tests the viewer on pushes to
+`main`, then deploys only `viewer/web/` through GitHub's Pages Actions artifact.
+The app, workers, WASM, demo, fonts and license notices use relative paths, so the
+same bundle works at the `/sw-rs/` project-site prefix. Generated deployment
+files remain outside Git. GitHub Pages supplies HTTPS for WebGPU's secure context.
+
+To check an already running deployment with the same public browser suite:
+
+```sh
+SW_VIEWER_BASE_URL=https://hxyulin.github.io/sw-rs/ npm test
+```
+
+Keep the trailing slash. The external-URL setting disables Playwright's local
+server startup and resolves navigation relative to that project prefix.

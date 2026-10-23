@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 const fixtures = fileURLToPath(new URL("../test-fixtures/", import.meta.url));
 async function ready(page) {
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.locator("#status")).toHaveAttribute("data-state", "ready");
   await page.waitForFunction(
     () => window.viewer?.snapshot().elements.length > 0,

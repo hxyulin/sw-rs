@@ -10,7 +10,7 @@ export default defineConfig({
   timeout: 60000,
   workers: 1,
   use: {
-    baseURL: "http://127.0.0.1:8097",
+    baseURL: process.env.SW_VIEWER_BASE_URL || "http://127.0.0.1:8097/",
     viewport: { width: 1280, height: 850 },
     launchOptions: {
       args: [
@@ -21,9 +21,11 @@ export default defineConfig({
       ],
     },
   },
-  webServer: {
-    command: "npm run serve",
-    url: "http://127.0.0.1:8097",
-    reuseExistingServer: true,
-  },
+  webServer: process.env.SW_VIEWER_BASE_URL
+    ? undefined
+    : {
+        command: "npm run serve",
+        url: "http://127.0.0.1:8097",
+        reuseExistingServer: true,
+      },
 });

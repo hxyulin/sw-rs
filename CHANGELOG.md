@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+- Build, browser-test and deploy the viewer to GitHub Pages from main, including
+  relative project-site paths and bundled license notices.
+
 - Add an RXUI web archive viewer with worker-side native CAD decoding, assembly
   placement, metadata/configuration inspection, orbit/pan/zoom and wireframe.
 - Add optional bounded ZIP/TAR/TAR.GZ imports and virtual reference resolution;

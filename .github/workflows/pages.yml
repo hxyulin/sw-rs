@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 hxyulin <hxyulin@proton.me>
+name: GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: read
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/configure-pages@v5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            viewer/target
+          key: ${{ runner.os }}-viewer-pages-${{ hashFiles('viewer/Cargo.lock') }}
+      - name: Install matching WASM bindings tool
+        run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
+      - name: Test parser-backed viewer model
+        run: cargo test --locked
+      - name: Build static viewer
+        run: sh build.sh
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Browser smoke tests
+        run: npm test
+      - name: Upload static viewer
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: viewer/web
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy viewer
+        id: deployment
+        uses: actions/deploy-pages@v4

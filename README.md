@@ -2,6 +2,8 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # sw-rs
 
+[Open SW Explorer](https://hxyulin.github.io/sw-rs/) · [Viewer guide](viewer/README.md)
+
 A pure Rust, byte-oriented reader for modern SolidWorks files, with optional
 WebAssembly bindings. The name is provisional. This is an initial metadata port
 of [openswx](https://github.com/schwitters/openswx) at
