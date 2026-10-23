@@ -327,3 +327,124 @@ fn absent_appearance_is_none_and_nested_unrelated_hints_are_not_selected() {
         assert!(doc.materials.unwrap().definitions[0].appearance.is_none());
     }
 }
+
+#[test]
+fn presentation_separates_physical_defaults_from_applied_appearances() {
+    let text = xml(&format!(
+        "{DEFINITION}<configurationslist><configuration name=\"test\" material=\"example|test alloy|7\"/><configuration name=\"missing\" material=\"absent\"/></configurationslist>"
+    ));
+    let doc = document(text.as_bytes());
+    let data = doc.presentation();
+    assert_eq!(data.schema, "sw-rs-presentation-v1");
+    assert_eq!(data.physical_materials.len(), 1);
+    assert_eq!(data.physical_materials[0].default_appearance_index, Some(0));
+    assert_eq!(
+        data.physical_materials[0].density.as_ref().unwrap().units,
+        None
+    );
+    assert!(matches!(
+        data.appearances[0].origin,
+        sw_rs::AppearanceOrigin::MaterialDefault { material_index: 0 }
+    ));
+    assert_eq!(
+        data.appearances[0].saved.as_ref().unwrap().shaders[0].attributes["name"],
+        "carbon appearance"
+    );
+    assert_eq!(data.appearances[0].swatch_rgb.as_deref(), Some("abcDEF"));
+    assert_eq!(data.physical_bindings[0].material_index, Some(0));
+    assert_eq!(data.physical_bindings[1].material_index, None);
+    assert!(data.appearance_bindings.is_empty());
+    assert!(data.coverage.material_tree_decoded);
+    assert!(!data.coverage.appearance_bindings_decoded);
+    assert!(!data.coverage.texture_mappings_decoded);
+    assert!(!data.coverage.display_states_decoded);
+    assert_eq!(
+        data.appearances[0].source.stream,
+        "swXmlContents/MATERIALTREE"
+    );
+    let json = serde_json::to_value(&data).unwrap();
+    assert_eq!(json["appearances"][0]["origin"]["kind"], "material_default");
+    assert!(json["physical_materials"][0].get("roughness").is_none());
+    assert!(json["physical_materials"][0].get("saved").is_none());
+    assert_eq!(
+        doc.physical_material_for_configuration("test")
+            .unwrap()
+            .name,
+        "example|test alloy"
+    );
+}
+
+#[test]
+fn presentation_preserves_unknown_coverage_and_unassigned_visual_defaults() {
+    let absent = sw_rs::metadata_from_container(
+        sw_rs::Container {
+            streams: Default::default(),
+            diagnostics: vec![],
+        },
+        "test.SLDPRT",
+    );
+    assert!(!absent.presentation().coverage.material_tree_decoded);
+    let empty = document(xml("").as_bytes()).presentation();
+    assert!(empty.coverage.material_tree_decoded);
+    assert!(empty.physical_materials.is_empty());
+    let unassigned = document(xml(DEFINITION).as_bytes()).presentation();
+    assert_eq!(unassigned.appearances.len(), 1);
+    assert!(unassigned.physical_bindings.is_empty());
+    assert!(unassigned.appearance_bindings.is_empty());
+}
+
+#[test]
+fn physical_resolution_rejects_duplicate_definitions_and_stale_links() {
+    let text = xml(&format!(
+        "{DEFINITION}<configurationslist><configuration name=\"test\" material=\"example|test alloy|7\"/></configurationslist>"
+    ));
+    let mut doc = document(text.as_bytes());
+    assert!(doc.physical_material_for_configuration("test").is_some());
+    assert!(doc.physical_material_for_configuration("Test").is_none());
+    doc.configurations[0]
+        .material
+        .as_mut()
+        .unwrap()
+        .definition_index = Some(12);
+    assert!(doc.physical_material_for_configuration("test").is_none());
+    doc.configurations[0]
+        .material
+        .as_mut()
+        .unwrap()
+        .definition_index = Some(0);
+    let materials = doc.materials.as_mut().unwrap();
+    materials.definitions.push(materials.definitions[0].clone());
+    assert!(doc.physical_material_for_configuration("test").is_none());
+    assert!(
+        doc.presentation().physical_bindings[0]
+            .material_index
+            .is_none()
+    );
+    assert_eq!(doc.presentation().appearances.len(), 2);
+}
+
+#[test]
+fn physical_resolution_rejects_duplicate_configuration_references() {
+    let text = xml(&format!(
+        "{DEFINITION}<configurationslist><configuration name=\"test\" material=\"example|test alloy|7\"/></configurationslist>"
+    ));
+    let mut doc = document(text.as_bytes());
+    let materials = doc.materials.as_mut().unwrap();
+    materials.assignments.push(materials.assignments[0].clone());
+    assert!(doc.physical_material_for_configuration("test").is_none());
+    assert_eq!(doc.presentation().physical_bindings.len(), 2);
+}
+
+#[test]
+fn appearance_scope_distinguishes_unknown_all_and_named_states() {
+    use sw_rs::PresentationScope;
+    let scope = |value| serde_json::to_value(value).unwrap();
+    assert_eq!(scope(PresentationScope::Unknown)["kind"], "unknown");
+    assert_eq!(scope(PresentationScope::All)["kind"], "all");
+    assert_eq!(
+        scope(PresentationScope::Named {
+            name: "Display State-1".into()
+        })["name"],
+        "Display State-1"
+    );
+}

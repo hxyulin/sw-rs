@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Add a renderer-independent presentation model separating physical materials,
+  visual definitions, default relationships and scoped appearance bindings;
+  expose source catalogs per document with explicit unknown decoding coverage.
+- Centralize exact physical-material resolution and keep viewer approximations
+  separate from native appearance ownership.
+
 - Declare the assumed native SolidWorks model XYZ frame with explicit provenance;
   default the viewer to Y-up, add standard views/source-axis triad and a Z-up
   camera override without changing geometry or assembly transforms.

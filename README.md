@@ -75,6 +75,38 @@ appearances and can switch to physical material-family presets. Saved PhotoWorks
 identities take precedence over generic realtime shader hints. This does not
 recover final face/body overrides from binary visual states.
 
+## Renderer-independent presentation model
+
+`Document::presentation()` projects decoded records into `sw-rs-presentation-v1`:
+physical definitions/bindings and visual definitions/bindings are separate. Each
+physical definition may reference a material-default appearance. This relationship
+is not an applied face/body/component override. Source stream/element paths and
+unresolved references are retained; indices are local to one document snapshot.
+Recompute the projection after mutating a document's public source records.
+`physical_material_for_configuration(name)` validates exact, unique configuration
+and definition references before returning physical evidence.
+
+Appearance targets distinguish document, component occurrence, body, feature and
+face identities. Configuration and display-state scopes are separate; unknown
+scope never means “all states”. Applied appearance bindings remain empty until
+ownership decoding is implemented. Explicit coverage flags distinguish unknown
+bindings, display states and texture mappings from known absence. Native entity
+identifiers must not be replaced with tessellation triangle indices.
+
+The viewer exports `presentations` keyed by document path, including embedded
+paths. Hierarchy occurrences refer to that path and document-local
+`physical_material_index`/`material_default_appearance_index` when resolved.
+Repeated occurrences share a catalog. Existing `materials`, `material_index`
+and `batches` remain the viewer's approximate rendering adapter, separate from
+source definitions; they are not native appearance ownership records.
+The WASM `presentation_json(bytes, filename)` entry point exposes the same core
+projection. The model includes no WebGL, RXUI, GPU resources or renderer presets.
+
+Next decoding work is independent visual definitions, saved display states,
+face/body/occurrence ownership and texture projection. A renderer can then resolve
+those bindings and translate visual evidence into its own shading parameters.
+This change does not recover those records or reproduce SolidWorks shaders.
+
 ## Native use
 
 Use `mbx` for compiling commands when installed; otherwise substitute `cargo`.

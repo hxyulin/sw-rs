@@ -178,28 +178,10 @@ fn saved_surface(definition: &sw_rs::SavedMaterial) -> Option<SavedSurface> {
 /// filenames, shader names and density values never establish a material assignment.
 /// Configuration assignment does not imply recovered face/body appearance ownership.
 pub fn for_configuration(doc: &sw_rs::Document, name: &str) -> Option<MaterialAppearance> {
-    if name.is_empty() {
-        return None;
-    }
-    let mut configurations = doc.configurations.iter().filter(|c| c.name == name);
-    let configuration = configurations.next()?;
-    if configurations.next().is_some() {
-        return None;
-    }
+    let definition = doc.physical_material_for_configuration(name)?;
+    let configuration = doc.configurations.iter().find(|c| c.name == name)?;
     let assignment = configuration.material.as_ref()?;
-    if assignment.configuration != name {
-        return None;
-    }
     let materials = doc.materials.as_ref()?;
-    let definition = materials.definitions.get(assignment.definition_index?)?;
-    // Recheck the public records rather than trusting arbitrary caller-mutated indices.
-    let key = match &definition.material_id {
-        Some(id) => format!("{}|{id}", definition.name),
-        None => definition.name.clone(),
-    };
-    if key.is_empty() || assignment.material_reference != key {
-        return None;
-    }
     let labels = std::iter::once(definition.name.as_str())
         .chain(definition.classifications.iter().map(String::as_str))
         .map(str::to_lowercase)

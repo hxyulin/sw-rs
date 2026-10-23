@@ -542,7 +542,7 @@ impl ArchiveProject {
         } else {
             "Metadata only · no supported mesh".into()
         };
-        serde_json::json!({"metadata":self.scene.metadata,"hierarchy":self.scene.hierarchy,"materials":self.scene.materials,"batches":self.scene.batches,"configurations":self.scene.configurations,"selectedConfiguration":config,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
+        serde_json::json!({"metadata":self.scene.metadata,"hierarchy":self.scene.hierarchy,"presentations":self.scene.presentations,"materials":self.scene.materials,"batches":self.scene.batches,"configurations":self.scene.configurations,"selectedConfiguration":config,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
     }
     pub fn take_vertices(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.scene.vertices)

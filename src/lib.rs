@@ -12,6 +12,7 @@ mod document;
 mod frame;
 mod geometry;
 mod mesh;
+mod presentation;
 mod xml;
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
@@ -22,6 +23,11 @@ pub use document::{
 pub use frame::{CoordinateFrame, SOLIDWORKS_MODEL_FRAME};
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
+};
+pub use presentation::{
+    AppearanceBinding, AppearanceDefinition, AppearanceOrigin, AppearanceTarget,
+    PhysicalMaterialBinding, PhysicalMaterialDefinition, PresentationCoverage, PresentationData,
+    PresentationScope, PresentationSource,
 };
 
 /// Parse a modern document using bounded default resource limits.
@@ -68,3 +74,13 @@ pub fn geometry_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindge
 /// Bounded archive imports and an in-memory, filesystem-independent CAD file set.
 #[cfg(feature = "archive")]
 pub mod archive;
+
+/// Parse renderer-independent material/appearance relationships into versioned JSON.
+/// Texture paths remain inert; this does not execute a saved shader or resolve UVs.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn presentation_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindgen::JsError> {
+    let doc = parse(bytes, filename).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    serde_json::to_string(&doc.presentation())
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
+}

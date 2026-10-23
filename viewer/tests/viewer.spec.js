@@ -46,6 +46,37 @@ test("SolidWorks front/top/right views preserve source coordinates with explicit
   await page.getByRole("button", {name:"Front",exact:true}).click();
   await expect(page.getByLabel("Orbit up axis")).toHaveValue("y");
 });
+test("scene exports source presentation separately from renderer presets", async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", ({data}) => {
+          if (data.type === "scene") window.sourceScene = data.scene;
+        });
+      }
+    };
+  });
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "single.SLDPRT"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  const scene = await page.evaluate(() => window.sourceScene);
+  const root = scene.hierarchy[0];
+  const catalog = scene.presentations[root.path];
+  expect(catalog.schema).toBe("sw-rs-presentation-v1");
+  const physical = catalog.physical_materials[root.physical_material_index];
+  expect(physical.classifications).toContain("Aluminum");
+  const appearance = catalog.appearances[physical.default_appearance_index];
+  expect(root.material_default_appearance_index).toBe(physical.default_appearance_index);
+  expect(appearance.origin).toEqual({kind:"material_default", material_index:root.physical_material_index});
+  expect(appearance.saved.shaders[0].attributes.name).toBe("black low gloss plastic");
+  expect(physical.roughness).toBeUndefined();
+  expect(catalog.appearance_bindings).toEqual([]);
+  expect(catalog.coverage.appearance_bindings_decoded).toBe(false);
+  expect(scene.materials[0].family).toBe("aluminum");
+  expect(scene.materials[0].saved_surface.metallic).toBe(0);
+});
 test.beforeEach(async ({ page }) => {
   page.on("console", (message) => {
     if (message.type() === "error") console.error(message.text());

@@ -34,6 +34,9 @@ pub struct Scene {
     pub diagnostics: Vec<String>,
     pub metadata: serde_json::Value,
     pub configurations: Vec<String>,
+    /// Renderer-independent catalogs keyed by native/embedded document path.
+    /// Repeated occurrences share definitions; hierarchy preserves occurrence identity.
+    pub presentations: BTreeMap<String, sw_rs::PresentationData>,
     /// Flat preorder occurrence tree; parent IDs preserve repeated instances.
     pub hierarchy: Vec<serde_json::Value>,
     /// Approximate viewer appearances backed by explicit material assignments.
@@ -183,6 +186,10 @@ impl Project {
                 return;
             }
         };
+        scene
+            .presentations
+            .entry(path.into())
+            .or_insert_with(|| doc.presentation());
         let kind = doc.document_type.clone();
         scene.hierarchy[node]["kind"] = kind.clone().into();
         if kind == "drawing" {
@@ -203,6 +210,19 @@ impl Project {
                 .diagnostics
                 .push(format!("Missing/ambiguous configuration: {path} / {name}"));
             return;
+        }
+        // Document-local source identities remain separate from renderer preset indices.
+        if let Some(definition) = doc.physical_material_for_configuration(name) {
+            let material_index = doc.materials.as_ref().and_then(|m| {
+                m.definitions
+                    .iter()
+                    .position(|d| std::ptr::eq(d, definition))
+            });
+            scene.hierarchy[node]["physical_material_index"] = material_index.into();
+            let default_index = material_index.and_then(|i| {
+                scene.presentations[path].physical_materials[i].default_appearance_index
+            });
+            scene.hierarchy[node]["material_default_appearance_index"] = default_index.into();
         }
         let appearance = crate::appearance::for_configuration(doc, name);
         if kind == "assembly" {
@@ -640,6 +660,23 @@ mod traversal_tests {
         let s = p.scene("root.SLDASM", 0, false);
         assert_eq!(s.vertices.len() / 9, 9);
         assert_eq!(s.materials.len(), 1);
+        assert_eq!(s.presentations.len(), 3);
+        assert_eq!(s.presentations["part.SLDPRT"].physical_materials.len(), 1);
+        assert!(
+            s.presentations["unknown.SLDPRT"]
+                .physical_materials
+                .is_empty()
+        );
+        for node in [1, 2] {
+            assert_eq!(s.hierarchy[node]["physical_material_index"], 0);
+            assert!(s.hierarchy[node]["material_default_appearance_index"].is_null());
+            assert_eq!(s.hierarchy[node]["path"], "part.SLDPRT");
+        }
+        assert!(
+            s.presentations["part.SLDPRT"]
+                .appearance_bindings
+                .is_empty()
+        );
         assert_eq!(s.batches.len(), 2);
         assert_eq!(s.batches[0].first_vertex, 0);
         assert_eq!(s.batches[0].vertex_count, 6);
