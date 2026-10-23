@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Add an RXUI web archive viewer with worker-side native CAD decoding, assembly
+  placement, metadata/configuration inspection, orbit/pan/zoom and wireframe.
+- Add optional bounded ZIP/TAR/TAR.GZ imports and virtual reference resolution;
+  preserve explicit ambiguity, unknown transforms and unsupported geometry.
+
 - Add a pure Rust cached Part mesh decoder adapted from Apache-2.0 cadmpeg at
   the audited MIT sldkit snapshot, without native/IR dependencies.
 - Add versioned metadata/geometry CLI and WASM outputs, object-shaped COM,

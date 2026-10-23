@@ -145,3 +145,17 @@ python3 scripts/compare-geometry.py /path/to/native-files \
   --upstream /path/to/sldkit-rs --rust target/release/sw-dump \
   --output local-assets/geometry-comparison.json
 ```
+
+## Web viewer
+
+[SW Explorer](viewer/README.md) is a separate RXUI/WASM app for ZIP, TAR and
+TAR.GZ native CAD archives, with a document/configuration inspector and an
+orbitable 3D viewport. Parsing runs in a cancelable worker; uploads stay local.
+
+```sh
+sh viewer/build.sh
+python3 -m http.server 8097 --bind 127.0.0.1 --directory viewer/web
+```
+
+Open http://127.0.0.1:8097. The `archive` Cargo feature separately exposes bounded
+archive loading and virtual reference resolution without a viewer dependency.

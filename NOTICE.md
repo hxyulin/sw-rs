@@ -33,3 +33,11 @@ is not relicensed by this project's license.
 
 SolidWorks is a trademark of its respective owner. This independent project is
 not affiliated with or endorsed by the trademark owner.
+
+The optional viewer pins RXUI and Astrelis under their MIT OR Apache-2.0 terms.
+The application-owned canvas host follows their documented browser integration
+APIs; neither native window services nor private browser probes are dependencies.
+Embedded Source Sans 3 and the renamed Noto Sans SC-derived CJK subset retain
+separate SIL OFL 1.1 terms and original copyright notices under `viewer/assets/`.
+They are font assets, not relicensed source code. See `viewer/assets/README.md`
+for pinned sources, checksums and the reproducible CJK subset process.

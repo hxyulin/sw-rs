@@ -52,3 +52,7 @@ pub fn geometry_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindge
     serde_json::to_string(&serde_json::json!({"schema":"sw-rs-geometry-v1", "geometry":doc}))
         .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
 }
+
+/// Bounded archive imports and an in-memory, filesystem-independent CAD file set.
+#[cfg(feature = "archive")]
+pub mod archive;

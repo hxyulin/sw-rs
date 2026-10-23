@@ -1,0 +1,171 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SW Explorer · Local CAD viewer</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0c1118;
+        color: #c2d1da;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 46px 1fr;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 18px;
+        border-bottom: 1px solid #27323e;
+        font-size: 12px;
+      }
+      header b {
+        color: #74d5cb;
+        letter-spacing: 0.13em;
+      }
+      #status {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      #status[data-state="error"] {
+        color: #f6a68d;
+      }
+      button {
+        background: #202d3b;
+        border: 1px solid #3e5264;
+        color: #d0dce6;
+        border-radius: 5px;
+        padding: 5px 12px;
+        cursor: pointer;
+      }
+      main {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        grid-template-rows: minmax(0, 1fr);
+        overflow: hidden;
+      }
+      #sidebar {
+        display: block;
+        min-height: 0;
+        width: 100%;
+        height: 100%;
+        outline: none;
+        border-right: 1px solid #27323e;
+      }
+      #viewport {
+        position: relative;
+        min-width: 0;
+        overflow: hidden;
+      }
+      #scene {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+      }
+      #empty {
+        position: absolute;
+        top: 45%;
+        width: 100%;
+        text-align: center;
+        font-size: 17px;
+        color: #8096a7;
+        pointer-events: none;
+        white-space: pre-line;
+      }
+      #empty[hidden] {
+        display: none;
+      }
+      .hint {
+        position: absolute;
+        bottom: 18px;
+        left: 22px;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        color: #8096a7;
+        pointer-events: none;
+      }
+      .tag {
+        position: absolute;
+        top: 18px;
+        left: 22px;
+        border: 1px solid #314451;
+        border-radius: 5px;
+        padding: 6px 9px;
+        color: #7ebbb5;
+        font-size: 10px;
+        letter-spacing: 0.15em;
+        pointer-events: none;
+      }
+      body.dragging main {
+        outline: 3px solid #72d5c7;
+        outline-offset: -3px;
+      }
+      input {
+        display: none;
+      }
+      @media (max-width: 720px) {
+        main {
+          grid-template-columns: 280px 1fr;
+        }
+        header {
+          gap: 8px;
+        }
+        .hint {
+          max-width: 160px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <b>SW EXPLORER</b
+      ><span id="status" role="status" aria-live="polite">Starting RXUI…</span
+      ><button
+        id="cancel"
+        title="Stop parsing and release the uploaded archive"
+      >
+        Cancel / clear
+      </button>
+    </header>
+    <main>
+      <canvas
+        id="sidebar"
+        width="340"
+        height="900"
+        tabindex="0"
+        aria-label="RXUI document browser and inspector"
+      ></canvas>
+      <section id="viewport">
+        <canvas id="scene" tabindex="0" aria-label="3D CAD viewport"></canvas>
+        <div class="tag">SOURCE DISPLAY CACHE</div>
+        <div id="empty">
+          Drop a ZIP or TAR archive here or open a native Part from the sidebar.
+        </div>
+        <div class="hint">
+          DRAG TO ORBIT · SHIFT / RIGHT DRAG TO PAN · WHEEL TO ZOOM · F TO FIT
+        </div>
+      </section>
+    </main>
+    <input
+      id="file"
+      type="file"
+      accept=".zip,.tar,.tar.gz,.tgz,.sldprt,.sldasm,.slddrw"
+    />
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

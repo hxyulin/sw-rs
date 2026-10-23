@@ -1,0 +1,13 @@
+{
+  "name": "sw-rs-viewer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "sh build.sh",
+    "serve": "python3 -m http.server 8097 --bind 127.0.0.1 --directory web",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

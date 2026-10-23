@@ -18,3 +18,31 @@ jobs:
       - run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
       - run: wasm-bindgen --target nodejs --out-dir pkg/node target/wasm32-unknown-unknown/debug/sw_rs.wasm
       - run: node scripts/wasm-smoke.cjs
+  viewer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo clippy --lib --target wasm32-unknown-unknown --locked -- -D warnings
+      - run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
+      - run: sh build.sh
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: viewer-browser-results
+          path: viewer/test-results

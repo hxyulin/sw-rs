@@ -4,3 +4,13 @@
 /pkg/
 /local-assets/
 __pycache__/
+
+/viewer/target/
+/viewer/web/pkg/
+/viewer/test-results/
+/viewer/node_modules/
+
+/viewer/test-fixtures/
+/viewer/web/demo.zip
+
+/viewer/web/fonts/

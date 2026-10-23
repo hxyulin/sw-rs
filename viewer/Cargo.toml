@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 hxyulin <hxyulin@proton.me>
+[workspace]
+resolver = "3"
+[package]
+name = "sw-viewer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT AND Apache-2.0 AND OFL-1.1"
+publish = false
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+sw-rs = { path = "..", features = ["archive"] }
+serde_json = "1"
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rxui = { git = "https://github.com/hxyulin/rxui", rev = "14ec844a76dacf88231d0260bbe0f0713fa7f195", default-features = false, features = ["rendering"] }
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
+[profile.release]
+opt-level = 2
+[lints.rust]
+unsafe_code = "forbid"

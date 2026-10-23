@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 hxyulin <hxyulin@proton.me>
+import { defineConfig } from "@playwright/test";
+export default defineConfig({
+  testDir: "./tests",
+  projects: [
+    { name: "chromium", use: { deviceScaleFactor: 1 } },
+    { name: "chromium-hidpi", use: { deviceScaleFactor: 2 } },
+  ],
+  timeout: 60000,
+  workers: 1,
+  use: {
+    baseURL: "http://127.0.0.1:8097",
+    viewport: { width: 1280, height: 850 },
+    launchOptions: {
+      args: [
+        "--enable-unsafe-webgpu",
+        "--use-angle=swiftshader",
+        "--enable-features=Vulkan",
+        "--disable-vulkan-surface",
+      ],
+    },
+  },
+  webServer: {
+    command: "npm run serve",
+    url: "http://127.0.0.1:8097",
+    reuseExistingServer: true,
+  },
+});
