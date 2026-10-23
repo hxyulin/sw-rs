@@ -8,6 +8,7 @@
 //! See https://help.solidworks.com/2016/english/SolidWorks/sldworks/c_appearances_overview.htm.
 use crate::Diagnostic;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 pub(crate) const STREAM: &str = "swXmlContents/MATERIALTREE";
 
@@ -37,8 +38,82 @@ pub struct SavedMaterial {
     pub density: Option<MaterialDensity>,
     /// Exact saved swatch RGB attribute, not a resolved face/body appearance.
     pub saved_swatch_rgb: Option<String>,
+    /// Raw saved material-default appearance, without face/body ownership or asset loading.
+    pub appearance: Option<SavedAppearance>,
     /// Element path in `MaterialData::source_stream`, using one-based sibling indices.
     pub source_path: String,
+}
+
+/// Saved material-default hints; shader identity need not match the physical family.
+///
+/// These records do not establish an applied face/body appearance. External paths
+/// are inert source tokens, and optical values are not converted to rendering units.
+#[derive(Clone, Debug, Serialize)]
+pub struct SavedAppearance {
+    /// Material element path in `MaterialData::source_stream`.
+    pub source_path: String,
+    /// Direct saved shader records, preserving order and duplicates.
+    pub shaders: Vec<SavedAppearanceRecord>,
+    /// Direct saved `swtexture` references, without resolving external files.
+    pub texture_references: Vec<SavedAppearanceRecord>,
+    /// Saved swatch `Optical` records, preserving all attribute tokens and duplicates.
+    pub optical: Vec<SavedAppearanceRecord>,
+}
+
+/// One uninterpreted appearance XML element with exact attribute values.
+#[derive(Clone, Debug, Serialize)]
+pub struct SavedAppearanceRecord {
+    /// Saved XML local element name, such as `pwshader2`, `swtexture` or `Optical`.
+    pub element: String,
+    /// Every saved attribute; namespaced keys use `{namespace}local` notation.
+    /// Values are XML-decoded tokens without numeric interpretation.
+    pub attributes: BTreeMap<String, String>,
+    /// Element path in `MaterialData::source_stream`, with one-based sibling indices.
+    pub source_path: String,
+}
+
+fn appearance(n: roxmltree::Node<'_, '_>) -> Option<SavedAppearance> {
+    let record = |node: roxmltree::Node<'_, '_>| SavedAppearanceRecord {
+        element: node.tag_name().name().to_owned(),
+        attributes: node
+            .attributes()
+            .map(|a| {
+                let name = match a.namespace() {
+                    Some(namespace) => format!("{{{namespace}}}{}", a.name()),
+                    None => a.name().to_owned(),
+                };
+                (name, a.value().to_owned())
+            })
+            .collect(),
+        source_path: path(node),
+    };
+    let mut saved = SavedAppearance {
+        source_path: path(n),
+        shaders: Vec::new(),
+        texture_references: Vec::new(),
+        optical: Vec::new(),
+    };
+    for node in n
+        .children()
+        .filter(|p| p.has_tag_name("shaders"))
+        .flat_map(|p| p.children().filter(|c| c.is_element()))
+    {
+        if node.has_tag_name("swtexture") {
+            saved.texture_references.push(record(node));
+        } else {
+            saved.shaders.push(record(node));
+        }
+    }
+    for node in n
+        .children()
+        .filter(|p| p.has_tag_name("swatchcolor"))
+        .flat_map(|p| p.children())
+        .filter(|p| p.tag_name().name() == "Optical")
+    {
+        saved.optical.push(record(node));
+    }
+    (!saved.shaders.is_empty() || !saved.texture_references.is_empty() || !saved.optical.is_empty())
+        .then_some(saved)
 }
 
 /// A density token from a saved material definition, not a validated physical value.
@@ -182,6 +257,7 @@ pub(crate) fn parse(bytes: &[u8], diagnostics: &mut Vec<Diagnostic>) -> Option<M
                 .find(|p| p.has_tag_name("swatchcolor"))
                 .and_then(|p| p.attribute("RGB"))
                 .map(str::to_owned),
+            appearance: appearance(n),
             source_path: path(n),
         });
     }

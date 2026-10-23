@@ -44,6 +44,23 @@ pub(crate) fn lines(metadata: &Value, configuration: usize) -> Vec<String> {
             .unwrap_or("units unverified");
         result.push(format!("Saved density token: {value} ({units})"));
     }
+    for (field, label) in [
+        ("shaders", "Saved shader"),
+        ("texture_references", "Saved texture reference"),
+    ] {
+        if let Some(records) = definition["appearance"][field].as_array() {
+            for record in records {
+                let attributes = &record["attributes"];
+                if let Some(value) = attributes["name"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| attributes["path"].as_str().filter(|s| !s.is_empty()))
+                {
+                    result.push(format!("{label}: {value}"));
+                }
+            }
+        }
+    }
     result.push("Material source: saved MATERIALTREE configuration reference".into());
     result
 }

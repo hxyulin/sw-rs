@@ -413,6 +413,12 @@ try {
     searchInput.focus();
   });
   scene = new SceneView(document.querySelector("#scene"));
+  const appearanceStyle = document.querySelector("#appearance-style");
+  scene.appearanceStyle = appearanceStyle.value;
+  appearanceStyle.onchange = () => {
+    scene.appearanceStyle = appearanceStyle.value;
+    scene.draw();
+  };
   document.querySelector("#material-colors").onclick = event => {
     scene.materialsEnabled = !scene.materialsEnabled;
     event.currentTarget.setAttribute("aria-pressed", String(scene.materialsEnabled));

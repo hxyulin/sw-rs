@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Preserve saved shader/texture references and optical attributes; add saved
+  material appearance and physical-family styles without redecoding geometry.
+- Approximate known saved metal/plastic/fiber styles with procedural textures
+  and valid diffuse/specularity/emission coefficients; keep unknown data explicit.
+
 - Choose an assembly when opening archives with multiple assemblies, reopen the
   chooser, and browse an expandable occurrence hierarchy with component status.
 - Expose saved physical-material definitions and exact configuration references,

@@ -50,12 +50,19 @@ is not independent placement validation. Absent/malformed transforms are `None`
 `definition_index` resolves a unique definition within that document. Definitions
 alone do not prove assignment, and no parent-configuration or body assignment is
 inferred. Density retains its raw token and explicitly saved units, if any.
+Each definition also retains saved shader records, texture references and optical
+attributes with their source paths. These are metadata; external paths are never
+opened. Duplicate or unknown appearance records remain available for inspection.
 Physical material labels and display appearances are separate. The viewer maps
 explicit aluminum/carbon-fiber assignments to its own procedural brushed-metal
 and woven-composite presets; other assignments use a generic saved-swatch preset.
 These are approximate visualizations, not recovered SolidWorks shaders or UVs.
 Unassigned parts retain diagnostic colors, and a toolbar control switches the
 whole scene back to diagnostic colors.
+The **Appearance style** selector defaults to approximate saved material
+appearances and can switch to physical material-family presets. Saved PhotoWorks
+identities take precedence over generic realtime shader hints. This does not
+recover final face/body overrides from binary visual states.
 
 ## Native use
 

@@ -40,6 +40,7 @@ export class SceneView {
       uniform int surfaceMode;
       uniform vec3 baseColor; uniform float roughness; uniform float metallic;
       uniform vec3 eyePosition;
+      uniform vec3 opticalCoefficients; // diffuse, specularity, emission
       const float PI=3.14159265359;
       // Patterns are anchored to placed WORLD coordinates in metres. They do not
       // track the camera or bounds, and are not recovered CAD UVs/fiber directions.
@@ -70,7 +71,7 @@ export class SceneView {
         vec3 f0=mix(vec3(0.04),base,metal);
         vec3 fresnel=f0+(1.-f0)*pow(1.-vh,5.);
         vec3 specular=distribution*geometry*fresnel/max(4.*nv*nl,0.001);
-        return ((1.-fresnel)*(1.-metal)*base/PI+specular)*nl;
+        return ((1.-fresnel)*(1.-metal)*base/PI*opticalCoefficients.x+specular*opticalCoefficients.y)*nl;
       }
       void main(){
         vec3 normal=normalize(n);if(!gl_FrontFacing)normal=-normal;
@@ -82,7 +83,7 @@ export class SceneView {
         vec3 base=pow(clamp(baseColor,0.,1.),vec3(2.2));
         float r=clamp(roughness,0.08,1.);
         vec3 view=normalize(eyePosition-worldPosition);
-        if(surfaceMode==2){
+        if(surfaceMode==2 || surfaceMode==4){
           // Alternating over/under bundles with filtered fine filaments.
           vec2 q=uv*360.;
           float checker=wave(PI*q.x)*wave(PI*q.y);
@@ -98,13 +99,19 @@ export class SceneView {
           float broad=wave(2.*PI*uv.y*430.);
           base*=1.+0.07*brush+0.035*broad;
           r=clamp(r+0.045*brush,0.2,0.65);
+        } else if(surfaceMode==5){
+          // Filtered cast/plastic microtexture, synthesized from the saved style.
+          float grain=wave(2.*PI*uv.x*1700.)*wave(2.*PI*uv.y*1490.);
+          base*=1.+0.08*grain;
+          r=clamp(r+0.06*grain,0.15,0.9);
         }
         vec3 f0=mix(vec3(0.04),base,metallic);
         float grazing=pow(1.-max(dot(normal,view),0.),4.);
-        vec3 ambient=base*(0.21+0.12*max(normal.z,0.))*(1.-0.7*metallic);
+        vec3 ambient=base*(0.21+0.12*max(normal.z,0.))*(1.-0.7*metallic)*opticalCoefficients.x;
         ambient+=mix(f0,vec3(0.55),grazing)*(0.18+0.16*max(normal.z,0.));
         vec3 lit=ambient+3.*keyLight(normal,view,normalize(vec3(0.4,-0.5,0.8)),base,r,metallic);
         lit+=1.2*keyLight(normal,view,normalize(vec3(-0.6,0.3,0.5)),base,min(r+0.2,1.),metallic);
+        lit+=base*opticalCoefficients.z;
         // Approximate display response, not colorimetric/material metrology.
         lit=lit/(vec3(1.)+lit);
         outputColor=vec4(pow(max(lit,vec3(0.)),vec3(1./2.2)),1.);
@@ -120,7 +127,9 @@ export class SceneView {
     this.roughness = gl.getUniformLocation(program, "roughness");
     this.metallic = gl.getUniformLocation(program, "metallic");
     this.eyePosition = gl.getUniformLocation(program, "eyePosition");
+    this.opticalCoefficients = gl.getUniformLocation(program, "opticalCoefficients");
     this._materialsEnabled = true;
+    this.appearanceStyle = "saved";
     this.materials = [];
     this.batches = [];
     this.buffer = gl.createBuffer();
@@ -325,16 +334,20 @@ export class SceneView {
   }
   applyMaterial(material) {
     const gl = this.gl;
+    if (this.appearanceStyle === "saved" && material?.saved_surface)
+      material = material.saved_surface;
     const color = material?.base_color;
     if (!Array.isArray(color) || color.length !== 3 || !color.every(Number.isFinite)) {
       gl.uniform1i(this.surfaceMode, 0);
       return;
     }
-    const mode = material.pattern === "carbon_weave" ? 2 : material.pattern === "brushed_aluminum" ? 3 : 1;
+    const mode = { carbon_weave: 2, brushed_aluminum: 3, fiber_weave: 4, fine_grain: 5 }[material.pattern] || 1;
     gl.uniform1i(this.surfaceMode, mode);
     gl.uniform3fv(this.baseColor, color.map((v) => Math.max(0, Math.min(1, v))));
     gl.uniform1f(this.roughness, Number.isFinite(material.roughness) ? Math.max(0.08, Math.min(1, material.roughness)) : 0.6);
     gl.uniform1f(this.metallic, Number.isFinite(material.metallic) ? Math.max(0, Math.min(1, material.metallic)) : 0);
+    const coefficient = (value, fallback) => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
+    gl.uniform3f(this.opticalCoefficients, coefficient(material.diffuse, 1), coefficient(material.specularity, 1), coefficient(material.emission, 0));
   }
 }
 function multiply(a, b) {

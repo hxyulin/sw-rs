@@ -34,6 +34,9 @@
         color: #74d5cb;
         letter-spacing: 0.13em;
       }
+      .appearance-style { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+      #appearance-style { background: #202d3b; color: #d0dce6; border: 1px solid #3e5264; border-radius: 5px; padding: 5px; max-width: 180px; }
+      #appearance-style:focus-visible { outline: 2px solid #72d5c7; outline-offset: 2px; }
       #status {
         flex: 1;
         overflow: hidden;
@@ -189,7 +192,12 @@
     <header>
       <b>SW EXPLORER</b
       ><span id="status" role="status" aria-live="polite">Starting RXUI…</span
-      ><button id="material-colors" aria-pressed="true" title="Approximate saved material presets; unassigned geometry keeps diagnostic colors">Material colors</button><button id="choose-assembly" hidden>Choose assembly…</button><button
+      ><label class="appearance-style" for="appearance-style">Appearance style
+        <select id="appearance-style">
+          <option value="saved" selected>Saved material appearance</option>
+          <option value="family">Material family presets</option>
+        </select>
+      </label><button id="material-colors" aria-pressed="true" title="Approximate saved material presets; unassigned geometry keeps diagnostic colors">Material colors</button><button id="choose-assembly" hidden>Choose assembly…</button><button
         id="cancel"
         title="Stop parsing and release the uploaded archive"
       >

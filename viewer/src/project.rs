@@ -615,6 +615,7 @@ mod traversal_tests {
                 classifications: vec!["铝合金".into()],
                 density: None,
                 saved_swatch_rgb: None,
+                appearance: None,
                 source_path: "/materials/classification/material".into(),
             }],
             assignments: vec![assignment],

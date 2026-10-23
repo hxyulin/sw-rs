@@ -5,7 +5,10 @@
 use crate::{Container, Diagnostic, config, xml};
 #[path = "material.rs"]
 mod material;
-pub use material::{MaterialAssignment, MaterialData, MaterialDensity, SavedMaterial};
+pub use material::{
+    MaterialAssignment, MaterialData, MaterialDensity, SavedAppearance, SavedAppearanceRecord,
+    SavedMaterial,
+};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 

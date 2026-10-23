@@ -28,7 +28,7 @@ def part(size, material=False):
     info=b'<swSolidWorks><swHeader><swFile id="p"/></swHeader><swModelList><swModel id="m" swFileRef="p" swConfigurationId="0" swConfigurationName="Default"/></swModelList></swSolidWorks>'
     streams = [('swXmlContents/COMPINSTANCETREE',info),('Contents/DisplayLists',display)]
     if material:
-        streams.append(('swXmlContents/MATERIALTREE', b'<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials"><classification name="Aluminum"><material name="test materials|6061 Alloy" matid="21"><physicalproperties><DENS value="2700"/></physicalproperties></material></classification><configurationslist><configuration name="Default" material="test materials|6061 Alloy|21"/></configurationslist></mstns:materials>'))
+        streams.append(('swXmlContents/MATERIALTREE', b'<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials"><classification name="Aluminum"><material name="test materials|6061 Alloy" matid="21"><swatchcolor RGB="151515"/><shaders><pwshader name="black low gloss plastic" path="designlibrary/appearances/plastic/low gloss/black low gloss plastic.p2m"/></shaders><physicalproperties><DENS value="2700"/></physicalproperties></material></classification><configurationslist><configuration name="Default" material="test materials|6061 Alloy|21"/></configurationslist></mstns:materials>'))
     return container(streams)
 def assembly(missing=False):
     files='<swFile id="root" swPath="Demo.SLDASM"/>'

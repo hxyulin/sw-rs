@@ -96,6 +96,20 @@ fiber orientation are not recovered. Unassigned Parts keep diagnostic colors.
 Presets and draw ranges are carried separately from geometry, and repeated
 occurrences with the same saved preset share its record. No SolidWorks shader
 library, external texture download or proprietary material asset is required.
+
+**Appearance style** defaults to **Saved material appearance**, using saved shader
+identities, swatches and valid diffuse/specularity/emission coefficients. Known
+styles include satin aluminum, polished/matte metals, plastic, glass-fiber and
+carbon-fiber patterns. PhotoWorks shader names/paths take precedence over generic
+realtime hints. **Material family presets** instead uses the physical material
+classification; a carbon-fiber material can have a saved plastic appearance.
+Changing styles preserves the scene/configuration and needs no mesh decoding.
+
+The inspector shows saved shader and texture reference names. Original `.p2m`,
+JPEG and DDS shader resources are not loaded, and procedural textures are
+approximations. Original UVs, transparent rendering, full shader parameters and
+face/body/display-state overrides remain unsupported. Raw optical tokens are
+retained in parser output even when the viewport does not implement them.
 Unknown transforms, missing references,
 ambiguous paths/configurations, cycles and unsupported meshes are reported.
 An incomplete assembly remains labelled with its issue count; opening a drawing

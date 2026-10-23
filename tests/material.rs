@@ -238,3 +238,92 @@ fn multiple_density_records_are_not_arbitrarily_selected() {
             .any(|d| d.message.contains("ambiguous density"))
     );
 }
+
+#[test]
+fn saved_appearance_preserves_raw_references_optics_and_element_provenance() {
+    let doc = document(xml(r#"<classification name="synthetic physical family"><material name="custom|test"><shaders><pwshader2 name="unrelated shader" path="\metal\example.p2m" isNewShader="1"/><cgshader2 name="example-id"/><swtexture path="images\textures\example.jpg"/></shaders><swatchcolor RGB="aabbcc"><o:Optical xmlns:o="http://www.solidworks.com/sldcolorswatch" Ambient="1.000000" Transparency="0.000000" Shininess="NaN" custom="uninterpreted"/></swatchcolor></material></classification>"#).as_bytes());
+    let materials = doc.materials.unwrap();
+    let definition = &materials.definitions[0];
+    assert_eq!(definition.classifications, ["synthetic physical family"]);
+    let appearance = definition.appearance.as_ref().unwrap();
+    let base = "/materials[1]/classification[1]/material[1]";
+    assert_eq!(appearance.source_path, base);
+    assert_eq!(appearance.shaders.len(), 2);
+    assert_eq!(appearance.shaders[0].element, "pwshader2");
+    assert_eq!(appearance.shaders[0].attributes["name"], "unrelated shader");
+    assert_eq!(
+        appearance.shaders[0].attributes["path"],
+        r"\metal\example.p2m"
+    );
+    assert_eq!(appearance.shaders[0].attributes["isNewShader"], "1");
+    assert_eq!(appearance.shaders[1].attributes["name"], "example-id");
+    assert_eq!(
+        appearance.shaders[0].source_path,
+        format!("{base}/shaders[1]/pwshader2[1]")
+    );
+    assert_eq!(appearance.texture_references.len(), 1);
+    assert_eq!(
+        appearance.texture_references[0].attributes["path"],
+        r"images\textures\example.jpg"
+    );
+    assert_eq!(
+        appearance.texture_references[0].source_path,
+        format!("{base}/shaders[1]/swtexture[1]")
+    );
+    assert_eq!(appearance.optical[0].element, "Optical");
+    assert_eq!(appearance.optical[0].attributes["Shininess"], "NaN");
+    assert_eq!(appearance.optical[0].attributes["custom"], "uninterpreted");
+    assert_eq!(
+        appearance.optical[0].source_path,
+        format!("{base}/swatchcolor[1]/Optical[1]")
+    );
+    assert!(materials.assignments.is_empty());
+    assert!(!materials.body_assignments_decoded);
+}
+
+#[test]
+fn saved_appearance_retains_duplicates_and_unknown_shader_attributes() {
+    let doc = document(xml(r#"<classification><material name="example"><shaders><futureShader xmlns:x="urn:synthetic" name="first" x:name="qualified"/><futureShader name="second"/><swtexture path="one"/><swtexture path="two"/></shaders><shaders><pwshader2 name="third"/></shaders><swatchcolor><Optical Diffuse="bad"/><Optical Diffuse="2"/></swatchcolor></material></classification>"#).as_bytes());
+    let materials = doc.materials.unwrap();
+    let appearance = materials.definitions[0].appearance.as_ref().unwrap();
+    assert_eq!(appearance.shaders.len(), 3);
+    assert_eq!(appearance.shaders[0].attributes["name"], "first");
+    assert_eq!(
+        appearance.shaders[0].attributes["{urn:synthetic}name"],
+        "qualified"
+    );
+    assert_eq!(appearance.shaders[1].attributes["name"], "second");
+    assert!(
+        appearance.shaders[1]
+            .source_path
+            .ends_with("/shaders[1]/futureShader[2]")
+    );
+    assert!(
+        appearance.shaders[2]
+            .source_path
+            .ends_with("/shaders[2]/pwshader2[1]")
+    );
+    assert_eq!(appearance.texture_references.len(), 2);
+    assert_eq!(appearance.optical.len(), 2);
+    assert_eq!(appearance.optical[0].attributes["Diffuse"], "bad");
+    assert_eq!(appearance.optical[1].attributes["Diffuse"], "2");
+    assert!(appearance.optical[1].source_path.ends_with("/Optical[2]"));
+}
+
+#[test]
+fn absent_appearance_is_none_and_nested_unrelated_hints_are_not_selected() {
+    for body in [
+        "",
+        "<shaders/>",
+        "<swatchcolor RGB=\"aaaaaa\"/>",
+        "<custom><shaders><pwshader2 name=\"nested\"/></shaders><swatchcolor><Optical/></swatchcolor></custom>",
+    ] {
+        let doc = document(
+            xml(&format!(
+                "<classification><material name=\"example\">{body}</material></classification>"
+            ))
+            .as_bytes(),
+        );
+        assert!(doc.materials.unwrap().definitions[0].appearance.is_none());
+    }
+}

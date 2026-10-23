@@ -447,3 +447,51 @@ test("opening a configured occurrence retains its nondefault assembly configurat
   expect(elements.some(e => e.text === "Alternate")).toBe(true);
   expect(await page.evaluate(() => window.viewer.snapshot().state.diagnostics)).toEqual([]);
 });
+
+test("appearance style recreates saved shader separately from physical family without decoding", async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    window.sceneRequests = 0;
+    const postMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function(message, ...rest) {
+      if (message.type === "scene") window.sceneRequests++;
+      return postMessage.call(this, message, ...rest);
+    };
+  });
+  const style = page.getByRole("combobox", { name: "Appearance style", exact: true });
+  await expect(style).toHaveValue("saved");
+  await expect(style.locator("option")).toHaveText(["Saved material appearance", "Material family presets"]);
+  await page.locator("#file").setInputFiles(path.join(fixtures, "single.SLDPRT"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  const state = await page.evaluate(() => window.viewer.snapshot().state);
+  expect(state.info).toContain("Saved shader: black low gloss plastic");
+  expect(state.info).toContain("Material source: saved MATERIALTREE configuration reference");
+  const pixels = () => page.locator("#scene").evaluate(canvas => canvas.toDataURL());
+  const saved = await pixels();
+  const requests = await page.evaluate(() => window.sceneRequests);
+  await style.selectOption("family");
+  const family = await pixels();
+  expect(family).not.toBe(saved);
+  expect(await page.evaluate(() => window.viewer.snapshot().state)).toEqual(state);
+  expect(await page.evaluate(() => window.sceneRequests)).toBe(requests);
+  expect(await page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await expect(page.getByRole("treeitem", { name: "single.SLDPRT · part · Default", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Material colors", exact: true }).click();
+  const diagnostic = await pixels();
+  await style.selectOption("saved");
+  expect(await pixels()).toBe(diagnostic);
+  await page.getByRole("button", { name: "Diagnostic colors", exact: true }).click();
+  expect(await pixels()).toBe(saved);
+  expect(await page.evaluate(() => window.sceneRequests)).toBe(requests);
+  // Both document selection and a fresh import retain the chosen display style.
+  await style.selectOption("family");
+  await page.locator("#file").setInputFiles(path.join(fixtures, "demo.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(48);
+  await clickRxui(page, "file-1");
+  await expect.poll(() => page.evaluate(() => window.viewer.snapshot().state.selected)).toBe("Base.SLDPRT");
+  await expect(style).toHaveValue("family");
+  await page.locator("#file").setInputFiles(path.join(fixtures, "single.SLDPRT"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  await expect(style).toHaveValue("family");
+  expect(await pixels()).toBe(family);
+});

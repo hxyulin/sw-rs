@@ -66,6 +66,39 @@ classification and complete nonoverlapping draw ranges. These procedural
 appearances use world-space projection and artistic optical parameters; they
 are not recovered source face appearances, UVs or fiber directions.
 
+## Design-library appearance investigation — 2026-10-24
+
+The supplied `RM_Design_Library.zip` has SHA-256
+`bc7c818c00221f8f5e90183392be2c492a2f865bd9c24a6f2c512c355cdaa48e`.
+Its 248 native-extension entries comprise 240 CAD documents and eight lock files:
+147 modern inline containers and 93 legacy OLE documents. The runtime remains a
+modern-format reader; legacy research used a local-only inspection tool, not a
+new application dependency. Across both formats the audit found 211 material
+trees, 160 definitions and 23 distinct saved appearance profiles. There are no
+standalone `.sldmat` or `.p2m` members; the 13 PNGs are model/file-list references.
+
+Saved material defaults pair 6061 with satin aluminum, AISI 304 with polished
+steel and ABS with textured plastic. Some physical material families disagree
+with their saved shader identities, and generic realtime hints can disagree with
+more specific PhotoWorks names/paths. Both are preserved; the viewer offers
+separate saved-default and physical-family visualizations. Source optical
+records remain raw; valid diffuse/specularity/emission values influence the
+approximate renderer without claiming equivalence to the original shader.
+
+Binary visual-state inspection found 55 distinct resource paths in the library
+and 48 in EGA, including component/face/body visual record classes. Those paths
+and offsets are evidence, not established ownership or recovered texture pixels.
+Final display-state overrides require a separately validated decoder. The
+library's battery and battery-rack STEP files exactly match existing EGA files;
+no native body/source identity established replacements for the missing Parts.
+
+Evidence, hashes and reproducible research scripts remain ignored under
+`local-assets/library-appearance/` and `local-assets/design-library-research/`.
+The saved/family appearance regression verifies changed pixels, unchanged
+geometry/configurations, no worker scene request, toggle restoration and style
+persistence. The public browser suite passes 50 tests at DPR 1/2, with two optional
+private cases skipped; a separate real-EGA browser run verifies both modes.
+
 ## Original metadata comparison
 
 Compared this initial Rust implementation against openswx revision

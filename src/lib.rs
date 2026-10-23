@@ -15,7 +15,8 @@ mod xml;
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
     Component, Configuration, CutListItem, Document, MassProperties, MaterialAssignment,
-    MaterialData, MaterialDensity, ReferenceReplacement, SavedMaterial, Sheet, SheetView,
+    MaterialData, MaterialDensity, ReferenceReplacement, SavedAppearance, SavedAppearanceRecord,
+    SavedMaterial, Sheet, SheetView,
 };
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
