@@ -188,3 +188,146 @@ pub(crate) fn components(tree: &Tree<'_>, index: u32) -> Vec<Component> {
         })
         .collect()
 }
+
+pub(crate) fn cut_list(bytes: &[u8]) -> Vec<crate::CutListItem> {
+    let Some(d) = parse(bytes) else {
+        return Vec::new();
+    };
+    d.root_element()
+        .children()
+        .filter(|n| n.has_tag_name("Feature"))
+        .map(|f| {
+            let mut properties = BTreeMap::new();
+            for p in f.children().filter(|n| n.has_tag_name("CustomProperty")) {
+                let name = attr(p, "Name");
+                if !name.is_empty() {
+                    properties
+                        .entry(name)
+                        .or_insert(p.text().unwrap_or_default().trim().to_owned());
+                }
+            }
+            let mut quantity = properties
+                .get("QUANTITY")
+                .and_then(|v| v.parse::<i32>().ok())
+                .unwrap_or(0);
+            if quantity == 0 {
+                quantity = f
+                    .children()
+                    .find(|n| n.has_tag_name("Quantity"))
+                    .and_then(|n| n.text())
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0);
+            }
+            crate::CutListItem {
+                name: attr(f, "Name"),
+                quantity,
+                properties,
+            }
+        })
+        .collect()
+}
+pub(crate) fn sheets(keywords: &[u8], names: &[u8]) -> Vec<crate::Sheet> {
+    if let Some(start) = keywords.iter().position(|b| *b == b'<')
+        && let Some(d) = parse(&keywords[start..])
+    {
+        let sheets: Vec<_> = d
+            .root_element()
+            .children()
+            .filter(|n| {
+                n.has_tag_name("Sheet")
+                    && matches!(n.attribute("Type"), Some("Sheet" | "Blatt" | "List"))
+            })
+            .map(|s| crate::Sheet {
+                name: attr(s, "Name"),
+                views: s
+                    .children()
+                    .filter(|n| n.has_tag_name("View"))
+                    .map(|v| crate::SheetView {
+                        name: attr(v, "Name"),
+                        referenced_document: v.text().unwrap_or_default().trim().into(),
+                        referenced_configuration: attr(v, "Description"),
+                    })
+                    .collect(),
+            })
+            .collect();
+        if !sheets.is_empty() {
+            return sheets;
+        }
+    }
+    let Some(count) = names.get(..2).map(|b| u16::from_le_bytes([b[0], b[1]])) else {
+        return Vec::new();
+    };
+    let mut pos = 2;
+    let mut sheets = Vec::new();
+    for _ in 0..count {
+        if names.get(pos..pos + 3) != Some(&[255, 254, 255]) {
+            break;
+        }
+        let Some(&len) = names.get(pos + 3) else {
+            break;
+        };
+        let end = pos + 4 + usize::from(len) * 2;
+        let Some(raw) = names.get(pos + 4..end) else {
+            break;
+        };
+        let units: Vec<_> = raw
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes(*b))
+            .collect();
+        let Ok(name) = String::from_utf16(&units) else {
+            break;
+        };
+        sheets.push(crate::Sheet {
+            name,
+            views: Vec::new(),
+        });
+        pos = end;
+    }
+    sheets
+}
+pub(crate) fn references(data: &[u8]) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut at = 0;
+    while at + 6 <= data.len() {
+        let drive =
+            data[at].is_ascii_alphabetic() && data[at + 1..at + 6] == [0, b':', 0, b'\\', 0];
+        let unc = data[at..at + 4] == [b'\\', 0, b'\\', 0];
+        if !drive && !unc {
+            at += 1;
+            continue;
+        }
+        let mut units = Vec::new();
+        let mut end = at;
+        while end + 2 <= data.len() {
+            let u = u16::from_le_bytes([data[end], data[end + 1]]);
+            end += 2;
+            if u < 32 || u == 65535 {
+                break;
+            }
+            units.push(u);
+            if units.len() > 32_768 {
+                break;
+            }
+            let cad_suffix = [b".sldprt", b".sldasm"].iter().any(|suffix| {
+                units.len() >= suffix.len()
+                    && units[units.len() - suffix.len()..]
+                        .iter()
+                        .zip(suffix.iter())
+                        .all(|(u, b)| *u < 128 && (*u as u8).eq_ignore_ascii_case(b))
+            });
+            if cad_suffix {
+                if let Ok(path) = String::from_utf16(&units)
+                    && seen.insert(path.to_ascii_lowercase())
+                {
+                    paths.push(path);
+                }
+                break;
+            }
+        }
+        at = end;
+    }
+    paths
+}

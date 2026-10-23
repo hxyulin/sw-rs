@@ -22,8 +22,12 @@ Rust-specific adaptations include checked slice access, resource budgets, strict
 finite numeric parsing, explicit unknown transforms, and optional wasm-bindgen
 bindings. This port does not claim full upstream feature parity.
 
-No code from sldkit (which includes PolyForm Noncommercial terms), sldprt2xt
-(AGPL), a proprietary SolidWorks SDK, or a proprietary Parasolid SDK is included.
+The mesh decoder adapts a narrow Apache-2.0 cadmpeg implementation from the
+older MIT-licensed sldkit snapshot; see `NOTICE-cadmpeg.md` and
+`LICENSE-Apache-2.0` for its independent terms and modification provenance.
+No newer PolyForm Noncommercial sldkit code, AGPL sldprt2xt code, proprietary
+SolidWorks SDK, or proprietary Parasolid SDK is included. The combined package
+requires the retained MIT and Apache-2.0 notices (`MIT AND Apache-2.0`).
 The source CAD used locally for comparison is not part of this repository and
 is not relicensed by this project's license.
 

@@ -101,6 +101,21 @@ impl Container {
             let compressed = u32_at(data, at + 14);
             let expected = u32_at(data, at + 18);
             let name_len = u32_at(data, at + 22);
+            // Tail-directory names follow a 14-byte descriptor, rather than
+            // the inline header. Recognize them before trying to inflate bytes.
+            if crc == 0
+                && expected == 0
+                && (1..500).contains(&name_len)
+                && let Some(record) = data
+                    .get(at..)
+                    .and_then(|tail| tail.get(..40 + name_len + 6))
+                && record[40..40 + name_len]
+                    .iter()
+                    .all(|b| (0x20..0x7f).contains(&b.rotate_left(u32::from(data[7]) & 7)))
+            {
+                warn("directory index record (no inline payload)");
+                continue;
+            }
             let name_start = at + 26;
             // Subtraction checks avoid overflow on wasm32.
             if name_len == 0 || name_len > 512 || name_len > data.len() - name_start {

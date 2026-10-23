@@ -181,3 +181,135 @@ fn binary_configuration_names_obey_version_gates_and_parent_ids() {
     assert_eq!(doc.configurations[1].index, 3);
     assert_eq!(doc.configurations[1].parent_index, Some(0));
 }
+
+fn display_table() -> Vec<u8> {
+    fn descriptor(out: &mut Vec<u8>, size: u32, kind: u32, count: u32, bytes: &[u8]) {
+        for v in [size, kind, 2, count] {
+            out.extend(v.to_le_bytes());
+        }
+        out.extend(bytes);
+    }
+    let mut table = Vec::new();
+    descriptor(&mut table, 4, 8, 1, &3u32.to_le_bytes());
+    let positions: Vec<u8> = [0f32, 0., 0., 1., 0., 0., 0., 1., 0.]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect();
+    descriptor(&mut table, 12, 100, 3, &positions);
+    descriptor(&mut table, 12, 100, 3, &[0; 36]);
+    descriptor(&mut table, 4, 8, 4, &[0; 16]);
+    descriptor(&mut table, 4, 8, 1, &4u32.to_le_bytes());
+    descriptor(&mut table, 1, 8, 4, &[0; 4]);
+    table
+}
+fn display_payload() -> Vec<u8> {
+    let class = b"uoTempFaceTessData_c";
+    let mut out = vec![255, 255, 1, 0];
+    out.extend((class.len() as u16).to_le_bytes());
+    out.extend(class);
+    out.extend(1u32.to_le_bytes());
+    out.extend(1u32.to_le_bytes());
+    out.extend(display_table());
+    out
+}
+#[test]
+fn cached_geometry_is_byte_based_hashed_and_preserves_winding_and_units() {
+    let payload = display_payload();
+    let bytes = file(&[("Contents/DisplayLists", &payload)]);
+    let g = sw_rs::geometry(&bytes, "synthetic.SLDPRT").unwrap();
+    assert_eq!(g.source.sha256.len(), 64);
+    assert_eq!(g.length_unit, "millimeter");
+    let m = &g.model.tessellations[0];
+    assert_eq!(m.vertices, [[0., 0., 0.], [1000., 0., 0.], [0., 1000., 0.]]);
+    assert_eq!(m.triangles, [[0, 1, 2]]);
+    assert_eq!(
+        &payload[m.source_offset..m.source_offset + 4],
+        &4u32.to_le_bytes()
+    );
+    assert!(sw_rs::geometry(&bytes, "assembly.SLDASM").is_err());
+}
+#[test]
+fn cached_geometry_rejects_missing_truncated_nonfinite_and_ambiguous_data() {
+    assert!(sw_rs::geometry(&file(&[("other", b"x")]), "p.SLDPRT").is_err());
+    let p = display_payload();
+    for end in 0..p.len() {
+        assert!(
+            sw_rs::geometry(&file(&[("Contents/DisplayLists", &p[..end])]), "p.SLDPRT").is_err()
+        );
+    }
+    let mut p = display_payload();
+    let start = 6 + b"uoTempFaceTessData_c".len() + 8 + 20 + 16;
+    p[start..start + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert!(sw_rs::geometry(&file(&[("Contents/DisplayLists", &p)]), "p.SLDPRT").is_err());
+    let p = display_payload();
+    let bytes = file(&[
+        ("Contents/DisplayLists", &p),
+        ("Contents/Config-1", b"x"),
+        ("Contents/Config-2", b"x"),
+    ]);
+    assert!(
+        sw_rs::geometry(&bytes, "p.SLDPRT")
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous")
+    );
+}
+#[test]
+fn metadata_json_has_cache_compatible_com_and_no_preview_byte_arrays() {
+    let info=br#"<properties xmlns:vt="urn:vt"><propertySection><property name="SW-MassProp-Config-0"><vt:lpstr>1,2,3,4,5,6,7,8,9,10,11,12</vt:lpstr></property></propertySection></properties>"#;
+    let cut=br#"<Configuration Name="default"><Feature Name="bar"><CustomProperty Name="QUANTITY">2</CustomProperty></Feature></Configuration>"#;
+    let bytes = file(&[
+        ("docProps/ISolidWorksInformation.xml", info),
+        ("docProps/Config-0-Cutlist-Properties.xml", cut),
+        ("PreviewPNG", b"\x89PNG\r\n\x1a\npixels"),
+    ]);
+    let doc = sw_rs::parse(&bytes, "p.SLDPRT").unwrap();
+    let json = serde_json::to_value(&doc).unwrap();
+    assert_eq!(json["schema"], "sw-rs-metadata-v1");
+    assert_eq!(json["doc_type"], "part");
+    assert_eq!(
+        json["configurations"][0]["mass_properties"]["center_of_gravity"],
+        serde_json::json!({"x":1.,"y":2.,"z":3.})
+    );
+    assert_eq!(json["configurations"][0]["cut_list"][0]["quantity"], 2);
+    assert!(json.get("preview_png").is_none());
+    assert!(json["configurations"][0].get("preview_png").is_none());
+    assert!(!doc.configurations[0].preview_png.is_empty());
+}
+
+#[test]
+fn drawing_sheet_and_utf16_reference_metadata_preserve_unicode() {
+    let xml = r#"<Keywords><Sheet Name="图纸" Type="Sheet"><View Name="front" Description="默认"> C:\部件.SLDPRT </View></Sheet><Sheet Name="template" Type="Sheet Format"/></Keywords>"#;
+    let path: Vec<u8> = "C:\\部件🦀.SLDPRT\0"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let bytes = file(&[
+        ("swXmlContents/KeyWords", xml.as_bytes()),
+        ("Header2", &path),
+    ]);
+    let doc = sw_rs::parse(&bytes, "d.SLDDRW").unwrap();
+    assert_eq!(doc.sheets.len(), 1);
+    assert_eq!(doc.sheets[0].views[0].referenced_configuration, "默认");
+    assert_eq!(doc.header_references, ["C:\\部件🦀.SLDPRT"]);
+}
+
+#[test]
+fn descriptor_budget_rejects_large_table_before_vertex_expansion() {
+    let count = 250_001u32;
+    let mut p = display_payload();
+    let table = 6 + b"uoTempFaceTessData_c".len() + 8;
+    p.truncate(table);
+    for n in [4u32, 8, 2, 1, count, 12, 100, 2, count] {
+        p.extend(n.to_le_bytes());
+    }
+    p.resize(p.len() + count as usize * 12, 0);
+    // The recognizable strip/position descriptors exceed the profile limit.
+    let bytes = file(&[("Contents/DisplayLists", &p)]);
+    assert!(
+        sw_rs::geometry(&bytes, "p.SLDPRT")
+            .unwrap_err()
+            .to_string()
+            .contains("resource limit")
+    );
+}

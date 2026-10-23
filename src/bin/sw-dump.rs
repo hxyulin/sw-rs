@@ -1,12 +1,45 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
-//! Native JSON metadata inspection CLI.
+//! Versioned native metadata and cached Part geometry inspection CLI.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args_os()
-        .nth(1)
-        .ok_or("usage: sw-dump MODEL.SLDPRT|MODEL.SLDASM|MODEL.SLDDRW")?;
-    let data = std::fs::read(&path)?;
-    let doc = sw_rs::parse(&data, &path.to_string_lossy())?;
-    serde_json::to_writer_pretty(std::io::stdout().lock(), &doc)?;
+    let mut args = std::env::args_os().skip(1);
+    let first = args
+        .next()
+        .ok_or("usage: sw-dump [metadata|geometry] MODEL | --version")?;
+    if first == "--version" {
+        println!("sw-rs {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    let geometry = first == "geometry";
+    let path = if geometry || first == "metadata" {
+        args.next().ok_or("missing native document path")?
+    } else {
+        first
+    };
+    if args.next().is_some() {
+        return Err("unexpected argument".into());
+    }
+    let file = std::fs::File::open(&path)?;
+    use std::io::Read;
+    let mut data = Vec::new();
+    file.take((sw_rs::Limits::default().max_file_bytes as u64) + 1)
+        .read_to_end(&mut data)?;
+    let result = if geometry {
+        match sw_rs::geometry(&data, &path.to_string_lossy()) {
+            Ok(doc) => {
+                serde_json::json!({"schema":"sw-rs-geometry-v1","geometry":doc,"diagnostics":[]})
+            }
+            Err(error) => {
+                serde_json::to_writer(
+                    std::io::stdout().lock(),
+                    &serde_json::json!({"schema":"sw-rs-geometry-v1","geometry":null,"diagnostics":[{"code":"unsupported_or_invalid_geometry","message":error.to_string()}]}),
+                )?;
+                return Err(error.into());
+            }
+        }
+    } else {
+        serde_json::to_value(sw_rs::parse(&data, &path.to_string_lossy())?)?
+    };
+    serde_json::to_writer(std::io::stdout().lock(), &result)?;
     Ok(())
 }

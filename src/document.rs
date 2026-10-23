@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Serialize)]
 pub struct MassProperties {
     /// Saved center-of-gravity tokens (not guaranteed metres).
+    #[serde(serialize_with = "serialize_com")]
     pub center_of_gravity: [f64; 3],
     /// Saved volume token.
     pub volume: f64,
@@ -51,6 +52,7 @@ pub struct Configuration {
     /// Resolved source name; empty when unknown.
     pub name: String,
     /// Saved parent configuration index, when present.
+    #[serde(rename = "derived_from_index", skip_serializing_if = "Option::is_none")]
     pub parent_index: Option<u32>,
     /// Saved user properties.
     pub properties: BTreeMap<String, String>,
@@ -58,11 +60,17 @@ pub struct Configuration {
     pub mass_properties: Option<MassProperties>,
     /// Direct occurrences for assemblies, without recursive file loading.
     pub components: Vec<Component>,
+    /// Saved weldment cut-list items, without unit interpretation.
+    pub cut_list: Vec<CutListItem>,
+    /// Saved configuration preview bytes, omitted from normal JSON output.
+    #[serde(skip_serializing)]
+    pub preview_png: Vec<u8>,
 }
 /// A partial metadata view of a modern SolidWorks document.
 #[derive(Debug, Serialize)]
 pub struct Document {
     /// Extension-derived kind: part, assembly, or drawing.
+    #[serde(rename = "doc_type")]
     pub document_type: String,
     /// Native model version (not a calendar year); zero when unknown.
     pub version: u32,
@@ -71,11 +79,20 @@ pub struct Document {
     /// Saved configurations; drawings currently expose raw streams only.
     pub configurations: Vec<Configuration>,
     /// Document PNG preview bytes, without decoding the image.
+    #[serde(skip_serializing)]
     pub preview_png: Vec<u8>,
     /// Names of decoded streams; use Container for the underlying bytes.
     pub stream_names: Vec<String>,
     /// Container and metadata diagnostics.
     pub diagnostics: Vec<Diagnostic>,
+    /// Saved drawing-sheet names and view references, without rendering semantics.
+    pub sheets: Vec<Sheet>,
+    /// Paths recovered from drawing replacement-reference storage.
+    pub replacement_references: Vec<String>,
+    /// Paths recovered from drawing Header2.
+    pub header_references: Vec<String>,
+    /// Versioned metadata interchange identity.
+    pub schema: &'static str,
 }
 pub(crate) fn build(mut container: Container, filename: &str) -> Document {
     let streams = &container.streams;
@@ -168,6 +185,17 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
                 mass_properties: info
                     .get(&format!("SW-MassProp-Config-{index}"))
                     .and_then(|s| xml::mass(s)),
+                cut_list: xml::cut_list(get(&format!(
+                    "docProps/Config-{index}-Cutlist-Properties.xml"
+                ))),
+                preview_png: {
+                    let p = png(get(&format!("Config-{index}-PreviewPNG")));
+                    if p.is_empty() {
+                        png(get("PreviewPNG"))
+                    } else {
+                        p
+                    }
+                },
                 components: if kind == "assembly" {
                     xml::components(&tree, index)
                 } else {
@@ -206,6 +234,24 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
             }
         }
     }
+    // Normal index records are inventory facts, not thousands of warnings.
+    let mut index_counts = BTreeMap::<String, usize>::new();
+    container.diagnostics.retain(|d| {
+        if d.message.starts_with("cache index record")
+            || d.message.starts_with("directory index record")
+        {
+            *index_counts.entry(d.message.clone()).or_default() += 1;
+            false
+        } else {
+            true
+        }
+    });
+    for (message, count) in index_counts {
+        container.diagnostics.push(Diagnostic {
+            offset: 0,
+            message: format!("{count} {message}s"),
+        });
+    }
     // Surface malformed XML instead of silently claiming complete extraction.
     for (name, data) in streams {
         if (name.ends_with(".xml") || name.ends_with("COMPINSTANCETREE"))
@@ -217,7 +263,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
             });
         }
     }
-    container.diagnostics.push(Diagnostic {offset: 0, message: "partial metadata reader: geometry, mates, cut lists and drawing semantics are not decoded; cached physical units remain unverified".into()});
+    container.diagnostics.push(Diagnostic {offset: 0, message: "partial metadata reader: B-Rep geometry, mates and drawing render semantics are not decoded; cached physical units remain unverified".into()});
     let preview = get("PreviewPNG");
     let magic = b"\x89PNG\r\n\x1a\n";
     let preview_png = preview
@@ -226,6 +272,25 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         .map(|p| preview[p..].to_vec())
         .unwrap_or_default();
     Document {
+        schema: "sw-rs-metadata-v1",
+        sheets: if kind == "drawing" {
+            xml::sheets(
+                get("swXmlContents/KeyWords"),
+                get("SheetPreviews/SheetNames"),
+            )
+        } else {
+            Vec::new()
+        },
+        replacement_references: if kind == "drawing" {
+            xml::references(get("SwDocMgrTempStorage/ReplaceRef"))
+        } else {
+            Vec::new()
+        },
+        header_references: if kind == "drawing" {
+            xml::references(get("Header2"))
+        } else {
+            Vec::new()
+        },
         document_type: kind.into(),
         version,
         global_properties: global,
@@ -234,4 +299,48 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         stream_names: streams.keys().cloned().collect(),
         diagnostics: container.diagnostics,
     }
+}
+
+fn serialize_com<S: serde::Serializer>(com: &[f64; 3], serializer: S) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+    let mut out = serializer.serialize_struct("CenterOfGravity", 3)?;
+    for (key, value) in ["x", "y", "z"].into_iter().zip(com) {
+        out.serialize_field(key, value)?;
+    }
+    out.end()
+}
+fn png(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .windows(8)
+        .position(|w| w == b"\x89PNG\r\n\x1a\n")
+        .map(|p| bytes[p..].to_vec())
+        .unwrap_or_default()
+}
+/// Saved weldment feature and resolved custom properties.
+#[derive(Debug, Serialize)]
+pub struct CutListItem {
+    /// Saved feature name.
+    pub name: String,
+    /// Saved quantity, zero when absent or malformed.
+    pub quantity: i32,
+    /// Saved per-feature property strings.
+    pub properties: BTreeMap<String, String>,
+}
+/// Saved drawing-sheet identity and referenced views.
+#[derive(Debug, Serialize)]
+pub struct Sheet {
+    /// Saved sheet name, preserving Unicode.
+    pub name: String,
+    /// Saved drawing-view references; these are not rendered entities.
+    pub views: Vec<SheetView>,
+}
+/// Saved drawing-view source reference.
+#[derive(Debug, Serialize)]
+pub struct SheetView {
+    /// Saved view name.
+    pub name: String,
+    /// Referenced native document path or filename.
+    pub referenced_document: String,
+    /// Referenced source configuration.
+    pub referenced_configuration: String,
 }

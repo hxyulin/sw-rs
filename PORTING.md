@@ -4,7 +4,14 @@
 
 Audit date: 2026-10-23. Initial sw-rs implementation: `93372ee`.
 Simulator paths below are relative to the sibling `rm-simulator` checkout.
-This is an implementation roadmap, not a claim that the replacement is complete.
+This records the initial audit and implementation roadmap. Subsequent progress:
+metadata interchange, cached Part meshes and the simulator's `--sw-rs` CLI
+integration are implemented. The 340-file consumed graph matches; all 243
+previously prepared Part meshes match and four additional caches recover.
+The small assembly also matches end to end, and real native/WASM geometry
+agrees. See VALIDATION.md for the current measured scope. The remaining
+Parasolid/drawing/BOM expansion and browser file-set/worker APIs remain future
+milestones. Historical gaps described below refer to the initial `93372ee`.
 
 ## What the simulator actually uses
 

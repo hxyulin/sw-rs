@@ -9,9 +9,14 @@
 mod config;
 mod container;
 mod document;
+mod geometry;
+mod mesh;
 mod xml;
 pub use container::{Container, Diagnostic, Limits, ParseError};
-pub use document::{Component, Configuration, Document, MassProperties};
+pub use document::{
+    Component, Configuration, CutListItem, Document, MassProperties, Sheet, SheetView,
+};
+pub use geometry::{GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry};
 
 /// Parse a modern document using bounded default resource limits.
 /// `filename` supplies the document kind; it is never opened or resolved.
@@ -36,4 +41,14 @@ pub fn parse_with_limits(
 pub fn parse_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindgen::JsError> {
     let doc = parse(bytes, filename).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
     serde_json::to_string(&doc).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
+}
+
+/// Decode cached Part tessellations from a browser Uint8Array into versioned JSON.
+/// This does not evaluate a B-Rep or validate saved cache freshness.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn geometry_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindgen::JsError> {
+    let doc = geometry(bytes, filename).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    serde_json::to_string(&serde_json::json!({"schema":"sw-rs-geometry-v1", "geometry":doc}))
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
 }

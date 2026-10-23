@@ -47,3 +47,59 @@ Resolved direct and transitive dependency license expressions were inspected
 using `cargo metadata --all-features --locked`: all offer permissive terms
 (MIT/Apache-2.0, 0BSD, Zlib, Unlicense, and Unicode-3.0 as applicable).
 No upstream CAD SDK, native zlib, or noncommercial parser dependency is linked.
+
+## Simulator replacement validation
+
+The metadata JSON now uses the reviewed-cache COM object shape, optional native
+parent field name, cut lists and basic drawing metadata. Preview byte arrays are
+omitted from normal JSON, and the native CLI adds versioned `metadata`/`geometry`
+commands. The simulator accepts both with explicit `--sw-rs` backend selection,
+truthful reader/hash provenance, schema checks and propagated diagnostics.
+
+A fresh 340-file comparison checks the previous fields plus parent indices and
+cut lists: zero differences. Running the real extractor on the complete corpus
+preserves the consumed graph exactly against the existing openswx catalogue:
+all document identities/source hashes, configurations, resolved/unresolved edges,
+component source records and saved physical values. Extra diagnostic messages
+and intentionally unverified unit/presence labels are not falsely normalized
+into upstream declarations. Private reports: `metadata-porting-corpus.json`,
+`catalogue-graph-comparison.json` under `local-assets/`.
+
+Across 295 Parts and 1,373 source configuration requests, the geometry adapter
+recovers 247 meshes versus the old reader's 243. All 243 previously accepted
+meshes match exactly after the simulator's bit-preserving reindexing, including
+ordered indices and coordinates. Four additional Parts have validated display
+caches while the old reader fails `geometry.byte_ledger_invalid`; these recoveries
+do not claim B-Rep validity. All other requests remain unsupported. The final
+resource-budget pass preserves all 247 successes with no changed meshes.
+Private reports: `geometry-corpus.json`, `final-geometry-budget-check.json`.
+`scripts/compare-geometry.py` reproduces the integration comparison using a
+caller-supplied simulator adapter and existing CLI.
+
+Running both real scripts with `--sw-rs` on the small armor module yields three
+occurrences and two shared meshes. Parts and mesh definitions match the old
+workflow exactly; the project has no diagnostics. Cached COM is an object, and
+source-frame/mass review remains unapproved. Private comparison:
+`local-assets/armor-sw-rs-comparison.json`. Review-mode mass tests verify that
+object-shaped COM produces finite inertials and the former array shape fails.
+
+The actual WASM module now decodes synthetic display meshes and a real native
+Part: native/WASM geometry JSON matches exactly. This includes source SHA-256,
+Unicode configuration metadata, normals, source offsets, coordinates and indices.
+The test runs through wasm-bindgen and Node; it is not browser UI, worker,
+file-set resolution or large-browser-memory validation. Reproduce with:
+
+```sh
+node scripts/wasm-smoke.cjs /path/to/part.SLDPRT /path/to/sw-dump
+```
+
+No sldkit or cadmpeg dependency was imported wholesale. The narrow Apache mesh
+routines are adapted into `src/mesh.rs` with their license/provenance retained;
+SHA-256 is the only new direct dependency. Source CAD remains outside Git.
+
+A larger Sentry preparation produced 540 occurrences and 133 shared meshes
+(598,387 unique vertices, 1,206,113 placed vertices), within the existing bounds.
+Its 277 diagnostics retain unresolved references and unsupported source meshes;
+it remains unreviewed and blocked from physical export. Private evidence:
+`local-assets/large-project-check.json`. Native reader regression tests, Clippy,
+WASM execution, 21 Python adapter tests and 10 RXUI importer tests passed.

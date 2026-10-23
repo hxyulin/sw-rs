@@ -5,13 +5,16 @@
 A pure Rust, byte-oriented reader for modern SolidWorks files, with optional
 WebAssembly bindings. The name is provisional. This is an initial metadata port
 of [openswx](https://github.com/schwitters/openswx) at
-`a838a83e267fadbf8f01fd75a288b2ae517c9133`, under MIT.
+`a838a83e267fadbf8f01fd75a288b2ae517c9133`, with MIT metadata code and Apache-2.0 mesh routines.
 
 The library accepts bytes and a filename hint. It has no filesystem access,
 networking, C++ FFI, SolidWorks installation, or simulator dependency. Native
 file access lives in the `sw-dump` CLI. All resolved dependencies offer permissive
 licenses; upstream copyright and permission notices are retained in
-[LICENSE-openswx](LICENSE-openswx). No sldkit code or source CAD is included.
+[LICENSE-openswx](LICENSE-openswx). The narrow mesh adapter retains its
+[Apache attribution](NOTICE-cadmpeg.md) and [license](LICENSE-Apache-2.0).
+The package's combined license expression is `MIT AND Apache-2.0`. No newer
+noncommercial sldkit code or source CAD is included.
 
 ## Current scope
 
@@ -21,12 +24,15 @@ licenses; upstream copyright and permission notices are retained in
   saved parent indices, cached mass-property tokens, document PNG previews.
 - Assembly occurrence names, external paths, referenced configurations,
   suppression/visibility/BOM flags, and optional saved 16-value transforms.
+- Saved weldment cut lists and basic drawing-sheet/view/reference metadata.
+- Cached Part DisplayLists meshes, normals, source offsets and preserved winding,
+  with single-configuration ownership and bounded decoding.
 - Raw decoded streams and diagnostics for later format work.
 
 This is **not a complete openswx port** or a CAD kernel. OLE2 and ZIP/OPC return
 unsupported-format errors. Drawing containers can be inspected, but drawing
-semantics, cut lists, per-configuration previews, geometry/tessellation, Parasolid
-B-Rep, STEP export, mates and BOM file resolution are not implemented. Unknown
+rendering, Parasolid B-Rep, STEP export, mates and BOM file resolution are not
+implemented. Cached Part meshes are supported only by the profile below. Unknown
 container record families remain diagnostics. Malformed XML is reported.
 
 Mass, COM, volume and inertia retain source numeric tokens: units, frame, signs
@@ -41,6 +47,7 @@ Use `mbx` for compiling commands when installed; otherwise substitute `cargo`.
 
 ```sh
 mbx run --release --bin sw-dump -- /path/to/model.SLDASM
+mbx run --release --bin sw-dump -- geometry /path/to/part.SLDPRT
 mbx test --all-features --locked
 mbx clippy --all-targets --all-features --locked -- -D warnings
 cargo fmt --check
@@ -79,8 +86,10 @@ const document = JSON.parse(parse_json(new Uint8Array(await file.arrayBuffer()),
 console.log(document.configurations);
 ```
 
-`parse_json` accepts `Uint8Array`, returns a JSON string, and throws on a hard
-parse error. `wasm-pack build --target web --features wasm` is an alternative
+`parse_json` accepts `Uint8Array`, returns `sw-rs-metadata-v1` JSON, and throws
+on a hard parse error. COM serializes as `{x,y,z}`; previews stay in the native
+Rust API rather than expanding JSON. `geometry_json(bytes, filename)` returns a
+`sw-rs-geometry-v1` envelope from the same byte-based decoder as the CLI. `wasm-pack build --target web --features wasm` is an alternative
 packaging command. To exercise the WASM boundary in Node:
 
 ```sh
@@ -105,7 +114,34 @@ python3 scripts/compare-corpus.py /path/to/native-files \
 [PORTING.md](PORTING.md) traces the actual rm-simulator consumers, measured JSON
 compatibility gaps, permissive geometry sources (including a pinned earlier MIT
 sldkit revision), and acceptance gates for replacing both external readers.
-Metadata interchange compatibility and Part tessellations are the next steps;
-complete portable Parasolid/drawing support can follow in tested milestones.
+Metadata interchange and Part tessellations now cover the current simulator
+workflow on the evaluated corpus. Complete portable Parasolid/drawing support
+remains in later milestones.
 General mate solving and feature-history regeneration require separate designs
 and validation.
+
+## Cached Part mesh profile
+
+`geometry(bytes, filename)` reads one modern Part DisplayLists carrier for one
+canonical native configuration. It validates compact/extended face headers,
+six descriptor channels, finite source float coordinates and strip winding,
+including validated class reuse. Output coordinates are millimetres; source
+stream/table offsets and normals are retained. Tables follow the old CAD IR's
+lexicographic table-key order so prepared project signatures remain stable.
+Unsupported carriers, multi-configuration ownership and missing meshes return
+errors. Limits include 250,000 vertices per descriptor table, two million raw
+vertex decode visits, 100,000 table attempts, and 500,000 output triangles.
+The simulator adapter independently enforces 250,000 unique vertices per Part.
+A limit failure rejects the entire query rather than returning a truncated mesh.
+
+The profile recovers saved display caches only: they may be partial or stale and
+have no inferred B-Rep ownership or mass. It does not evaluate features or certify
+source-frame alignment. Both metadata and geometry work without native libraries.
+Optional integration comparison (no source CAD is redistributed):
+
+```sh
+python3 scripts/compare-geometry.py /path/to/native-files \
+  --preparer /path/to/rm-simulator/scripts/prepare-solidworks-project.py \
+  --upstream /path/to/sldkit-rs --rust target/release/sw-dump \
+  --output local-assets/geometry-comparison.json
+```

@@ -38,13 +38,15 @@ for path in files:
         if [c["name"] for c in rc] != [c["name"] for c in uc]:
             diff("configuration_names")
         for r, u in zip(rc, uc):
+            if r.get("derived_from_index") != u.get("derived_from_index"):
+                diff(f"{r['index']}:derived_from_index")
+            if r.get("cut_list", []) != u.get("cut_list", []):
+                diff(f"{r['index']}:cut_list")
             if r["properties"] != u.get("properties", {}):
                 diff(f"{r['index']}:properties")
             if r["mass_properties"] is not None:
                 summary["mass_records"] += 1
             expected_mass = u.get("mass_properties")
-            if expected_mass and isinstance(expected_mass["center_of_gravity"], dict):
-                expected_mass = {**expected_mass, "center_of_gravity": [expected_mass["center_of_gravity"][axis] for axis in "xyz"]}
             if r["mass_properties"] != expected_mass:
                 diff(f"{r['index']}:mass_properties")
             elif r["mass_properties"] is not None:

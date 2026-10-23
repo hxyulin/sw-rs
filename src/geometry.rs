@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 hxyulin <hxyulin@proton.me>
+//! Byte-based cached Part geometry adapter.
+use crate::{Container, Limits, ParseError, document, mesh};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+/// Native identity of the original input document.
+#[derive(Debug, Serialize)]
+pub struct GeometrySource {
+    /// SHA-256 of original bytes, independent of filenames or mesh conversion.
+    pub sha256: String,
+}
+/// Cached display triangles, with exact strip winding and decoded-source offsets.
+#[derive(Debug, Serialize)]
+pub struct Tessellation {
+    /// Stable source stream name; no body ownership is inferred.
+    pub source_stream: String,
+    /// Descriptor table offset in the decoded source stream, in bytes.
+    pub source_offset: usize,
+    /// Cached vertex positions in millimetres, converted from source float metres.
+    pub vertices: Vec<[f64; 3]>,
+    /// Ordered zero-based vertex indices; strip winding is preserved.
+    pub triangles: Vec<[u32; 3]>,
+    /// Source strip lengths, whose sum equals vertex count.
+    pub strip_lengths: Vec<u32>,
+    /// Source unitless normal vectors; empty if absent in the saved table.
+    pub normals: Vec<[f64; 3]>,
+}
+/// Saved mesh data without invented B-Rep bodies or physical mass.
+#[derive(Debug, Serialize)]
+pub struct GeometryModel {
+    /// Validated descriptor tables in legacy lexicographic table-key order.
+    pub tessellations: Vec<Tessellation>,
+}
+/// Partial cached Part geometry for exactly one source configuration.
+#[derive(Debug, Serialize)]
+pub struct GeometryDocument {
+    /// Original input identity.
+    pub source: GeometrySource,
+    /// Output coordinate unit, currently `millimeter` for this carrier profile.
+    pub length_unit: &'static str,
+    /// Source configurations; this profile refuses ambiguous multi-config ownership.
+    pub configurations: Vec<crate::Configuration>,
+    /// Saved display geometry, not a freshly evaluated feature history.
+    pub model: GeometryModel,
+    /// Explicit cache and interpretation limitations.
+    pub limitations: Vec<&'static str>,
+}
+/// Decode a modern Part's saved DisplayLists tables using a pure Rust profile.
+///
+/// The initial profile requires one canonical native configuration and one
+/// DisplayLists carrier. Missing or ambiguous geometry is an error, never an
+/// empty successful result. Raw strip vertices are limited to 2,000,000 and triangles to
+/// 500,000 over the whole Part. Original bytes are hashed before conversion.
+///
+/// ```
+/// assert!(sw_rs::geometry(b"not CAD", "part.SLDPRT").is_err());
+/// ```
+pub fn geometry(bytes: &[u8], filename: &str) -> Result<GeometryDocument, ParseError> {
+    if !filename.to_ascii_lowercase().ends_with(".sldprt") {
+        return Err(ParseError(
+            "cached geometry profile accepts Parts only".into(),
+        ));
+    }
+    let container = Container::parse(bytes, Limits::default())?;
+    let carriers: Vec<_> = container
+        .streams
+        .iter()
+        .filter(|(name, _)| name.rsplit('/').next() == Some("DisplayLists"))
+        .collect();
+    if carriers.len() != 1 {
+        return Err(ParseError(
+            "missing or ambiguous Part DisplayLists carrier".into(),
+        ));
+    }
+    let (name, data) = carriers[0];
+    let mut meshes: Vec<_> = mesh::section_meshes(data)?
+        .into_iter()
+        .enumerate()
+        .collect();
+    // Legacy CAD IR sorts its generated mesh IDs lexicographically. Preserve that
+    // order so exact project/review signatures survive a backend replacement.
+    meshes.sort_by_cached_key(|(index, _)| index.to_string());
+    if meshes.is_empty() {
+        return Err(ParseError(
+            "Part has no supported cached display tessellation".into(),
+        ));
+    }
+    let mut vertices = 0usize;
+    let mut triangles = 0usize;
+    let mut tessellations = Vec::new();
+    for (_, (offset, m)) in meshes {
+        vertices = vertices
+            .checked_add(m.vertices.len())
+            .ok_or_else(|| ParseError("vertex count overflow".into()))?;
+        triangles = triangles
+            .checked_add(m.triangles.len())
+            .ok_or_else(|| ParseError("triangle count overflow".into()))?;
+        if vertices > 2_000_000 || triangles > 500_000 {
+            return Err(ParseError(
+                "Part geometry exceeds vertex/triangle limits".into(),
+            ));
+        }
+        tessellations.push(Tessellation {
+            source_stream: name.clone(),
+            source_offset: offset,
+            vertices: m.vertices,
+            triangles: m.triangles,
+            strip_lengths: m.strip_lengths,
+            normals: m.normals,
+        });
+    }
+    let doc = document::build(container, filename);
+    if doc.configurations.len() != 1 {
+        return Err(ParseError(
+            "display tessellation configuration ownership is ambiguous".into(),
+        ));
+    }
+    Ok(GeometryDocument {
+        source: GeometrySource {
+            sha256: Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+        },
+        length_unit: "millimeter",
+        configurations: doc.configurations,
+        model: GeometryModel { tessellations },
+        limitations: vec![
+            "saved_display_cache_may_be_partial_or_stale",
+            "no_BRep_body_or_face_ownership",
+            "single_native_configuration_only",
+            "source_frame_requires_review",
+        ],
+    })
+}

@@ -23,7 +23,49 @@ Buffer.from([0x14, 0, 6, 0, 8, 0]).copy(chunk);
 const encoded = Buffer.from(name.map(b => ((b >>> 3) | (b << 5)) & 255));
 const file = Buffer.concat([header, chunk, encoded, compressed]);
 const doc = JSON.parse(parse_json(new Uint8Array(file), 'synthetic.SLDASM'));
-assert.equal(doc.document_type, 'assembly');
+assert.equal(doc.doc_type, 'assembly');
 assert.equal(doc.configurations[0].name, '默认');
 assert.throws(() => parse_json(new Uint8Array([1, 2, 3]), 'bad.SLDPRT'), /unrecognized/);
 console.log('WASM Uint8Array → Rust parser → JSON passed; invalid input throws.');
+
+const { geometry_json } = require('../pkg/node/sw_rs.js');
+function container(streamName, payload) {
+  const n = Buffer.from(streamName);
+  const packed = deflateRawSync(payload);
+  const h = Buffer.alloc(26);
+  Buffer.from([0x14, 0, 6, 0, 8, 0]).copy(h);
+  [1, crc32(payload), packed.length, payload.length, n.length].forEach((v, i) => h.writeUInt32LE(v, 6 + i * 4));
+  return Buffer.concat([header, h, Buffer.from(n.map(b => ((b >>> 3) | (b << 5)) & 255)), packed]);
+}
+function descriptor(size, kind, count, bytes) {
+  const h = Buffer.alloc(16);
+  [size, kind, 2, count].forEach((n, i) => h.writeUInt32LE(n, i * 4));
+  return Buffer.concat([h, bytes]);
+}
+const positions = Buffer.alloc(36);
+[0, 0, 0, 1, 0, 0, 0, 1, 0].forEach((n, i) => positions.writeFloatLE(n, i * 4));
+const className = Buffer.from('uoTempFaceTessData_c');
+const classHeader = Buffer.alloc(6);
+Buffer.from([255, 255, 1, 0]).copy(classHeader);
+classHeader.writeUInt16LE(className.length, 4);
+const counts = Buffer.alloc(8);
+counts.writeUInt32LE(1, 0); counts.writeUInt32LE(1, 4);
+const payload = Buffer.concat([classHeader, className, counts,
+  descriptor(4, 8, 1, Buffer.from([3, 0, 0, 0])),
+  descriptor(12, 100, 3, positions), descriptor(12, 100, 3, Buffer.alloc(36)),
+  descriptor(4, 8, 4, Buffer.alloc(16)), descriptor(4, 8, 1, Buffer.from([4, 0, 0, 0])),
+  descriptor(1, 8, 4, Buffer.alloc(4))]);
+const geometry = JSON.parse(geometry_json(container('Contents/DisplayLists', payload), 'synthetic.SLDPRT'));
+assert.equal(geometry.schema, 'sw-rs-geometry-v1');
+assert.deepEqual(geometry.geometry.model.tessellations[0].vertices, [[0, 0, 0], [1000, 0, 0], [0, 1000, 0]]);
+assert.deepEqual(geometry.geometry.model.tessellations[0].triangles, [[0, 1, 2]]);
+assert.throws(() => geometry_json(file, 'assembly.SLDASM'), /Parts only/);
+console.log('WASM Part geometry, units, winding, source hashing and errors passed.');
+if (process.argv[2]) {
+  const path = process.argv[2];
+  const source = require('node:fs').readFileSync(path);
+  const wasm = JSON.parse(geometry_json(source, path));
+  const native = JSON.parse(require('node:child_process').execFileSync(process.argv[3], ['geometry', path], {maxBuffer: 128 * 1024 * 1024}));
+  assert.deepEqual(wasm.geometry, native.geometry);
+  console.log('Real native Part: WASM/native geometry JSON matched exactly.');
+}
