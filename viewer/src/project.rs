@@ -351,6 +351,14 @@ impl Project {
                 return;
             }
         };
+        if !scene.presentations[path]
+            .coverage
+            .cached_appearance_bindings_decoded
+        {
+            scene
+                .presentations
+                .insert(path.into(), g.presentation.clone());
+        }
         let mut hash = 0u32;
         for b in path.bytes() {
             hash = hash.wrapping_mul(31).wrapping_add(u32::from(b));
@@ -531,6 +539,7 @@ mod traversal_tests {
             document_type: kind.into(),
             coordinate_frame: (kind != "drawing").then_some(sw_rs::SOLIDWORKS_MODEL_FRAME),
             materials: None,
+            visuals: Default::default(),
             version: 0,
             global_properties: Default::default(),
             configurations: vec![sw_rs::Configuration {
@@ -597,6 +606,7 @@ mod traversal_tests {
                         normals: vec![],
                     }],
                 },
+                presentation: doc("part", vec![]).presentation(),
                 limitations: vec!["synthetic fixture"],
             }),
         );
@@ -657,6 +667,12 @@ mod traversal_tests {
             assignments: vec![assignment],
             body_assignments_decoded: false,
         });
+        p.geometry
+            .get_mut("part.SLDPRT")
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .presentation = p.metadata["part.SLDPRT"].presentation();
         let s = p.scene("root.SLDASM", 0, false);
         assert_eq!(s.vertices.len() / 9, 9);
         assert_eq!(s.materials.len(), 1);

@@ -22,20 +22,20 @@ struct TessellationChannel {
     data: Vec<u8>,
 }
 #[derive(Debug, Clone, Copy)]
-struct ByteRange {
-    start: usize,
-    end: usize,
+pub(crate) struct ByteRange {
+    pub start: usize,
+    pub end: usize,
 }
-struct DisplayFace {
-    mesh: Mesh,
+pub(crate) struct DisplayFace {
+    pub mesh: Mesh,
     table_index: usize,
-    table: ByteRange,
-    metadata: ByteRange,
+    pub table: ByteRange,
+    pub metadata: ByteRange,
 }
-struct ClassInterval {
-    name: String,
-    class_offset: usize,
-    content: ByteRange,
+pub(crate) struct ClassInterval {
+    pub name: String,
+    pub class_offset: usize,
+    pub content: ByteRange,
 }
 struct View;
 impl View {
@@ -69,7 +69,7 @@ mod extended_face {
     pub const FORM_TOKEN: usize = 20;
     pub const ZERO_TAIL: usize = 24;
 }
-fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
+pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let declarations: Vec<_> = payload
         .windows(4)
         .enumerate()
@@ -251,7 +251,7 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     ))
 }
 
-fn section_display_faces(payload: &[u8]) -> Vec<DisplayFace> {
+pub(crate) fn section_display_faces(payload: &[u8]) -> Vec<DisplayFace> {
     let classes = class_intervals(payload);
     let markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
@@ -418,13 +418,6 @@ pub(crate) fn has_face_tessellation_marker(payload: &[u8]) -> bool {
     payload
         .windows(FACE_TESSELLATION_CLASS.len())
         .any(|bytes| bytes == FACE_TESSELLATION_CLASS)
-}
-
-pub(crate) fn section_meshes(payload: &[u8]) -> Vec<(usize, Mesh)> {
-    section_display_faces(payload)
-        .into_iter()
-        .map(|face| (face.table.start, face.mesh))
-        .collect()
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.

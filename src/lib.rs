@@ -13,6 +13,7 @@ mod frame;
 mod geometry;
 mod mesh;
 mod presentation;
+mod visual;
 mod xml;
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
@@ -25,9 +26,13 @@ pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
 };
 pub use presentation::{
-    AppearanceBinding, AppearanceDefinition, AppearanceOrigin, AppearanceTarget,
-    PhysicalMaterialBinding, PhysicalMaterialDefinition, PresentationCoverage, PresentationData,
-    PresentationScope, PresentationSource,
+    AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin, AppearanceTarget,
+    CachedPropertyResolution, PhysicalMaterialBinding, PhysicalMaterialDefinition,
+    PresentationCoverage, PresentationData, PresentationScope, PresentationSource,
+};
+pub use visual::{
+    NativeAppearance, NativeAppearanceExtension, NativeString, NativeTextureBlock,
+    SavedDisplayState, UnresolvedVisualBinding, VisualData, VisualDiagnostic,
 };
 
 /// Parse a modern document using bounded default resource limits.

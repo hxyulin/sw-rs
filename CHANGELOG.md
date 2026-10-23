@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+- Decode supported native visual-property prefixes, exact scoped part defaults,
+  display-state keys and conditional raw shader/texture/mapping records.
+- Preserve unresolved feature/body/component identities with byte provenance;
+  export cached face/body property links keyed by carrier and descriptor offset.
+- Resolve supported cache layers conservatively, retaining conflicts and unknown
+  native ownership instead of guessing surface appearances.
+
 - Add a renderer-independent presentation model separating physical materials,
   visual definitions, default relationships and scoped appearance bindings;
   expose source catalogs per document with explicit unknown decoding coverage.

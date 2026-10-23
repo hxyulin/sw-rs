@@ -101,6 +101,8 @@ pub struct Document {
     /// Saved physical-material definitions and explicit configuration references.
     /// None means the stream is absent or unsupported, not proof of no material.
     pub materials: Option<MaterialData>,
+    /// Independently decoded native visual prefixes and partial scoped relationships.
+    pub visuals: crate::VisualData,
     /// Document PNG preview bytes, without decoding the image.
     #[serde(skip_serializing)]
     pub preview_png: Vec<u8>,
@@ -357,6 +359,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         } else {
             Vec::new()
         },
+        visuals: crate::visual::parse(streams, &configurations, kind),
         materials,
         document_type: kind.into(),
         coordinate_frame: (kind != "drawing").then_some(crate::SOLIDWORKS_MODEL_FRAME),

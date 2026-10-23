@@ -15,7 +15,20 @@ def container(streams):
         out.extend(b'\x14\0\x06\0\x08\0'+u32(1,zlib.crc32(data),len(packed),len(data),len(name))+encoded+packed)
     return bytes(out)
 def descriptor(size,kind,count,data):return u32(size,kind,2,count)+data
-def part(size, material=False):
+def visual_class(name):
+    return b'\xff\xff\x01\x00'+struct.pack('<H',len(name))+name.encode()
+def visual_string(text):
+    raw=text.encode('utf-16le');return b'\xff\xfe\xff'+bytes([len(raw)//2])+raw
+def visual_property(rgb, name):
+    return bytes([*rgb,0])+bytes(8)+visual_string('')+visual_string(name)+struct.pack('<6d',1,.7,.5,.3125,0,0)
+def native_visual_state():
+    return (u32(18000,0)+visual_class('visStateKeyData_c')+u32(5,1,1,0,1,1,1,1)+
+            visual_string('<Default>_Inspection')+bytes(16)+u32(1)+
+            visual_class('moCompHolder_c')+visual_class('moUnitComponent_c')+
+            bytes(43)+bytes([255])*16+bytes(20)+u32(18000,1,1,2)+
+            visual_class('visStateVisualPropertiesAttribute_c')+u32(1)+
+            visual_class('moVisualProperties_c')+visual_property([34,68,102],'Saved native default'))
+def part(size, material=False, visual=False):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
@@ -26,7 +39,11 @@ def part(size, material=False):
            descriptor(4,8,48,bytes(192))+descriptor(4,8,12,u32(*([4]*12)))+descriptor(1,8,48,bytes(48)))
     cls=b'uoTempFaceTessData_c';display=b'\xff\xff\x01\0'+struct.pack('<H',len(cls))+cls+u32(12,12)+table
     info=b'<swSolidWorks><swHeader><swFile id="p"/></swHeader><swModelList><swModel id="m" swFileRef="p" swConfigurationId="0" swConfigurationName="Default"/></swModelList></swSolidWorks>'
+    if visual:
+        display += (b'\x33\x80'+visual_property([255,0,0],'Cached face')+
+                    visual_class('uoBodyPropInfo_c')+b'\x33\x80'+visual_property([0,0,255],'Cached body'))
     streams = [('swXmlContents/COMPINSTANCETREE',info),('Contents/DisplayLists',display)]
+    if visual: streams.append(('ThirdPtyStore/VisualStates',native_visual_state()))
     if material:
         streams.append(('swXmlContents/MATERIALTREE', b'<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials"><classification name="Aluminum"><material name="test materials|6061 Alloy" matid="21"><swatchcolor RGB="151515"/><shaders><pwshader name="black low gloss plastic" path="designlibrary/appearances/plastic/low gloss/black low gloss plastic.p2m"/></shaders><physicalproperties><DENS value="2700"/></physicalproperties></material></classification><configurationslist><configuration name="Default" material="test materials|6061 Alloy|21"/></configurationslist></mstns:materials>'))
     return container(streams)
@@ -113,3 +130,5 @@ with zipfile.ZipFile(OUT/'configuration-hierarchy.zip', 'w', zipfile.ZIP_DEFLATE
     archive.writestr('ConfigRoot.SLDASM', container([('swXmlContents/COMPINSTANCETREE', config_root_xml)]))
     archive.writestr('ConfigSub.SLDASM', container([('swXmlContents/COMPINSTANCETREE', config_sub_xml), ('Contents/Config-0', b'x'), ('Contents/Config-1', b'x')]))
     archive.writestr('Base.SLDPRT', files['Base.SLDPRT'])
+
+(OUT/'native-appearance.SLDPRT').write_bytes(part([.18,.10,.02],material=True,visual=True))

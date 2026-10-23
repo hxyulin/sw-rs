@@ -77,6 +77,42 @@ test("scene exports source presentation separately from renderer presets", async
   expect(scene.materials[0].family).toBe("aluminum");
   expect(scene.materials[0].saved_surface.metallic).toBe(0);
 });
+test("native appearance catalog retains state scopes and cache properties without overriding renderer presets", async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", ({data}) => {
+          if (data.type === "scene") window.sourceScene = data.scene;
+        });
+      }
+    };
+  });
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures,"native-appearance.SLDPRT"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+  const scene = await page.evaluate(() => window.sourceScene);
+  const catalog = scene.presentations[scene.hierarchy[0].path];
+  expect(catalog.appearances).toHaveLength(4);
+  expect(catalog.appearance_bindings).toHaveLength(3);
+  const document = catalog.appearance_bindings.find(b => b.layer === "document");
+  expect(document.configuration).toEqual({kind:"named",name:"Default"});
+  expect(document.display_state).toEqual({kind:"named",name:"Inspection"});
+  expect(catalog.appearances[document.appearance_index].native.color_rgb).toEqual([34,68,102]);
+  expect(catalog.display_states[0].key).toBe("<Default>_Inspection");
+  const cache = catalog.appearance_bindings.filter(b => b.target.kind === "tessellation");
+  expect(cache.map(b => b.layer).sort()).toEqual(["cached_body","cached_face"]);
+  expect(cache[0].target.source_offset).toBe(cache[1].target.source_offset);
+  expect(cache[0].target.source_stream).toBe("Contents/DisplayLists");
+  expect(cache[0].display_state.kind).toBe("unknown");
+  expect(catalog.coverage.cached_appearance_bindings_decoded).toBe(true);
+  expect(catalog.coverage.appearance_bindings_decoded).toBe(false);
+  expect(catalog.coverage.texture_mappings_decoded).toBe(false);
+  expect(catalog.visual_diagnostics.some(d => d.code === "partial_visual_graph")).toBe(true);
+  expect(scene.materials[0].family).toBe("aluminum");
+  expect(scene.materials[0].saved_surface.name).toBe("black low gloss plastic");
+});
 test.beforeEach(async ({ page }) => {
   page.on("console", (message) => {
     if (message.type() === "error") console.error(message.text());

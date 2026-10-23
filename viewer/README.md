@@ -224,3 +224,9 @@ parser diagnostics and saved rename mappings. Keep reports and source CAD local.
 Some native files have no supported saved display tessellation; allowing missing
 references cannot reconstruct their geometry. The viewer does not regenerate
 B-Rep geometry or load external files from saved Windows paths.
+
+The exported scene `presentations` catalogs also include supported native visual
+prefixes, scoped document defaults and cache-local property links. Coverage flags
+and unresolved identities distinguish these from complete native face/body or
+component ownership. The current rendered presets remain approximations while
+those ownership and texture-projection rules await controlled SolidWorks saves.

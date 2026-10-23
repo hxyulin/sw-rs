@@ -18,3 +18,20 @@ is included. Changes: remove CAD IR/native dependencies, expose array meshes wit
 source byte ranges, add resource checks, and omit topology/ownership inference.
 The adapted module retains Apache-2.0 terms; MIT applies to the existing port
 under its retained notices, rather than relicensing Apache material as MIT.
+
+## Native appearance framing
+
+`src/visual.rs` adapts visual-property prefix decoding, part-default class chains,
+feature source/timestamp prefixes, and cache-property precedence from Apache-2.0
+cadmpeg revision `4df21312c62cc1207a4c2274e29b4118fd232ec6`, specifically
+`crates/cadmpeg-codec-sldprt/src/appearance.rs`,
+`src/appearance/visual_states.rs`, and `src/layout.rs`.
+
+Changes: remove CAD IR, B-Rep and native-runtime dependencies; preserve variable
+UTF-16 strings, optical bits and partial raw texture/mapping blocks; expose
+configuration/display-state scopes, decoded byte provenance, unresolved native
+entity identities and cache-local table bindings. Typed body-property slots are
+validated against local files; declaration intervals are not treated as a complete
+MFC reference graph. Native topology ownership is not inferred. Synthetic tests
+are authored here. No source CAD, original shader implementations or texture
+assets are distributed. The adapted module retains Apache-2.0 terms.

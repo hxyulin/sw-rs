@@ -46,6 +46,9 @@ pub struct GeometryDocument {
     pub configurations: Vec<crate::Configuration>,
     /// Saved display geometry, not a freshly evaluated feature history.
     pub model: GeometryModel,
+    /// Source presentation plus cache-local links keyed by stream and descriptor offset.
+    /// These cache identities do not establish native B-Rep face/body ownership.
+    pub presentation: crate::PresentationData,
     /// Explicit cache and interpretation limitations.
     pub limitations: Vec<&'static str>,
 }
@@ -74,11 +77,12 @@ pub fn geometry_with_limits(
             "cached geometry profile accepts Parts only".into(),
         ));
     }
-    let container = Container::parse(bytes, limits)?;
+    let mut container = Container::parse(bytes, limits)?;
     let carriers: Vec<_> = container
         .streams
-        .iter()
-        .filter(|(name, _)| name.rsplit('/').next() == Some("DisplayLists"))
+        .keys()
+        .filter(|name| name.rsplit('/').next() == Some("DisplayLists"))
+        .cloned()
         .collect();
     if carriers.is_empty() {
         return Err(ParseError("Part has no DisplayLists carrier".into()));
@@ -89,8 +93,20 @@ pub fn geometry_with_limits(
             carriers.len()
         )));
     }
-    let (name, data) = carriers[0];
-    let mut meshes: Vec<_> = mesh::section_meshes(data).into_iter().enumerate().collect();
+    let name = carriers[0].clone();
+    // Keep stream inventory intact while moving the carrier out without copying it.
+    let data = std::mem::take(container.streams.get_mut(&name).expect("selected carrier"));
+    let doc = document::build(container, filename);
+    let faces = mesh::section_display_faces(&data);
+    let mut presentation = doc.presentation();
+    let cached = crate::visual::cached(&data, &name, &faces, &doc.configurations);
+    presentation.append_visuals(&cached);
+    presentation.coverage.cached_appearance_bindings_decoded = true;
+    let mut meshes: Vec<_> = faces
+        .into_iter()
+        .map(|face| (face.table.start, face.mesh))
+        .enumerate()
+        .collect();
     // Legacy CAD IR sorts its generated mesh IDs lexicographically. Preserve that
     // order so exact project/review signatures survive a backend replacement.
     meshes.sort_by_cached_key(|(index, _)| index.to_string());
@@ -98,7 +114,7 @@ pub fn geometry_with_limits(
         // A saved environment/lighting-only DisplayLists is not malformed mesh
         // data. Keep it distinct from a known face class whose tables fail the
         // supported grammar; neither case licenses inventing B-Rep geometry.
-        let reason = if mesh::has_face_tessellation_marker(data) {
+        let reason = if mesh::has_face_tessellation_marker(&data) {
             "face-class markers exist but their headers or descriptor tables are unsupported or invalid"
         } else {
             "DisplayLists has no uoTempFaceTessData_c records; no cached faces in the supported profile"
@@ -118,7 +134,6 @@ pub fn geometry_with_limits(
             normals: m.normals,
         });
     }
-    let doc = document::build(container, filename);
     if doc.configurations.len() != 1 {
         return Err(ParseError(
             "display tessellation configuration ownership is ambiguous".into(),
@@ -135,6 +150,7 @@ pub fn geometry_with_limits(
         coordinate_frame: crate::SOLIDWORKS_MODEL_FRAME,
         configurations: doc.configurations,
         model: GeometryModel { tessellations },
+        presentation,
         limitations: vec![
             "saved_display_cache_may_be_partial_or_stale",
             "no_BRep_body_or_face_ownership",
