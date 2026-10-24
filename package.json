@@ -1,7 +1,6 @@
 {
   "name": "sw-rs-docs",
   "private": true,
-  "type": "module",
   "engines": {
     "node": ">=22"
   },
