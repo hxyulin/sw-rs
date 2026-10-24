@@ -86,6 +86,29 @@ assert.equal(selection.selection_surface_reference, undefined);
 assert.equal(selection.selection_descriptor.value, descriptorGroup);
 assert.equal(selection.resolution, 'unresolved');
 console.log('WASM grouped mate/cache references preserve all rows without resolving topology.');
+function nativeClass(name) {
+  const raw = Buffer.from(name);
+  const h = Buffer.from([255, 255, 1, 0, 0, 0]);
+  h.writeUInt16LE(raw.length, 4);
+  return Buffer.concat([h, raw]);
+}
+const nativeHeader = Buffer.alloc(20);
+[1, 0, 490, 768, 42].forEach((word, index) => nativeHeader.writeUInt32LE(word, index * 4));
+const nativePrefix = Buffer.concat([nativeClass('moFaceRef_c'), nativeHeader,
+  Buffer.from('7dc39425ad49b2547dc39425ad49b254', 'hex'), Buffer.alloc(2),
+  nativeClass('moSimpleSurfIdRep_c'), Buffer.alloc(2), nativeClass('moFR_c'),
+  nativeClass('moExtObject_c'), nativeClass('moCStringHandle_c'), framed('../source/Part.SLDPRT')]);
+const nativeGraph = JSON.parse(references_json(container('ThirdPtyStore/VisualStates', nativePrefix), 'reference.SLDPRT'));
+const handle = nativeGraph.links.find(link => link.relation === 'native_document_handle');
+assert.equal(handle.reference, '../source/Part.SLDPRT');
+assert.equal(handle.resolution, 'unresolved');
+assert.deepEqual(handle.candidates, []);
+const prefixRecord = nativeGraph.nodes[handle.from].record.reference;
+assert.deepEqual(prefixRecord.raw_header, [1, 0, 490, 768, 42]);
+assert.equal(prefixRecord.prefix_span.length, nativePrefix.length);
+assert.equal(nativeGraph.native_object_graph_decoded, false);
+assert.equal(nativeGraph.topology_ownership_decoded, false);
+console.log('WASM native document handles retain checked source prefixes without assigning ownership.');
 if (process.argv[2]) {
   const path = process.argv[2];
   const source = require('node:fs').readFileSync(path);

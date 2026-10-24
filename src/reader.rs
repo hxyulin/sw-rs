@@ -152,7 +152,10 @@ impl<'a> DocumentReader<'a> {
                 .iter()
                 .filter_map(|name| container.inspect_stream(name))
                 .collect::<Vec<_>>();
-            crate::ReferenceGraph::build(&self.source_hash, features, metadata, &xml)
+            let mut graph =
+                crate::ReferenceGraph::build(&self.source_hash, features, metadata, &xml);
+            graph.native_document_references(container);
+            graph
         }))
     }
     /// Inspect cached Part surface references once, separately from geometry decoding.

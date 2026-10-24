@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Expose saved document handles from supported explicit native face-reference
+  prefixes in the opt-in reference graph. Retain raw header words, entity class,
+  checked prefix spans and exact CString offsets; keep file/occurrence/topology
+  ownership unresolved and stop at unknown reused classes.
+
 - Decode every top-level row in grouped mate/cache surface descriptors, retaining
   exact text spans, order and duplicates. Block feature candidates when later rows
   disagree or remain invalid; keep nested expressions opaque and mate endpoints

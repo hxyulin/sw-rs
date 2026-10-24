@@ -101,6 +101,10 @@ The three mapping flag words and earlier two scalars remain uninterpreted.
 
 ## Remaining ownership TODOs
 
+The subsequent [native document-handle decoder](references.md#native-document-handle-prefixes)
+retains explicit reference-prefix file context. It does not assign those paths to
+appearance definitions or prove that the saved file still owns the referenced face.
+
 - TODO(native-state): decode reused MFC objects and key associations before choosing
   active configuration/display state or treating unknown scope as universal.
 - TODO(native-feature): connect source ID/timestamp through current history and

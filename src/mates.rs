@@ -209,7 +209,7 @@ fn strings(bytes: &[u8]) -> Vec<(NativeString, usize)> {
 fn class_tag(tag: u16) -> bool {
     tag & 0x8000 != 0 && tag != 0xffff && tag != 0x8000
 }
-fn source_index(name: &str) -> Option<u32> {
+pub(crate) fn source_index(name: &str) -> Option<u32> {
     let index = name
         .strip_prefix("Contents/Config-")?
         .strip_suffix("-MatesList")?;

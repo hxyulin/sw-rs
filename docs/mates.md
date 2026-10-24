@@ -129,6 +129,11 @@ and public API semantics, without a SolidWorks SDK or new runtime dependency.
 
 ## Next steps and verification TODOs
 
+The [native document-handle investigation](references.md#native-document-handle-prefixes)
+validates a complete explicit prefix in visual states. All 46 explicit face-reference
+candidates in the public mate streams still encounter unknown reused classes.
+The shared archive map remains necessary before decoding those branches.
+
 1. TODO(mate-object-map): reconstruct the external/shared MFC class and object
    dictionary. This should recover reused mate families and reused selections,
    instead of relying on string-only evidence.

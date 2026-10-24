@@ -397,6 +397,62 @@ fn multiline_cache_descriptors_do_not_link_only_the_first_feature() {
     assert!(!graph.native_object_graph_decoded);
     assert!(!graph.topology_ownership_decoded);
 }
+
+#[test]
+fn native_document_handles_are_opt_in_source_evidence_not_entity_ownership() {
+    fn declaration(bytes: &mut Vec<u8>, name: &str) {
+        bytes.extend([255, 255, 1, 0]);
+        bytes.extend((name.len() as u16).to_le_bytes());
+        bytes.extend(name.as_bytes());
+    }
+    let mut prefix = Vec::new();
+    declaration(&mut prefix, "moFaceRef_c");
+    for word in [1u32, 0, 6, 512, 42] {
+        prefix.extend(word.to_le_bytes());
+    }
+    prefix.extend([
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54, 0, 0,
+    ]);
+    declaration(&mut prefix, "moSimpleSurfIdRep_c");
+    prefix.extend([0; 2]);
+    for name in ["moFR_c", "moExtObject_c", "moCStringHandle_c"] {
+        declaration(&mut prefix, name);
+    }
+    let path = "C:\\old\\Part.SLDPRT";
+    prefix.extend([255, 254, 255, path.encode_utf16().count() as u8]);
+    prefix.extend(path.encode_utf16().flat_map(u16::to_le_bytes));
+    let bytes = file(&[
+        ("ThirdPtyStore/VisualStates", &prefix),
+        ("Unrelated/Storage", &prefix),
+    ]);
+    let reader = sw_rs::DocumentReader::open(&bytes, "part.SLDPRT", Limits::default()).unwrap();
+    let graph = reader.references().unwrap();
+    let links = graph
+        .links
+        .iter()
+        .filter(|l| l.relation == sw_rs::ReferenceRelation::NativeDocumentHandle)
+        .collect::<Vec<_>>();
+    assert_eq!(links.len(), 1); // The unrelated stream is not a supported reference carrier.
+    assert_eq!(links[0].reference.as_deref(), Some(path));
+    assert!(links[0].candidates.is_empty());
+    assert_eq!(links[0].resolution, sw_rs::ReferenceResolution::Unresolved);
+    assert!(!graph.native_object_graph_decoded);
+    assert!(!graph.topology_ownership_decoded);
+    let sw_rs::ReferenceRecord::NativeDocumentReference { reference } =
+        &graph.nodes[links[0].from].record
+    else {
+        panic!("native prefix record");
+    };
+    assert_eq!(
+        reference
+            .prefix_span
+            .slice(reader.stream(&reference.source_stream).unwrap().unwrap())
+            .unwrap(),
+        prefix
+    );
+    assert!(std::ptr::eq(reader.references().unwrap(), graph));
+}
 #[test]
 fn cached_geometry_rejects_missing_truncated_nonfinite_and_ambiguous_data() {
     assert!(sw_rs::geometry(&file(&[("other", b"x")]), "p.SLDPRT").is_err());

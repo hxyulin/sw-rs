@@ -11,6 +11,12 @@ const SW_NAMESPACE: &str = "http://www.solidworks.com/sw2003/schema";
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReferenceRecord {
+    /// Explicit native reference prefix carrying a saved document handle.
+    /// It is not assigned to a nearby mate, appearance definition or current face.
+    NativeDocumentReference {
+        /// Checked contiguous prefix and exact source/handle evidence.
+        reference: crate::NativeDocumentReference,
+    },
     /// Validated display table and its adjacent saved surface-reference evidence.
     CachedSurface {
         /// Native configuration index from the canonical single-config geometry.
@@ -97,6 +103,8 @@ pub enum ReferenceResolution {
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceRelation {
+    /// Saved document handle, without file, occurrence or native ownership resolution.
+    NativeDocumentHandle,
     /// Agreed cache-reference source ID matching a saved feature, without topology proof.
     CachedSurfaceFeatureIdentity,
     /// Saved feature-tree nesting, not regeneration dependency.
@@ -165,6 +173,51 @@ pub struct ReferenceGraph {
     pub topology_ownership_decoded: bool,
 }
 impl ReferenceGraph {
+    pub(crate) fn native_document_references(&mut self, container: &crate::Container) {
+        for (name, bytes) in container.streams.iter().filter(|(name, _)| {
+            name.as_str() == "ThirdPtyStore/VisualStates"
+                || crate::mates::source_index(name).is_some()
+        }) {
+            let mut prefix_end = 0;
+            for class in crate::mesh::class_intervals(bytes)
+                .iter()
+                .filter(|c| c.name == "moFaceRef_c")
+            {
+                // Class-looking bytes inside a checked CString are string data,
+                // not independent prefixes. Do not clone overlapping string tails.
+                if class.class_offset < prefix_end {
+                    continue;
+                }
+                let Some(reference) =
+                    crate::NativeDocumentReference::parse_prefix(bytes, name, class.class_offset)
+                else {
+                    continue;
+                };
+                prefix_end = reference.prefix_span.offset + reference.prefix_span.length;
+                let text = reference.document.value.clone();
+                let at = reference.document.offset;
+                let start = reference.prefix_span.offset;
+                let node = self.node(
+                    name,
+                    format!("prefix[{start}]"),
+                    Some(start),
+                    ReferenceRecord::NativeDocumentReference { reference },
+                );
+                self.links.push(ReferenceLink {
+                    from: node,
+                    relation: ReferenceRelation::NativeDocumentHandle,
+                    reference: Some(text),
+                    candidates: Vec::new(),
+                    resolution: ReferenceResolution::Unresolved,
+                    reason: "Saved document handle from an explicit native prefix; current file, occurrence and topology ownership are unresolved".into(),
+                    source_offset: Some(at),
+                    selection_descriptor: None,
+                    selection_surface_reference: None,
+                    selection_surface_references: Vec::new(),
+                });
+            }
+        }
+    }
     /// Add cache-table reference evidence from exactly the same original file.
     /// Source/local/tail tuples remain distinct; only feature-ID candidates are
     /// joined. Existing table locators are retained, making repeated calls idempotent.

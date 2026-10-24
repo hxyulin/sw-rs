@@ -16,6 +16,7 @@ mod geometry;
 mod inventory;
 mod mates;
 mod mesh;
+mod native_reference;
 mod object_archive;
 mod ole;
 mod presentation;
@@ -46,6 +47,7 @@ pub use mates::{
     ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
     MateReferenceNode,
 };
+pub use native_reference::NativeDocumentReference;
 pub use object_archive::{ArchiveContext, ArchiveEntry, ArchiveError, ArchiveObjectHeader};
 pub use ole::{OleCompression, OleStreamSource};
 pub use presentation::{
