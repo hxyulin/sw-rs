@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 struct Reader<'a> {
     bytes: &'a [u8],
     pos: usize,
+    archive: crate::ArchiveContext,
 }
 impl Reader<'_> {
     fn take(&mut self, n: usize) -> Option<&[u8]> {
@@ -52,15 +53,16 @@ impl Reader<'_> {
         )
         .ok()
     }
-    fn class(&mut self) -> Option<()> {
-        let tag = self.u16()?;
-        if tag == 65535 {
-            self.u16()?;
-            let len = self.u16()?;
-            self.take(len as usize)?;
-        } else if tag <= 0x7fff {
+    fn class(&mut self, expected: &str) -> Option<()> {
+        let mut cursor = crate::BinaryReader::at(self.bytes, self.pos)?;
+        let header = self.archive.read_object(&mut cursor).ok()?;
+        if !header.is_new
+            || !matches!(self.archive.entry(header.class_index?),
+            Some(crate::ArchiveEntry::Class { name, schema: 0 | 1, .. }) if name == expected)
+        {
             return None;
         }
+        self.pos = cursor.position();
         Some(())
     }
 }
@@ -68,16 +70,17 @@ pub(crate) fn names(data: &[u8], version: u32) -> BTreeMap<u32, (String, Option<
     let mut r = Reader {
         bytes: data,
         pos: 0,
+        archive: crate::ArchiveContext::new(),
     };
     let mut output = BTreeMap::new();
     let mut parse = || -> Option<()> {
-        r.class()?;
+        r.class("dmConfigMgrHeader_c")?;
         let count = match r.u16()? {
             65535 => r.u32()?,
             n => u32::from(n),
         };
         for _ in 0..count {
-            r.class()?;
+            r.class("dmConfigHeader_c")?;
             r.u32()?;
             let name = r.string()?;
             let id = r.u32()?;
@@ -115,6 +118,7 @@ pub(crate) fn replacement_references(data: &[u8]) -> Option<Vec<crate::Reference
     let mut r = Reader {
         bytes: data,
         pos: 0,
+        archive: crate::ArchiveContext::new(),
     };
     let count = r.u32()? as usize;
     if count > data.len().saturating_sub(4) / 2 {

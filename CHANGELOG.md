@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Add checked archive-local class/object maps, including class-only declarations,
+  backreferences, cycles, explicit external mappings and wide indices; validate
+  configuration record classes and reused slots during sequential metadata parsing.
+- Document binary reference rules and a corpus-backed mate-context hypothesis;
+  add a reproducible archive-map audit without promoting inferred mate families.
+
 - Add opt-in saved feature catalogs and a shared source-reference graph with
   typed stream-local XML links, native identity candidates, duplicate preservation
   and explicit unresolved topology; expose reader, CLI and WASM access.

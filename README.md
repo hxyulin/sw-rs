@@ -168,6 +168,11 @@ These distinguish resolved XML relationships from provisional native ID matches;
 they do not yet decode the complete persistent entity graph. See
 [saved identities and reference decoding](docs/references.md).
 
+The [binary reference investigation](docs/archive-reference-rules.md) documents
+confirmed MFC rules, native corpus checks and unresolved mate-context hypotheses.
+`ArchiveContext` provides checked class/object map operations for sequential
+schema-specific decoders; the configuration-name reader now validates these maps.
+
 **Inspect source…** in the web viewer opens a filterable stream inventory with
 source hashes, validation results, opaque ranges and paged XML/binary inspection.
 Legacy OLE and other unsupported native containers retain an opaque inventory.

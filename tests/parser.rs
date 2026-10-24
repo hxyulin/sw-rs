@@ -182,6 +182,47 @@ fn binary_configuration_names_obey_version_gates_and_parent_ids() {
     assert_eq!(doc.configurations[1].parent_index, Some(0));
 }
 
+#[test]
+fn configuration_class_reuse_resolves_map_slots_and_stops_on_wrong_object_kind() {
+    fn class(bytes: &mut Vec<u8>, name: &str) {
+        bytes.extend([255, 255, 1, 0]);
+        bytes.extend((name.len() as u16).to_le_bytes());
+        bytes.extend(name.as_bytes());
+    }
+    fn body(bytes: &mut Vec<u8>, name: &str, index: u32) {
+        bytes.extend(0_u32.to_le_bytes());
+        bytes.push(name.len() as u8);
+        bytes.extend(name.as_bytes());
+        bytes.extend(index.to_le_bytes());
+    }
+    let mut manager = Vec::new();
+    class(&mut manager, "dmConfigMgrHeader_c");
+    manager.extend(3_u16.to_le_bytes());
+    class(&mut manager, "dmConfigHeader_c");
+    body(&mut manager, "First", 2);
+    let reused = manager.len();
+    manager.extend(0x8003_u16.to_le_bytes());
+    body(&mut manager, "Alternate", 7);
+    // Slot 2 is the root object, not a class. No searching forward to a later marker.
+    manager.extend(0x8002_u16.to_le_bytes());
+    body(&mut manager, "Fabricated", 8);
+    class(&mut manager, "dmConfigHeader_c");
+    body(&mut manager, "Do not resync", 9);
+    let doc = sw_rs::parse(&file(&[("Contents/CMgrHdr2", &manager)]), "part.SLDPRT").unwrap();
+    assert_eq!(
+        doc.configurations
+            .iter()
+            .map(|c| (c.index, c.name.as_str()))
+            .collect::<Vec<_>>(),
+        [(2, "First"), (7, "Alternate")]
+    );
+    // A valid class tag for the wrong payload class also cannot become a config.
+    manager[reused..reused + 2].copy_from_slice(&0x8001_u16.to_le_bytes());
+    let doc = sw_rs::parse(&file(&[("Contents/CMgrHdr2", &manager)]), "part.SLDPRT").unwrap();
+    assert_eq!(doc.configurations.len(), 1);
+    assert_eq!(doc.configurations[0].name, "First");
+}
+
 fn display_table() -> Vec<u8> {
     fn descriptor(out: &mut Vec<u8>, size: u32, kind: u32, count: u32, bytes: &[u8]) {
         for v in [size, kind, 2, count] {

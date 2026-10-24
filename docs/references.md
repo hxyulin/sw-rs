@@ -58,6 +58,10 @@ it does not complete persistent-reference decoding.
 
 ## Work needed for native resolution
 
+The subsequent [archive-rule investigation](archive-reference-rules.md) confirms
+shared MFC map accounting for the configuration-header prefix and introduces a
+checked `ArchiveContext`. Complete mate/visual payload walks remain pending.
+
 The intended runtime resolves saved structural references. Numeric/name matching
 is only an investigation tool. The next decoding stages are:
 

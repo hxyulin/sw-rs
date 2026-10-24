@@ -16,6 +16,7 @@ mod geometry;
 mod inventory;
 mod mates;
 mod mesh;
+mod object_archive;
 mod presentation;
 mod reader;
 mod references;
@@ -42,6 +43,7 @@ pub use mates::{
     ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
     MateReferenceNode,
 };
+pub use object_archive::{ArchiveContext, ArchiveEntry, ArchiveError, ArchiveObjectHeader};
 pub use presentation::{
     AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin, AppearanceTarget,
     CachedPropertyResolution, PhysicalMaterialBinding, PhysicalMaterialDefinition,
