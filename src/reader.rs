@@ -19,6 +19,10 @@ pub struct ReadOutput {
     pub geometry: Option<Result<GeometryDocument, ParseError>>,
     /// Source inventory, if requested before finishing.
     pub inventory: Option<DocumentInventory>,
+    /// Requested feature catalog, transferred without rebuilding.
+    pub features: Option<crate::FeatureCatalog>,
+    /// Requested source-reference graph; candidate links remain unverified.
+    pub references: Option<crate::ReferenceGraph>,
 }
 
 /// Borrow source bytes and decompress/validate their container exactly once.
@@ -46,6 +50,8 @@ pub struct DocumentReader<'a> {
     metadata: OnceCell<Document>,
     geometry: OnceCell<Result<GeometryDocument, ParseError>>,
     inventory: OnceCell<DocumentInventory>,
+    features: OnceCell<crate::FeatureCatalog>,
+    references: OnceCell<crate::ReferenceGraph>,
 }
 impl<'a> DocumentReader<'a> {
     /// Validate/decompress once, retaining trace records and container errors for inventory.
@@ -64,6 +70,8 @@ impl<'a> DocumentReader<'a> {
             metadata: OnceCell::new(),
             geometry: OnceCell::new(),
             inventory: OnceCell::new(),
+            features: OnceCell::new(),
+            references: OnceCell::new(),
         })
     }
     /// Borrow original encoded source bytes; no copy or decompression occurs.
@@ -119,6 +127,30 @@ impl<'a> DocumentReader<'a> {
             .stream(name)?
             .map(|bytes| crate::inventory::inspect(name, bytes)))
     }
+    /// Decode saved feature-tree identities once, retaining duplicates and raw tokens.
+    /// Tree order is not assumed to be regeneration order; no features are evaluated.
+    pub fn features(&self) -> Result<&crate::FeatureCatalog, ParseError> {
+        let container = self.container()?;
+        Ok(self.features.get_or_init(|| {
+            let inspection = container.inspect_stream("swXmlContents/KeyWords");
+            crate::FeatureCatalog::parse(inspection.as_ref())
+        }))
+    }
+    /// Connect decoded source records with scoped, typed reference evidence once.
+    /// XML links can resolve syntactically; native ID matches remain candidates.
+    /// Does not decode geometry or scan arbitrary binary strings for ID matches.
+    pub fn references(&self) -> Result<&crate::ReferenceGraph, ParseError> {
+        let container = self.container()?;
+        let features = self.features()?;
+        let metadata = self.metadata()?;
+        Ok(self.references.get_or_init(|| {
+            let xml = ["swXmlContents/Features", "swXmlContents/COMPINSTANCETREE"]
+                .iter()
+                .filter_map(|name| container.inspect_stream(name))
+                .collect::<Vec<_>>();
+            crate::ReferenceGraph::build(&self.source_hash, features, metadata, &xml)
+        }))
+    }
     /// Transfer retained streams and requested cached results without copying their buffers.
     /// Source-file errors remain errors; unused projections remain None.
     pub fn finish(self) -> Result<ReadOutput, ParseError> {
@@ -127,6 +159,8 @@ impl<'a> DocumentReader<'a> {
             metadata: self.metadata.into_inner(),
             geometry: self.geometry.into_inner(),
             inventory: self.inventory.into_inner(),
+            features: self.features.into_inner(),
+            references: self.references.into_inner(),
         })
     }
 }

@@ -162,6 +162,12 @@ mbx run --release --locked --features archive --example inspect_mates -- ARCHIVE
 
 ## Document inventory and shared reader
 
+Saved feature IDs and cross-record evidence are available through the opt-in
+`DocumentReader::features()` / `references()` APIs and `sw-dump references FILE`.
+These distinguish resolved XML relationships from provisional native ID matches;
+they do not yet decode the complete persistent entity graph. See
+[saved identities and reference decoding](docs/references.md).
+
 **Inspect source…** in the web viewer opens a filterable stream inventory with
 source hashes, validation results, opaque ranges and paged XML/binary inspection.
 Legacy OLE and other unsupported native containers retain an opaque inventory.

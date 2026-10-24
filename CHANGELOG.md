@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- Add opt-in saved feature catalogs and a shared source-reference graph with
+  typed stream-local XML links, native identity candidates, duplicate preservation
+  and explicit unresolved topology; expose reader, CLI and WASM access.
+
 - Add a source inventory inspector with verified record spans/hashes, duplicates,
   rejected/index records, opaque byte accounting and on-demand paged XML/binary views.
 - Support source-aware UTF-8/UTF-16 XML inspection, wrapped KeyWords payloads,

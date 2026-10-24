@@ -10,6 +10,7 @@ mod binary;
 mod config;
 mod container;
 mod document;
+mod features;
 mod frame;
 mod geometry;
 mod inventory;
@@ -17,6 +18,7 @@ mod mates;
 mod mesh;
 mod presentation;
 mod reader;
+mod references;
 mod visual;
 mod xml;
 pub use binary::{BinaryReader, FramedString};
@@ -26,6 +28,7 @@ pub use document::{
     MaterialData, MaterialDensity, ReferenceReplacement, SavedAppearance, SavedAppearanceRecord,
     SavedMaterial, Sheet, SheetView,
 };
+pub use features::{FeatureCatalog, SavedFeature};
 pub use frame::{CoordinateFrame, SOLIDWORKS_MODEL_FRAME};
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
@@ -45,6 +48,10 @@ pub use presentation::{
     PresentationCoverage, PresentationData, PresentationScope, PresentationSource,
 };
 pub use reader::{DocumentReader, ReadOutput};
+pub use references::{
+    ReferenceGraph, ReferenceLink, ReferenceNode, ReferenceRecord, ReferenceRelation,
+    ReferenceResolution,
+};
 pub use visual::{
     NativeAppearance, NativeAppearanceExtension, NativeShaderParameters, NativeString,
     NativeTextureBlock, NativeTextureMappingHypothesis, SavedDisplayState, UnresolvedVisualBinding,
@@ -115,4 +122,16 @@ pub fn inventory_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindg
         .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
     serde_json::to_string(reader.inventory())
         .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
+}
+
+/// Inspect saved feature identities and scoped references without resolving topology.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn references_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindgen::JsError> {
+    let reader = DocumentReader::open(bytes, filename, Limits::default())
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    let graph = reader
+        .references()
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    serde_json::to_string(graph).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
 }

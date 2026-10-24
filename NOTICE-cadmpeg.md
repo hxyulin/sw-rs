@@ -41,3 +41,14 @@ The checked UTF-16 string cursor was extracted from `src/visual.rs` into
 checked borrowed slices, public primitive helpers, and direct surrogate-aware
 Unicode decoding without an intermediate UTF-16 allocation. It retains
 Apache-2.0 terms and the appearance-framing provenance above.
+
+## Saved feature identities
+
+`src/features.rs` adapts the `Keywords` feature-record interpretation from
+`crates/cadmpeg-codec-sldprt/src/history/mod.rs` and `src/records.rs` at the same
+Apache-2.0 revision `4df21312c62cc1207a4c2274e29b4118fd232ec6`.
+Changes: use existing source-aware structural XML inspection; retain duplicate
+IDs, original tags/attributes, reserved tokens and source byte spans; omit
+operation evaluation, inferred suppression, IR projection and topology binding.
+Saved XML preorder is not asserted to be regeneration order. The adapted module
+retains Apache-2.0 terms; new reference-graph infrastructure is MIT.
