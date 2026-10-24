@@ -109,6 +109,38 @@ assert.equal(prefixRecord.prefix_span.length, nativePrefix.length);
 assert.equal(nativeGraph.native_object_graph_decoded, false);
 assert.equal(nativeGraph.topology_ownership_decoded, false);
 console.log('WASM native document handles retain checked source prefixes without assigning ownership.');
+const handleClassAt = nativePrefix.indexOf(nativeClass('moCStringHandle_c'));
+const reusedPrefix = Buffer.concat([nativePrefix.subarray(0, handleClassAt),
+  Buffer.from([16, 128]), framed('../source/Part.SLDPRT')]);
+const contextFrame = Buffer.concat([nativeClass('moExtFeature_c'),
+  nativeClass('moCStringHandle_c'), framed('different/stale/assembly.SLDASM'),
+  Buffer.from([16, 128]), framed('saved configuration text')]);
+const context = Buffer.concat([nativeClass('moAssembly_c'), contextFrame]);
+function candidateFile(contextName, contextPayload) {
+  return Buffer.concat([container('Contents/Config-7-MatesList', reusedPrefix),
+    container(contextName, contextPayload).subarray(header.length)]);
+}
+const candidateGraph = JSON.parse(references_json(candidateFile('Contents/Config-7', context), 'candidate.SLDASM'));
+const candidateLink = candidateGraph.links.find(link => link.relation === 'native_document_handle_candidate');
+assert.equal(candidateLink.reference, '../source/Part.SLDPRT');
+assert.equal(candidateLink.resolution, 'unresolved');
+assert.deepEqual(candidateLink.candidates, []);
+const candidate = candidateGraph.nodes[candidateLink.from].record;
+assert.equal(candidate.kind, 'native_document_reference_candidate');
+assert.equal(candidate.reference.class_evidence.source_stream, 'Contents/Config-7');
+assert.equal(candidate.reference.class_evidence.raw_tag, 0x8010);
+assert.equal(candidate.reference.prefix_span.length, reusedPrefix.length);
+assert.equal(candidateGraph.native_reference_stops[0].stage, 'moCStringHandle_c');
+assert.equal(candidateGraph.native_reference_stops[0].offset, handleClassAt);
+assert.equal(candidateGraph.native_object_graph_decoded, false);
+assert.equal(candidateGraph.topology_ownership_decoded, false);
+for (const [contextName, bytes] of [['Contents/Config-8', context],
+  ['Contents/Config-7', Buffer.concat([context, contextFrame])]]) {
+  const rejected = JSON.parse(references_json(candidateFile(contextName, bytes), 'candidate.SLDASM'));
+  assert.equal(rejected.nodes.some(node => node.record.kind === 'native_document_reference_candidate'), false);
+  assert.equal(rejected.native_reference_stops.length, 1);
+}
+console.log('WASM handle candidates preserve class-map blockers and reject ambiguous or cross-config context.');
 if (process.argv[2]) {
   const path = process.argv[2];
   const source = require('node:fs').readFileSync(path);

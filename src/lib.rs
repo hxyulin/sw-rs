@@ -47,7 +47,10 @@ pub use mates::{
     ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
     MateReferenceNode,
 };
-pub use native_reference::NativeDocumentReference;
+pub use native_reference::{
+    NativeDocumentReference, NativeDocumentReferenceCandidate, NativeHandleClassEvidence,
+    NativeReferenceStop,
+};
 pub use object_archive::{ArchiveContext, ArchiveEntry, ArchiveError, ArchiveObjectHeader};
 pub use ole::{OleCompression, OleStreamSource};
 pub use presentation::{

@@ -17,6 +17,12 @@ pub enum ReferenceRecord {
         /// Checked contiguous prefix and exact source/handle evidence.
         reference: crate::NativeDocumentReference,
     },
+    /// Mate-prefix text supported by matching configuration framing only.
+    /// Neither the reused class nor the archive handoff has been established.
+    NativeDocumentReferenceCandidate {
+        /// Candidate handle plus both source locators and its unresolved class tag.
+        reference: Box<crate::NativeDocumentReferenceCandidate>,
+    },
     /// Validated display table and its adjacent saved surface-reference evidence.
     CachedSurface {
         /// Native configuration index from the canonical single-config geometry.
@@ -105,6 +111,8 @@ pub enum ReferenceResolution {
 pub enum ReferenceRelation {
     /// Saved document handle, without file, occurrence or native ownership resolution.
     NativeDocumentHandle,
+    /// Candidate handle from reused-class framing; archive continuity is unverified.
+    NativeDocumentHandleCandidate,
     /// Agreed cache-reference source ID matching a saved feature, without topology proof.
     CachedSurfaceFeatureIdentity,
     /// Saved feature-tree nesting, not regeneration dependency.
@@ -171,6 +179,10 @@ pub struct ReferenceGraph {
     pub native_object_graph_decoded: bool,
     /// False: no persistent B-Rep face/edge/body graph is established here.
     pub topology_ownership_decoded: bool,
+    /// First unsupported field for each scanned native prefix that could not decode.
+    /// Candidate handles do not remove their unresolved class from this list.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub native_reference_stops: Vec<crate::NativeReferenceStop>,
 }
 impl ReferenceGraph {
     pub(crate) fn native_document_references(&mut self, container: &crate::Container) {
@@ -179,37 +191,83 @@ impl ReferenceGraph {
                 || crate::mates::source_index(name).is_some()
         }) {
             let mut prefix_end = 0;
+            let evidence = std::cell::OnceCell::new();
             for class in crate::mesh::class_intervals(bytes)
                 .iter()
                 .filter(|c| c.name == "moFaceRef_c")
             {
-                // Class-looking bytes inside a checked CString are string data,
-                // not independent prefixes. Do not clone overlapping string tails.
+                // Checked CStrings are data, including any class-looking bytes.
                 if class.class_offset < prefix_end {
                     continue;
                 }
-                let Some(reference) =
-                    crate::NativeDocumentReference::parse_prefix(bytes, name, class.class_offset)
-                else {
-                    continue;
-                };
-                prefix_end = reference.prefix_span.offset + reference.prefix_span.length;
-                let text = reference.document.value.clone();
-                let at = reference.document.offset;
-                let start = reference.prefix_span.offset;
-                let node = self.node(
-                    name,
-                    format!("prefix[{start}]"),
-                    Some(start),
-                    ReferenceRecord::NativeDocumentReference { reference },
-                );
+                let start = class.class_offset;
+                let (record, text, at, end, relation, reason) =
+                    match crate::NativeDocumentReference::inspect_prefix(bytes, name, start) {
+                        Ok(reference) => {
+                            let text = reference.document.value.clone();
+                            let at = reference.document.offset;
+                            let end = reference.prefix_span.offset + reference.prefix_span.length;
+                            (
+                                ReferenceRecord::NativeDocumentReference { reference },
+                                text,
+                                at,
+                                end,
+                                ReferenceRelation::NativeDocumentHandle,
+                                "Saved document handle from an explicit native prefix; current file, occurrence and topology ownership are unresolved",
+                            )
+                        }
+                        Err(stop) => {
+                            let handle_stage = stop.stage == "moCStringHandle_c";
+                            self.native_reference_stops.push(stop);
+                            if !handle_stage {
+                                continue;
+                            }
+                            let frames = evidence.get_or_init(|| {
+                                crate::mates::source_index(name).and_then(|_| {
+                                    let source = name.strip_suffix("-MatesList")?;
+                                    container.streams.get(source).and_then(|bytes| {
+                                        crate::NativeHandleClassEvidence::scan_unique(bytes, source)
+                                    })
+                                })
+                            });
+                            // Multiple frames may represent separate archive contexts.
+                            // Never choose one by tag, path text, or first occurrence.
+                            let Some(frame) = frames.as_ref() else {
+                                continue;
+                            };
+                            let Some(reference) = crate::NativeDocumentReferenceCandidate::parse(
+                                bytes,
+                                name,
+                                start,
+                                frame,
+                                &mut prefix_end,
+                            ) else {
+                                continue;
+                            };
+                            let text = reference.document.value.clone();
+                            let at = reference.document.offset;
+                            let end = reference.prefix_span.offset + reference.prefix_span.length;
+                            (
+                                ReferenceRecord::NativeDocumentReferenceCandidate {
+                                    reference: Box::new(reference),
+                                },
+                                text,
+                                at,
+                                end,
+                                ReferenceRelation::NativeDocumentHandleCandidate,
+                                "Candidate saved handle supported by a matching Config-N framing tag; class-map continuity, current file, occurrence and topology ownership are unresolved",
+                            )
+                        }
+                    };
+                prefix_end = end;
+                let node = self.node(name, format!("prefix[{start}]"), Some(start), record);
                 self.links.push(ReferenceLink {
                     from: node,
-                    relation: ReferenceRelation::NativeDocumentHandle,
+                    relation,
                     reference: Some(text),
                     candidates: Vec::new(),
                     resolution: ReferenceResolution::Unresolved,
-                    reason: "Saved document handle from an explicit native prefix; current file, occurrence and topology ownership are unresolved".into(),
+                    reason: reason.into(),
                     source_offset: Some(at),
                     selection_descriptor: None,
                     selection_surface_reference: None,
@@ -319,6 +377,7 @@ impl ReferenceGraph {
             features: features.clone(),
             nodes: Vec::new(),
             links: Vec::new(),
+            native_reference_stops: Vec::new(),
             native_object_graph_decoded: false,
             topology_ownership_decoded: false,
         };

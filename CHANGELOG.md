@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Retain first unsupported native-prefix fields and configuration-backed handle
+  candidates in the opt-in reference graph. Include both source intervals and
+  unresolved class tags; reject ambiguous or cross-configuration context. Keep
+  class-map continuity and mate/appearance ownership unresolved.
+
 - Expose saved document handles from supported explicit native face-reference
   prefixes in the opt-in reference graph. Retain raw header words, entity class,
   checked prefix spans and exact CString offsets; keep file/occurrence/topology

@@ -98,12 +98,10 @@ impl<'a> BinaryReader<'a> {
         *self = trial;
         Some(values)
     }
-    /// Read the supported native UTF-16 CString framing with short/u16/u32 counts.
-    /// Checks the complete byte span before allocating, rejects invalid UTF-16,
-    /// and rolls back on failure. Offsets refer to the original stream slice.
-    pub fn string(&mut self) -> Option<FramedString> {
+    /// Borrow complete counted CString code-unit bytes without decoding their text.
+    /// Advances only for an in-bounds supported frame; UTF-16 validity is unchecked.
+    pub(crate) fn string_bytes(&mut self) -> Option<&'a [u8]> {
         let mut trial = *self;
-        let offset = trial.at;
         if trial.take(3)? != [0xff, 0xfe, 0xff] {
             return None;
         }
@@ -113,6 +111,16 @@ impl<'a> BinaryReader<'a> {
             count => usize::from(count),
         };
         let bytes = trial.take(count.checked_mul(2)?)?;
+        *self = trial;
+        Some(bytes)
+    }
+    /// Read the supported native UTF-16 CString framing with short/u16/u32 counts.
+    /// Checks the complete byte span before allocating, rejects invalid UTF-16,
+    /// and rolls back on failure. Offsets refer to the original stream slice.
+    pub fn string(&mut self) -> Option<FramedString> {
+        let mut trial = *self;
+        let offset = trial.at;
+        let bytes = trial.string_bytes()?;
         // Decode directly from borrowed code units; no intermediate Vec<u16>.
         let units = bytes
             .as_chunks::<2>()

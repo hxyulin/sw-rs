@@ -132,7 +132,15 @@ and public API semantics, without a SolidWorks SDK or new runtime dependency.
 The [native document-handle investigation](references.md#native-document-handle-prefixes)
 validates a complete explicit prefix in visual states. All 46 explicit face-reference
 candidates in the public mate streams still encounter unknown reused classes.
-The shared archive map remains necessary before decoding those branches.
+The shared archive map remains necessary before decoding those branches. The
+[public prefix follow-up](archive-reference-rules.md#public-mate-prefix-follow-up-2026-10-25)
+finds matching handle-tag evidence in all 41 affected configuration streams and
+separates inherited-context candidates from local reuse. Run
+`cargo run --locked --example audit_mate_prefixes -- assembly.SLDASM` to inspect
+the first unsupported position and raw tag in another sample. The opt-in reference
+graph now retains 41 of these cases as separate saved-handle candidates with
+configuration framing evidence. All 46 class-map stops remain visible; neither
+mate families nor selected entities are resolved from these candidates.
 
 1. TODO(mate-object-map): reconstruct the external/shared MFC class and object
    dictionary. This should recover reused mate families and reused selections,

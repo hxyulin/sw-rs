@@ -77,6 +77,57 @@ Per-file evidence and the independent walker remain ignored under
 `local-assets/modern-reference-investigation/`. Complete class-map reconstruction
 and current entity/occurrence ownership remain separate work.
 
+### Reused handle candidates and stopping diagnostics
+
+The opt-in reference graph now exposes `native_reference_stops` when a scanned
+prefix reaches an unsupported field. Each stop retains its source stream,
+prefix offset, failed-field offset, stage, raw class tag when available, and an
+explicit class candidate when present. `NativeDocumentReference::inspect_prefix`
+returns the same diagnostic; `parse_prefix` still accepts only explicit prefixes.
+
+For the handle-class branch, the graph can additionally retain a
+`native_document_reference_candidate` record. Its separate
+`native_document_handle_candidate` link stays unresolved. This is a framed-text
+candidate, not reused-class decoding or a reconstructed archive map.
+
+The candidate requires all preceding classes to be explicit schema-1 declarations,
+then a short class tag and valid CString. The exact corresponding `Contents/Config-N`
+stream must start with `moAssembly_c` or `moRouteAssembly_c` and contain exactly
+one supported contiguous frame:
+
+```text
+explicit moExtFeature_c
+explicit moCStringHandle_c
+CString
+short class tag
+CString
+```
+
+The intervening configuration tag must equal the unknown handle tag. No path or
+name comparison supplies this relationship. The record retains the candidate
+CString, its complete prefix-framing span, raw header words, explicit entity
+class, and the original unresolved-class diagnostic. `class_evidence` retains
+the configuration stream, root class, declaration/frame/string spans and exact
+tag offset. Configuration text is not copied into every candidate.
+
+Missing, multiple or malformed context frames reject the candidate. A model
+header, manager stream or another configuration cannot supply the context.
+Object/null tags, unsupported classes earlier in the prefix, wide tags and
+invalid strings remain unsupported. Counted string contents are excluded from
+nested declaration scans, including when a later frame field fails.
+
+The public validation retains all 67 explicit visual prefixes and adds 41 mate
+handle candidates, including one blank string. All 46 class stops remain visible:
+a handle candidate does not remove its class-map blocker. An independent byte
+walker checks both source intervals and the exact saved candidate text. Ordinary
+metadata remains identical across the 344 modern baseline entries.
+
+The remaining implementation blocker is the complete serialization call sequence
+through `Config-N` and `Config-N-ResolvedFeatures`. Matching frame tags cannot
+establish object registrations, local class slots, archive order or current
+selection ownership. No synthetic empty map slots or declaration-order dictionary
+are inserted. See the [public prefix investigation](archive-reference-rules.md#public-mate-prefix-follow-up-2026-10-25).
+
 ## Resolution rules
 
 - `resolved`: XML feature containment, or a unique correctly typed same-stream

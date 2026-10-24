@@ -87,6 +87,80 @@ controlled saves, and reproduce subsequent class-slot assignments through all
 intervening nested payloads. A fake initial array of empty slots would hide this
 missing evidence rather than resolve it.
 
+## Public mate-prefix follow-up, 2026-10-25
+
+The pinned Talaria Robotics and GeoKylin public samples contain 46 explicit
+`moFaceRef_c` candidates across 40 source files. Counts include separate
+configuration streams in the same file. A checked walk of each supported prefix
+stops at these class positions:
+
+| First unsupported position | Candidates | Raw short class-slot candidates |
+| --- | ---: | --- |
+| `moCStringHandle_c` | 41 | 13 through 46, with gaps |
+| Entity representation | 4 | 212, 215, 273, 312 |
+| `moFR_c` | 1 | 257 |
+
+These are archive-slot candidates extracted from raw tags, not CAD entity IDs.
+No prefix in this set reaches a document handle through a fully explicit chain.
+
+### The handle tags correlate with the matching configuration stream
+
+For all 41 handle failures, the matching `Contents/Config-N` stream contains an
+explicit `moCStringHandle_c` declaration followed contiguously by a framed string,
+a short tag, and another framed string. That short tag equals the blocked mate
+tag in **41 of 41** cases. Applying the same comparison to `Contents/CMgr` gives
+one match; `Contents/Config-N-ModelHeader` gives zero matches. The declaration
+alone would not establish this correspondence.
+
+All 41 blocked mate tags are below their mate stream's leading word. Under the
+existing next-map-slot hypothesis, these classes were registered before the mate
+segment. This makes the matching `Config-N` stream the next target for a
+sequential decoder. It does not prove its complete serialization call sequence
+or establish which slots came from `MapObject` or class-only serialization.
+Tag equality and adjacent strings remain framing evidence, not a recovered map.
+
+### The earlier failures need feature and mate payload layouts
+
+Three entity failures have tags above the mate stream's leading word: slot 312
+versus 277, slot 212 versus 186, and slot 215 versus 189. Each stream has earlier
+`moEdgeRef_c` and surface-representation declarations. Under the same hypothesis,
+these are local reuse after edge-reference serialization. Skipping those
+payloads would lose the object allocations needed to assign the later slots.
+
+The other entity failure has slot 273 versus leading word 287. Its matching
+`Contents/Config-1-ResolvedFeatures` contains an explicit `moSimpleSurfIdRep_c`
+declaration at byte 9973. The `moFR_c` failure has slot 257 versus leading word
+276; its matching `Contents/Config-0-ResolvedFeatures` contains an explicit
+`moFR_c` declaration at byte 8461. These are candidate predecessor declarations.
+No sequential walk yet binds them to those slots. The evidence supports
+investigating `Config-N`, then `Config-N-ResolvedFeatures`, then `Config-N-MatesList`;
+it does not establish that archive order as a format rule.
+
+### Reproduce the stopping points
+
+```sh
+cargo run --locked --example audit_mate_prefixes -- assembly.SLDASM
+```
+
+The example reports source SHA-256, exact stream names, candidate offsets, the
+first unsupported prefix position, raw tags and contiguous carrier frames.
+The explicit-prefix walk stops at the unknown class. A separate candidate path
+checks the following CString framing without asserting its class. Declaration
+scans are labeled candidates; they are not object boundaries. Both map recovery
+and topology ownership remain false. Ordinary metadata and geometry do not run
+this scan.
+
+An independent Python walker agrees with the Rust example on all 46 stopping
+stages, offsets and tags, and on all 123 compared carrier frames. The probes,
+per-source reports and extracted bytes remain ignored in
+`local-assets/mate-prefix-investigation/`. No public sample bytes are distributed.
+The opt-in graph now preserves the 41 handle cases as
+[separate candidates](references.md#reused-handle-candidates-and-stopping-diagnostics),
+with both source spans and the unresolved class stop. This does not recover a map.
+Before adding reused-class support, decode and validate the intervening payloads
+and map registrations. A controlled save can then test whether adding one object
+moves the predicted slots without changing the selected entity.
+
 ## Topology identity is another decoding layer
 
 The follow-up [surface-reference investigation](surface-reference-rules.md)
