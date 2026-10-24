@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Load legacy OLE/CFB documents with strict sector/directory validation and bounded
+  raw/ZLB stream extraction. Retain fragmented source ranges, original paths,
+  hashes and ZLB member spans in inventory; reject normalized-name collisions.
+  Existing metadata and saved-mesh decoders now accept compatible legacy streams
+  on native hosts and WASM. Legacy binary property sets remain opaque.
+
 - Add a searchable GitHub Pages documentation book and generated Rust API reference, shorten the README, preserve the existing viewer URL, and fix viewer formatting in CI.
 
 - Decode the observed legacy chunked ZLB wrapper with exact size/checksum/member

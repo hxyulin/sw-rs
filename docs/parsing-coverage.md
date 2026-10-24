@@ -2,7 +2,41 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # Measured parser coverage
 
-Snapshot: 2026-10-24, EGA mechanisms plus the design library. Counts refer to
+## OLE follow-up, 2026-10-25
+
+The reader now loads validated legacy OLE streams. Container loading, partial
+metadata and saved-mesh recovery are measured separately:
+
+- Public corpus: all 28 unique OLE files load, with all 736 extracted stream
+  lengths/hashes and physical ranges matching an independent Python OLE/zlib
+  reader. The 25 controlled SW2011 Parts all yield cached meshes, with table counts
+  matching the author's recorded SolidWorks face counts. Three older Parts still
+  have absent or unsupported cached geometry.
+- Regression check: all 344 previously supported public modern source entries
+  retain identical metadata and inventories, geometry success/failure, and saved
+  table/triangle counts. These entries include three duplicate source hashes.
+- Design-library follow-up: 92/93 OLE documents load, exposing 2,875 streams,
+  including 485 validated ZLB wrappers. Cached meshes recover for 86/87 legacy
+  external Parts. One Part fails strict CFB validation because its directory
+  red-black tree has adjacent red nodes; no permissive repair is attempted.
+
+Public files were pinned to `blussyya/sldprt-research-dump` revision
+`94478c839d4f4885f811aae8e45d70076476a079` and the four demo fixtures in
+`blussyya/sldprt-format-research` revision
+`7a28c8bbc2d5372ab45e22f8d6f37ff8ed12ea2b`. The latter are byte-identical copies
+of corpus files and are not counted twice. The controlled source includes
+[native exports and a SolidWorks build log](https://github.com/blussyya/sldprt-research-dump/tree/94478c839d4f4885f811aae8e45d70076476a079/test%20files%20new).
+No public or private source CAD is bundled. Per-file reports and comparison scripts
+remain ignored under `local-assets/public-corpus-2026-10-25/` and
+`local-assets/ole-investigation/`.
+
+Native face-count agreement does not establish face identity, full geometric
+equivalence or B-Rep support. Legacy binary property sets remain opaque. Missing
+and ambiguous modern caches, native topology and mate endpoints remain open.
+
+## Prior modern-container census
+
+Historical snapshot: 2026-10-24, before OLE loading, EGA mechanisms plus the design library. Counts refer to
 source entries, not unique designs. Eight library lock files are excluded.
 No overall semantic parsing percentage is claimed: recovered bytes, recognized
 records, resolved relationships and renderable geometry are different measures.
@@ -20,7 +54,7 @@ records, resolved relationships and renderable geometry are different measures.
 | Mate surface descriptors | 4,983 strings: 4,217 complete, 568 opaque, 198 invalid | Typed saved ID tuples, not resolved mate participants |
 | Cached surface references | 433,680 strings across 218,500 tables | Opt-in metadata interpretation; duplicate/conflicting tuples preserved |
 | Cache-to-feature links | 215,030 unique source-ID matches | Candidate saved-feature links; current face/body ownership still unverified |
-| Legacy compression helper | 490 extracted ZLB streams, 401 members, 45,323,897 decoded bytes | Complete wrapper decoding; OLE document loading is still pending |
+| Legacy compression helper | 490 extracted ZLB streams, 401 members, 45,323,897 decoded bytes | Complete wrapper decoding; document loading was not included in this snapshot |
 | Materials and appearance | Definitions, configuration references, raw shader/texture/optical evidence and partial scoped/cache assignments | Physical and visual evidence stay separate; effective per-face/native rendering remains incomplete |
 | Drawings | Basic sheet/view/reference metadata, tested separately with fixtures | No native drawing renderer; none are in this two-archive native census |
 

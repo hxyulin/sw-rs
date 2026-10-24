@@ -3,8 +3,9 @@
 # Cached geometry and coordinates
 
 
-`geometry(bytes, filename)` reads one modern Part DisplayLists carrier for one
-canonical native configuration. It validates compact/extended face headers,
+`geometry(bytes, filename)` reads one Part DisplayLists carrier for one
+canonical native configuration, from modern inline streams or a validated legacy
+OLE `DisplayLists__ZLB` stream. It validates compact/extended face headers,
 six descriptor channels, finite source float coordinates and strip winding,
 including validated class reuse. Output coordinates are millimetres; source
 stream/table offsets and normals are retained. Tables follow the old CAD IR's

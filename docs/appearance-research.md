@@ -46,7 +46,8 @@ per-file reports stay in ignored `local-assets/visual-decoding/`.
 | EGA mechanisms | 340 | 360 | 157 | 203 |
 | Design library | 147 | 110 | 22 | 88 |
 
-The library also contains 93 legacy OLE documents unsupported by this runtime.
+That survey excluded 93 legacy OLE documents. Subsequent OLE loading results
+are recorded in [coverage](parsing-coverage.md#ole-follow-up-2026-10-25).
 These counts include supported cache properties for Parts whose geometry can be
 decoded. They are not counts of unique appearances, applied surfaces, or complete
 native records.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
-//! Byte-oriented SolidWorks 2015+ metadata reader, ported from MIT openswx.
+//! Byte-oriented SolidWorks metadata reader with modern inline and legacy OLE loading.
 //! No filesystem, host clock, native CAD runtime, or C++ dependency is required.
 //!
 //! ```
@@ -17,6 +17,7 @@ mod inventory;
 mod mates;
 mod mesh;
 mod object_archive;
+mod ole;
 mod presentation;
 mod reader;
 mod references;
@@ -46,6 +47,7 @@ pub use mates::{
     MateReferenceNode,
 };
 pub use object_archive::{ArchiveContext, ArchiveEntry, ArchiveError, ArchiveObjectHeader};
+pub use ole::{OleCompression, OleStreamSource};
 pub use presentation::{
     AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin, AppearanceTarget,
     CachedPropertyResolution, PhysicalMaterialBinding, PhysicalMaterialDefinition,
@@ -67,7 +69,7 @@ pub use visual::{
 };
 pub use zlb::{ZlbChunk, ZlbStream, decode_zlb};
 
-/// Parse a modern document using bounded default resource limits.
+/// Parse a modern inline or legacy OLE document using bounded default limits.
 /// `filename` supplies the document kind; it is never opened or resolved.
 pub fn parse(bytes: &[u8], filename: &str) -> Result<Document, ParseError> {
     parse_with_limits(bytes, filename, Limits::default())

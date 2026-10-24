@@ -28,7 +28,34 @@ def native_visual_state():
             bytes(43)+bytes([255])*16+bytes(20)+u32(18000,1,1,2)+
             visual_class('visStateVisualPropertiesAttribute_c')+u32(1)+
             visual_class('moVisualProperties_c')+visual_property([34,68,102],'Saved native default'))
-def part(size, material=False, visual=False, extra_streams=()):
+def legacy_part(display):
+    # Authored CFB v3 fixture: one directory, one FAT and a regular ZLB stream.
+    # Stored zlib plus an opaque tail keeps the stream above the mini-stream cutoff.
+    display += bytes(4096)
+    packed = zlib.compress(display, level=0)
+    stream = bytes.fromhex('231dd571da8148a2a85898b21b89ef99') + u32(len(display),len(packed)) + packed + bytes(8)
+    free, end, fat_sector = 0xffffffff, 0xfffffffe, 0xfffffffd
+    def entry(name, kind, child=free, start=end, length=0):
+        data = bytearray(128)
+        encoded = (name+'\0').encode('utf-16le')
+        data[:len(encoded)] = encoded
+        struct.pack_into('<HBB',data,64,len(encoded) if name else 0,kind,1)
+        data[68:80] = u32(free,free,child)
+        data[116:120] = u32(0 if kind in (0,1) else start)
+        struct.pack_into('<Q',data,120,length)
+        return data
+    header = bytearray(512)
+    header[:8] = bytes.fromhex('d0cf11e0a1b11ae1')
+    struct.pack_into('<5H',header,24,0x3e,3,0xfffe,9,6)
+    header[40:76] = u32(0,1,0,0,4096,end,0,end,0)
+    header[76:] = u32(1,*([free]*108))
+    sectors = (len(stream)+511)//512
+    fat = [end,fat_sector]+[i+3 if i+1<sectors else end for i in range(sectors)]
+    fat += [free]*(128-len(fat))
+    directory = (entry('Root Entry',5,child=1)+entry('Contents',1,child=2)+
+                 entry('DisplayLists__ZLB',2,start=2,length=len(stream))+entry('',0))
+    return bytes(header+directory+u32(*fat)+stream+bytes(sectors*512-len(stream)))
+def part(size, material=False, visual=False, extra_streams=(), legacy=False):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
@@ -46,7 +73,7 @@ def part(size, material=False, visual=False, extra_streams=()):
     if visual: streams.append(('ThirdPtyStore/VisualStates',native_visual_state()))
     if material:
         streams.append(('swXmlContents/MATERIALTREE', b'<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials"><classification name="Aluminum"><material name="test materials|6061 Alloy" matid="21"><swatchcolor RGB="151515"/><shaders><pwshader name="black low gloss plastic" path="designlibrary/appearances/plastic/low gloss/black low gloss plastic.p2m"/></shaders><physicalproperties><DENS value="2700"/></physicalproperties></material></classification><configurationslist><configuration name="Default" material="test materials|6061 Alloy|21"/></configurationslist></mstns:materials>'))
-    return container([*streams,*extra_streams])
+    return legacy_part(display) if legacy else container([*streams,*extra_streams])
 def assembly(missing=False):
     files='<swFile id="root" swPath="Demo.SLDASM"/>'
     models=''
@@ -154,3 +181,4 @@ inspection_xml = b'<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"
 inspection_binary = visual_class('UnknownClass')+mfc_string('<img src=x onerror=alert(1)>')+b'opaque tail'
 (OUT/'inventory.SLDPRT').write_bytes(part([.18,.10,.02],extra_streams=[('swXmlContents/Features',inspection_xml),('swXmlContents/Unicode',b'\xff\xfe'+'<root>纹理😀</root>'.encode('utf-16le')),('Mystery/Unknown',inspection_binary),('Mystery/Many',b''.join(mfc_string(f'entry{i}') for i in range(180)))]))
 (OUT/'legacy.SLDPRT').write_bytes(b'\xd0\xcf\x11\xe0'+bytes(64))
+(OUT/'legacy-valid.SLDPRT').write_bytes(part([.18,.10,.02],legacy=True))

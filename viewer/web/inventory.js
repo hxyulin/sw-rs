@@ -69,7 +69,7 @@ export class InventoryPanel {
     const opaque = inventory.source_bytes - inventory.verified_container_bytes;
     this.summary.textContent = `${inventory.format} · ${inventory.source_bytes.toLocaleString()} source bytes · ` +
       `${inventory.streams.length} selected streams · ${data.report.container_record_count} record candidates\n` +
-      `${inventory.verified_container_bytes.toLocaleString()} bytes in verified inline records · ` +
+      `${inventory.verified_container_bytes.toLocaleString()} bytes in verified container ranges · ` +
       `${opaque.toLocaleString()} unclassified bytes\nSHA-256: ${inventory.source_sha256}`;
     this.message.textContent = inventory.container_error || "Container validation available; semantic coverage has not been evaluated.";
     this.renderStreams();

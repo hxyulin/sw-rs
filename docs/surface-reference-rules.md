@@ -41,7 +41,7 @@ of cross-save stability or an existing face/body.
 The census uses the same 340 EGA and 240 design-library native entries as the
 previous inventory. Every source SHA-256 matches. Only canonical supported Part
 geometry is eligible for bounded cache-metadata inspection: 248 EGA Parts and
-79 library Parts. The 93 legacy OLE library documents remain unsupported; mirror,
+79 library Parts. That snapshot excluded the 93 legacy OLE library documents; mirror,
 embedded and configuration-ambiguous geometry limitations remain in place.
 
 Across 218,500 validated cache tables, 433,680 recognized surface-reference
@@ -122,7 +122,8 @@ flags remain false.
 
 Additional research identified and implemented the separate
 [legacy chunked ZLB wrapper](legacy-zlb-rules.md). This enables extracted-stream
-decoding but does not enable the OLE document container in the runtime parser.
+decoding. The subsequent [OLE loader](containers.md#legacy-ole-structured-storage)
+integrates it without adding native topology ownership.
 
 The saved identifiers now have a typed, loss-preserving representation shared by
 mate descriptors and cache inspections. The next join is to complete native

@@ -105,7 +105,7 @@ recognized/saved header counts for the selected native configuration.
 | Design library | 12 | 13 | 104 / 104 | 190 | 189 |
 
 All 58 stream counts agree, including 13 saved-empty streams. Six additional
-library assemblies use legacy OLE containers unsupported by the runtime. Counts
+library assemblies used legacy OLE containers excluded from that runtime census. Counts
 include duplicate archive entries/documents and are not deduplicated designs.
 
 Explicit class declarations establish families for 130 EGA records and 19 library

@@ -3,9 +3,9 @@
 # Legacy compressed-stream framing
 
 This research identifies the `__ZLB` wrapper used by legacy OLE documents in the
-design library. The new pure Rust decoder handles extracted compressed streams;
-`Container` still rejects OLE documents. No legacy document/geometry coverage
-increase is claimed.
+design library. The pure Rust decoder handles extracted compressed streams and
+now runs inside the [OLE container loader](containers.md#legacy-ole-structured-storage).
+Wrapper validation and legacy native-payload interpretation remain separate layers.
 
 ## Observed framing
 
@@ -65,16 +65,17 @@ The audit emits hashes, member counts and spans, without serializing raw payload
 Private source probes and extracted streams remain ignored under
 `local-assets/surface-investigation/`.
 
-## Next layer
+## OLE integration
 
 OLE is a separate structured-storage format with a published
 [Microsoft CFB specification](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b).
-The [MIT-licensed rust-cfb library](https://github.com/mdsteele/rust-cfb) is a
-candidate for an OLE-container experiment; it has not been added or validated
-for this project's WASM build. Container integration needs stream provenance,
-sector/range accounting, cumulative budgets and explicit duplicate-name behavior.
-Decoded stream names/legacy native layouts then need compatibility checks.
+The loader uses the [MIT-licensed rust-cfb library](https://github.com/mdsteele/rust-cfb)
+with strict validation. It extracts streams, validates suffixed wrappers, removes
+`__ZLB` from selected names and retains original paths and physical source ranges.
+Document-wide decoded-byte and entry/member budgets include every stream.
+Normalized-name collisions fail. See [containers](containers.md) for the exact
+source-accounting contract and [coverage](parsing-coverage.md) for measured results.
 
-This wrapper rule is a prerequisite for complete legacy stream inventory. It does
-not decode Parasolid bodies, recover native topology, or resolve the modern EGA
-mirror/embedded Parts whose supported face caches are absent.
+Neither layer decodes Parasolid bodies or recovers native topology. OLE support
+does not resolve modern EGA mirror/embedded Parts whose supported face caches
+are absent.

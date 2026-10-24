@@ -17,7 +17,7 @@ pub struct Limits {
     pub max_stream_bytes: usize,
     /// Maximum cumulative decoded bytes, including duplicate streams.
     pub max_total_bytes: usize,
-    /// Maximum marker candidates, bounding diagnostics and decode attempts.
+    /// Maximum modern marker candidates, or OLE entries plus ZLB members.
     pub max_records: usize,
 }
 impl Limits {
@@ -75,7 +75,7 @@ pub struct Diagnostic {
 /// Decoded primary streams, retaining the first valid occurrence of each name.
 #[derive(Debug)]
 pub struct Container {
-    /// Raw uncompressed stream bytes, keyed by decoded ASCII names.
+    /// Uncompressed stream bytes, keyed by decoded Unicode paths.
     pub streams: BTreeMap<String, Vec<u8>>,
     /// Skipped records, index records, and duplicate names.
     pub diagnostics: Vec<Diagnostic>,
@@ -92,8 +92,8 @@ impl Container {
             .map(|bytes| crate::inventory::inspect(name, bytes))
     }
 
-    /// Decode inline raw-deflate records with CRC and size verification.
-    /// OLE2 and ZIP/OPC are recognized but unsupported.
+    /// Decode modern inline records or legacy OLE streams with checked ZLB wrappers.
+    /// ZIP/OPC native documents remain unsupported.
     pub fn parse(data: &[u8], limits: Limits) -> Result<Self, ParseError> {
         Self::parse_traced(data, limits, None)
     }
@@ -108,7 +108,7 @@ impl Container {
             return Err(fail("input size limit exceeded"));
         }
         if data.starts_with(&[0xd0, 0xcf, 0x11, 0xe0]) {
-            return Err(fail("legacy OLE2 container is unsupported"));
+            return crate::ole::parse(data, limits, trace);
         }
         if data.starts_with(b"PK\x03\x04") {
             return Err(fail("ZIP/OPC container is unsupported"));

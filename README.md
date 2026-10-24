@@ -18,9 +18,10 @@ browser, with an assembly hierarchy, source inspector and procedural materials.
 | Presentation | Physical materials, raw appearance records and partial scoped/cache bindings |
 | Research | Source inventories, saved feature IDs, mate headers and surface-reference evidence |
 
-This is a partial reader for modern inline-stream files, not a CAD kernel.
-Legacy OLE document loading, Parasolid topology, feature regeneration, complete
-appearance ownership and mate solving remain unsupported. See the
+This is a partial reader for modern inline-stream and legacy OLE files.
+OLE loading validates sector chains and compressed streams; legacy binary
+property sets, Parasolid topology, feature regeneration, complete appearance
+ownership and mate solving remain unsupported. See the
 [measured coverage](https://hxyulin.github.io/sw-rs/docs/parsing-coverage.html).
 
 ## Quickstart

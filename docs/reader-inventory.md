@@ -83,6 +83,14 @@ whole-stream coordinates when starting inside a record.
   indices, path-based family hints and available partial decoder names.
 - Nonoverlapping verified inline-record ranges and their unclassified complement.
 
+For OLE, records instead carry `ole_source`: original CFB path, extracted length
+and hash, physical ranges in logical stream order, and validated raw/ZLB encoding.
+Inline fields and spans are absent; record `offset` is zero. ZLB chunk spans are
+relative to the extracted stream, not physical sectors. Verified accounting covers
+encoded stream bytes only. Allocation metadata and sector padding stay unclassified.
+Strict CFB validation, complete wrapper validation and normalized-name collision
+rejection precede access to decoded streams. See [containers](containers.md).
+
 Verified ranges include the encoded inline header, name and compressed payload.
 Every original file byte belongs to either a verified range or an unclassified
 range. Unclassified bytes can contain prologues, indices, rejected candidates,
@@ -153,11 +161,13 @@ projection of the full library inventory, not the full inventory DTO.
 
 ## Validation and measured scope
 
-Private EGA and design-library audits include 580 native archive entries:
-340 + 147 modern supported files and 93 unsupported legacy OLE files. There are
+The 2026-10-24 EGA and design-library audit, before OLE loading, includes 580 entries:
+340 + 147 modern supported files and 93 then-unsupported legacy OLE files. There are
 27,955 selected modern streams. Every file's verified-plus-unclassified byte
 accounting balances, and source hashes match prior audits. Original CAD and
 per-file reports remain ignored under `local-assets/inventory-investigation/`.
+The subsequent [OLE follow-up](parsing-coverage.md#ole-follow-up-2026-10-25)
+measures legacy loading separately.
 
 The main EGA assembly retains 3,380,059 triangles, 615 rendered occurrences,
 1 missing reference and 1,169 visited nodes. Native tests check CRC rejection,

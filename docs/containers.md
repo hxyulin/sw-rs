@@ -44,15 +44,46 @@ Unknown record families and bytes outside validated spans remain diagnostic or
 opaque. Successfully recovering a document's named streams is not equivalent
 to interpreting every cache, binary object or historical revision.
 
+## Legacy OLE structured storage
+
+The reader loads OLE/CFB v3 and v4 from borrowed bytes using `cfb` 0.15 with
+strict validation. It enumerates nested storages, extracts ordinary and mini
+streams, and preserves Unicode paths, including standard property-set control
+characters. No host files, clock or native CAD library are required.
+
+A stream whose leaf ends in `__ZLB` must pass the complete
+[ZLB wrapper decoder](legacy-zlb-rules.md). Its selected name removes that suffix;
+for example, `Contents/DisplayLists__ZLB` becomes `Contents/DisplayLists`.
+Other streams remain exact bytes, even when their contents resemble ZLB.
+Raw/compressed names that normalize to the same path fail the container rather
+than choosing a value. A malformed wrapper also fails the container; the source
+inventory retains earlier validated streams and the rejected wrapper's provenance.
+
+Input, per-stream and cumulative decoded-byte limits apply. `max_compressed_bytes`
+also bounds the entire extracted ZLB wrapper before allocation. `max_records`
+counts non-root storages, streams and ZLB members across the document. Physical
+reads are bounded by twice the input length: one allocation-metadata pass and
+one nonoverlapping stream-data pass. This prevents repeated FAT references from
+amplifying allocations. Stream bytes cannot overlap each other or read allocation
+metadata as a native payload.
+
+`ContainerRecord::ole_source` preserves original paths, encoded lengths/hashes,
+physical source ranges in logical order and validated ZLB member/terminator
+spans. Concatenating those physical ranges reconstructs the encoded stream.
+ZLB spans instead refer to that reconstructed stream. Inline header fields remain
+absent. Verified byte accounting includes only validated encoded stream bytes;
+allocation metadata and unused sector padding remain unclassified. Raw OLE
+streams have no invented CRC: their SHA-256 records identity, not an on-disk checksum.
+
+Loading streams does not establish support for every legacy native layout.
+Existing metadata and cached-mesh profiles run on compatible streams. Binary OLE
+property sets, native topology and feature evaluation remain opaque. Strict CFB
+validation can reject malformed files that another application repairs.
+
 ## Other native containers
 
-Legacy OLE2 signatures and ZIP/OPC native containers return explicit unsupported
-errors. `DocumentReader` can still produce an opaque inventory with the original
-error. Do not pass these files directly to XML or attempt arbitrary zlib scans.
-
-The [legacy ZLB research](legacy-zlb-rules.md) establishes a complete chunk wrapper
-for already extracted OLE streams, including multiple members and an exact EOF
-terminator. It does not implement CFB sector enumeration or legacy document layouts.
+ZIP/OPC native containers remain unsupported. `DocumentReader` retains an opaque
+inventory and the original error. Outer project ZIP archives are a separate layer.
 
 ## Outer project archives
 

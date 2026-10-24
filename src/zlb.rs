@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
-//! Research-verified legacy compressed-stream framing; no OLE container reader.
+//! Research-verified compressed-stream framing, also used by the OLE loader.
 use crate::{BinaryReader, ByteSpan, Limits, ParseError};
 use flate2::{Decompress, FlushDecompress, Status};
 use serde::Serialize;

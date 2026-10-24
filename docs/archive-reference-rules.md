@@ -61,8 +61,8 @@ unique designs or cross-save identity tests.
 
 There are still opaque trailers: 420 streams retain 8 bytes; 67 retain 12 bytes.
 Those bytes are not silently skipped and no complete root-object boundary or
-whole-document reference graph is claimed. All 93 legacy OLE documents remain
-outside the runtime container profile. Native versions observed are 12000,
+whole-document reference graph is claimed. At that snapshot, all 93 legacy OLE
+documents remained outside the runtime container profile. Native versions observed are 12000,
 13000, 14000, 16000, 17000 and 18000; no universal version support is inferred.
 
 ## Mate-stream context hypothesis

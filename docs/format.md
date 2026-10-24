@@ -11,7 +11,7 @@ serialization schemas and document configuration indices are different values.
 
 | Layer | What we know | Further reading |
 | --- | --- | --- |
-| Container | Modern named compressed inline streams; legacy OLE recognized but not loaded | [Containers](containers.md) |
+| Container | Modern named compressed inline streams; validated legacy OLE streams and ZLB wrappers | [Containers](containers.md) |
 | Payload structure | XML trees, binary scalars and framed strings, partial MFC serialization | [Metadata](metadata.md), [archive maps](archive-reference-rules.md) |
 | Document records | Properties, configurations, occurrences, references, cut lists and drawing metadata | [Metadata](metadata.md) |
 | Display cache | Saved Part triangles, normals and cache-local property slots | [Geometry](geometry.md) |
@@ -29,8 +29,9 @@ visual states and native body/history payloads. Their names do not prove that we
 understand their contents. Tail/index records are not compressed inline payloads.
 
 Legacy files use Microsoft Compound File Binary/OLE structured storage, with some
-logical streams wrapped in `__ZLB` compression. We can validate that wrapper for
-already extracted streams; runtime OLE enumeration and provenance remain pending.
+logical streams wrapped in `__ZLB` compression. The reader validates OLE sector
+chains, extracts streams and decodes supported wrappers with physical provenance.
+This does not decode every legacy native layout or binary property set.
 A ZIP archive uploaded to the viewer is an outer collection of native documents,
 not a newly supported ZIP/OPC native SolidWorks container.
 
@@ -65,7 +66,7 @@ shader implementation are distributed.
 
 ## What remains unknown
 
-OLE document integration, full native object payload boundaries, feature history
+Legacy binary property sets, full native object payload boundaries, feature history
 and Parasolid topology, current body/face ownership, complete display-state and
 occurrence appearance overrides, verified texture projection, mate parameters
 and endpoints, custom coordinate systems and drawing rendering remain open.

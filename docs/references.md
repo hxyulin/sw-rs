@@ -92,7 +92,9 @@ documents used by the reader inventory; all source SHA-256 values match that
 inventory. All 487 supported modern documents have a decoded Keywords catalog:
 23,390 saved feature-tree records, 22,932 distinct numeric source IDs summed per
 document, and no duplicate numeric IDs within these catalogs. The 93 legacy OLE
-documents remain unsupported. These counts do not establish cross-save stability.
+documents were excluded from that snapshot; see the subsequent
+[OLE loading results](parsing-coverage.md#ole-follow-up-2026-10-25).
+These counts do not establish cross-save stability.
 
 The XML graphs contain 11,496 resolved typed stream-local reference links and 27 saved
 feature-containment links. Visual feature source words produce 31 unique catalog

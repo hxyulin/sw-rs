@@ -696,13 +696,13 @@ test("source inventory inspects unknown XML and binary candidates locally withou
   expect(await page.evaluate(()=>window.viewer.snapshot().state)).toEqual(before);
 });
 
-test("unsupported containers retain an opaque source inventory and import resets the inspector", async ({ page }) => {
+test("malformed OLE retains an opaque source inventory and import resets the inspector", async ({ page }) => {
   await ready(page);
   await page.locator("#file").setInputFiles(path.join(fixtures,"legacy.SLDPRT"));
   await expect(page.getByRole("button",{name:"Inspect source…"})).toBeEnabled();
   await page.getByRole("button",{name:"Inspect source…"}).click();
   await expect(page.locator("#inventory-summary")).toContainText("legacy_ole2");
-  await expect(page.locator("#inventory-status")).toContainText("unsupported");
+  await expect(page.locator("#inventory-status")).toContainText("Invalid CFB file");
   await expect(page.locator("#inventory-streams button")).toHaveCount(0);
   await page.locator("#file").setInputFiles(path.join(fixtures,"single.SLDPRT"));
   await expect(page.getByRole("dialog",{name:/Source inventory/})).not.toBeVisible();
@@ -711,4 +711,22 @@ test("unsupported containers retain an opaque source inventory and import resets
   await expect(page.locator("#inventory-title")).toContainText("single.SLDPRT");
   await expect(page.locator("#inventory-summary")).toContainText("modern_inline");
   await page.getByRole("button",{name:"Close source inspector"}).click();
+});
+
+test("legacy OLE imports cached geometry and exposes original compressed-stream provenance", async ({ page }) => {
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures,"legacy-valid.SLDPRT"));
+  await expect.poll(()=>page.evaluate(()=>window.viewer.triangles)).toBe(12);
+  await page.getByRole("button",{name:"Inspect source…"}).click();
+  await expect(page.locator("#inventory-summary")).toContainText("legacy_ole2");
+  await expect(page.locator("#inventory-status")).toContainText("Container validation available");
+  await page.getByLabel("Filter source streams").fill("Contents/DisplayLists");
+  await page.locator("#inventory-streams button").click();
+  await expect(page.locator("#inventory-detail")).toContainText('"source_record"');
+  const detail=JSON.parse(await page.locator("#inventory-detail").textContent());
+  expect(detail.source_record.ole_source.path).toBe("Contents/DisplayLists__ZLB");
+  expect(detail.source_record.ole_source.compression.kind).toBe("zlb");
+  expect(detail.source_record.ole_source.ranges.length).toBeGreaterThan(0);
+  await page.getByRole("button",{name:"Close source inspector"}).click();
+  expect(await page.evaluate(()=>window.viewer.triangles)).toBe(12);
 });

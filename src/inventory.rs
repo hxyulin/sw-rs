@@ -32,7 +32,7 @@ impl ByteSpan {
 pub enum SourceFormat {
     /// Candidate modern inline chunk container; individual records still need validation.
     ModernInline,
-    /// Recognized legacy OLE2 signature; contents remain opaque to this runtime.
+    /// Legacy OLE2 structured storage; individual streams still require validation.
     LegacyOle2,
     /// Recognized ZIP/OPC signature; not decoded as a native document container.
     ZipOpc,
@@ -43,21 +43,21 @@ pub enum SourceFormat {
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ContainerRecordStatus {
-    /// Full payload, lengths and CRC verified; first valid stream with this name.
+    /// Validated modern payload/CRC or OLE stream; first selected decoded name.
     Selected,
-    /// Full payload verified, but an earlier valid stream with the same name won.
+    /// Validated duplicate name. Modern streams keep the first; OLE alias collisions fail.
     Duplicate,
-    /// Marker candidate was rejected; no payload or byte ownership is implied.
+    /// Rejected marker candidate or OLE stream; no verified byte ownership is implied.
     Rejected,
     /// Recognized directory-index framing; payload semantics remain unsupported.
     DirectoryIndex,
     /// Recognized cache-index framing; payload semantics remain unsupported.
     CacheIndex,
 }
-/// One source-file marker candidate, including rejected and duplicate records.
+/// One modern marker candidate or OLE stream, including rejected and duplicate records.
 #[derive(Clone, Debug, Serialize)]
 pub struct ContainerRecord {
-    /// Source-file offset of the six-byte marker, stable within this file hash.
+    /// Modern source-file marker offset; zero for OLE (use `ole_source.ranges`).
     pub offset: usize,
     /// Raw word immediately after the marker, when the inline-sized header exists.
     pub family_word: Option<u32>,
@@ -67,6 +67,10 @@ pub struct ContainerRecord {
     pub name_span: Option<ByteSpan>,
     /// Source-file span of a bounded candidate compressed payload; validation is separate.
     pub payload_span: Option<ByteSpan>,
+    /// OLE stream provenance, including fragmented physical source ranges.
+    /// Modern records omit this field; OLE records have no inline header spans.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ole_source: Option<crate::OleStreamSource>,
     /// Raw inline-header compressed-size field, not an established index-record size.
     pub declared_compressed_bytes: Option<usize>,
     /// Raw inline-header decoded-size field.
@@ -90,6 +94,7 @@ impl ContainerRecord {
             name: None,
             name_span: None,
             payload_span: None,
+            ole_source: None,
             declared_compressed_bytes: None,
             declared_decoded_bytes: None,
             expected_crc32: None,
@@ -118,7 +123,7 @@ pub struct StreamInventory {
     /// Always `not_evaluated`: inventory does not claim semantic parsing coverage.
     pub semantic_status: &'static str,
 }
-/// Source-file inventory. Only verified inline records contribute to byte accounting.
+/// Source-file inventory. Verified inline records and OLE stream bytes are accounted.
 #[derive(Clone, Debug, Serialize)]
 pub struct DocumentInventory {
     /// Versioned inventory interchange identity.
@@ -133,11 +138,13 @@ pub struct DocumentInventory {
     pub container_error: Option<String>,
     /// Whether selected decoded stream buffers are available through the reader.
     pub decoded_streams_available: bool,
-    /// Recorded marker candidates in scan order; a hard error can stop the scan.
+    /// Modern marker candidates or OLE streams in directory traversal order.
+    /// A hard error can stop the scan.
     pub records: Vec<ContainerRecord>,
     /// First-valid stream descriptors, sorted by exact name; buffers may be unavailable after a fatal error.
     pub streams: Vec<StreamInventory>,
-    /// Nonoverlapping source-file spans occupied by fully verified inline records.
+    /// Nonoverlapping verified inline-record or OLE encoded-stream byte ranges.
+    /// OLE allocation metadata and unused sector padding remain unclassified.
     pub verified_container_ranges: Vec<ByteSpan>,
     /// Complement of verified ranges: prologue, indices, rejected data and opaque gaps.
     /// These ranges are not assumed to be padding or absent records.
@@ -320,9 +327,15 @@ pub(crate) fn inventory(
                 ContainerRecordStatus::Selected | ContainerRecordStatus::Duplicate
             )
         })
-        .filter_map(|r| {
-            r.payload_span
-                .map(|p| ByteSpan::between(r.offset, p.offset + p.length))
+        .flat_map(|r| {
+            if let Some(source) = &r.ole_source {
+                source.ranges.clone()
+            } else {
+                r.payload_span
+                    .map(|p| ByteSpan::between(r.offset, p.offset + p.length))
+                    .into_iter()
+                    .collect()
+            }
         })
         .collect::<Vec<_>>();
     verified.sort_by_key(|s| s.offset);

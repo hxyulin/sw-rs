@@ -55,7 +55,7 @@ pub struct GeometryDocument {
     /// Explicit cache and interpretation limitations.
     pub limitations: Vec<&'static str>,
 }
-/// Decode a modern Part's saved DisplayLists tables using a pure Rust profile.
+/// Decode a modern or legacy Part's saved DisplayLists using a pure Rust profile.
 ///
 /// The initial profile requires one canonical native configuration and one
 /// DisplayLists carrier. Missing or ambiguous geometry is an error, never an

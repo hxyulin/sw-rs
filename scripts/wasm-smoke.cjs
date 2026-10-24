@@ -67,5 +67,11 @@ if (process.argv[2]) {
   const wasm = JSON.parse(geometry_json(source, path));
   const native = JSON.parse(require('node:child_process').execFileSync(process.argv[3], ['geometry', path], {maxBuffer: 128 * 1024 * 1024}));
   assert.deepEqual(wasm.geometry, native.geometry);
-  console.log('Real native Part: WASM/native geometry JSON matched exactly.');
+  const wasmMetadata = JSON.parse(parse_json(source, path));
+  const nativeMetadata = JSON.parse(require('node:child_process').execFileSync(process.argv[3], ['metadata', path]));
+  assert.deepEqual(wasmMetadata, nativeMetadata);
+  const wasmInventory = JSON.parse(require('../pkg/node/sw_rs.js').inventory_json(source, path));
+  const nativeInventory = JSON.parse(require('node:child_process').execFileSync(process.argv[3], ['inventory', path], {maxBuffer: 128 * 1024 * 1024})).inventory;
+  assert.deepEqual(wasmInventory, nativeInventory);
+  console.log('Real native Part: WASM/native geometry, metadata and source inventory matched exactly.');
 }

@@ -31,6 +31,11 @@ requires the retained MIT and Apache-2.0 notices (`MIT AND Apache-2.0`).
 The source CAD used locally for comparison is not part of this repository and
 is not relicensed by this project's license.
 
+Legacy OLE loading uses the MIT-licensed `cfb` crate by Matthew D. Steele
+(https://github.com/mdsteele/rust-cfb); its notice is retained in `LICENSE-cfb`.
+The loader and source-range tracing in
+`src/ole.rs` are project-authored; no SolidWorks container implementation was copied.
+
 SolidWorks is a trademark of its respective owner. This independent project is
 not affiliated with or endorsed by the trademark owner.
 
