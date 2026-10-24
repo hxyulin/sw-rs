@@ -12,16 +12,16 @@ Existing `parse`, `geometry`, their limit-aware variants, and
 `metadata_from_container` remain available. For multiple views of one source:
 
 ```rust
-# fn inspect(bytes: &[u8]) -> Result<(), sw_rs::ParseError> {
+fn inspect(bytes: &[u8]) -> Result<(), sw_rs::ParseError> {
 let reader = sw_rs::DocumentReader::open(bytes, "part.SLDPRT", sw_rs::Limits::default())?;
 let metadata = reader.metadata()?;
 let geometry = reader.geometry()?;
 let inventory = reader.inventory();
 let original_feature_bytes = reader.stream("Contents/Config-0-ResolvedFeatures")?;
 let structural_view = reader.inspect_stream("swXmlContents/Features")?;
-# let _ = (metadata, geometry, inventory, original_feature_bytes, structural_view);
-# Ok(())
-# }
+let _ = (metadata, geometry, inventory, original_feature_bytes, structural_view);
+Ok(())
+}
 ```
 
 `open` borrows original file bytes and eagerly validates/decompresses the

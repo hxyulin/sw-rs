@@ -5,7 +5,7 @@
 //! The profile is based on locally inspected saved XML, not a published native
 //! file specification. Definitions can be stale or unassigned. Saved swatches are
 //! metadata only: appearances do not identify physical material or body ownership.
-//! See https://help.solidworks.com/2016/english/SolidWorks/sldworks/c_appearances_overview.htm.
+//! See <https://help.solidworks.com/2016/english/SolidWorks/sldworks/c_appearances_overview.htm>.
 use crate::Diagnostic;
 use serde::Serialize;
 use std::collections::BTreeMap;

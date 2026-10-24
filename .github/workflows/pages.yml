@@ -35,7 +35,8 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin/wasm-bindgen
             viewer/target
-          key: ${{ runner.os }}-viewer-pages-${{ hashFiles('viewer/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-viewer-pages-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}
       - name: Install matching WASM bindings tool
         run: |
           bindings_version=$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)
@@ -56,10 +57,19 @@ jobs:
         with:
           name: pages-browser-results
           path: viewer/test-results
-      - name: Upload static viewer
+      - name: Install documentation dependencies
+        working-directory: .
+        run: npm ci
+      - name: Build documentation, Rust API and combined site
+        working-directory: .
+        run: npm run site:build
+      - name: Check documentation navigation and search
+        working-directory: .
+        run: npm run site:test
+      - name: Upload complete site
         uses: actions/upload-pages-artifact@v4
         with:
-          path: viewer/web
+          path: .site
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -71,6 +81,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy viewer
+      - name: Deploy viewer and documentation
         id: deployment
         uses: actions/deploy-pages@v4

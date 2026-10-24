@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- Add a searchable GitHub Pages documentation book and generated Rust API reference, shorten the README, preserve the existing viewer URL, and fix viewer formatting in CI.
+
 - Decode the observed legacy chunked ZLB wrapper with exact size/checksum/member
   validation and source spans; add native-corpus audit tooling without enabling
   unsupported OLE document parsing.

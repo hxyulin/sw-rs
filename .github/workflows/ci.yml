@@ -2,6 +2,8 @@
 # Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 name: Rust
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -48,3 +50,20 @@ jobs:
         with:
           name: viewer-browser-results
           path: viewer/test-results
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run docs:build
+      - name: Build Rust API reference
+        env:
+          RUSTDOCFLAGS: -D warnings -D rustdoc::broken_intra_doc_links
+        run: cargo doc --lib --all-features --no-deps --locked

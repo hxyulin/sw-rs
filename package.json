@@ -1,0 +1,22 @@
+{
+  "name": "sw-rs-docs",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "site:build": "python3 scripts/build-site.py",
+    "site:check": "python3 scripts/check-site.py .site",
+    "site:test": "node scripts/test-site.mjs"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  },
+  "overrides": {
+    "vite": "6.4.5"
+  }
+}

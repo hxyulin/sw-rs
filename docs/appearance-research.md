@@ -14,7 +14,7 @@ carry `status: "provisional"`; they do not set decoding-coverage flags.
   files are unchanged. Its feature-resolution approach requires feature history
   and topology inputs that sw-rs does not yet decode; copying only the final
   source-ID match would discard those preconditions. Existing adapted framing
-  remains attributed in [NOTICE-cadmpeg.md](../NOTICE-cadmpeg.md).
+  remains attributed in [NOTICE-cadmpeg.md](https://github.com/hxyulin/sw-rs/blob/main/NOTICE-cadmpeg.md).
 - [sldkit](https://github.com/monozukuri-ai/sldkit), inspected at
   `474c097afcd8a471a5cae75eb1a0560824d9d9f0`: its current license notice places new
   material under PolyForm Noncommercial, with older MIT material and separate
