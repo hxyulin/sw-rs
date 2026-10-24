@@ -6,16 +6,20 @@
 //! ```
 //! assert!(sw_rs::parse(b"not CAD", "part.SLDPRT").is_err());
 //! ```
+mod binary;
 mod config;
 mod container;
 mod document;
 mod frame;
 mod geometry;
+mod inventory;
 mod mates;
 mod mesh;
 mod presentation;
+mod reader;
 mod visual;
 mod xml;
+pub use binary::{BinaryReader, FramedString};
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
     Component, Configuration, CutListItem, Document, MassProperties, MaterialAssignment,
@@ -26,6 +30,11 @@ pub use frame::{CoordinateFrame, SOLIDWORKS_MODEL_FRAME};
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
 };
+pub use inventory::{
+    ByteSpan, ClassDeclaration, ContainerRecord, ContainerRecordStatus, DocumentInventory,
+    SourceFormat, StreamInspection, StreamInventory, XmlAttribute, XmlElement, XmlReference,
+    XmlText,
+};
 pub use mates::{
     ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
     MateReferenceNode,
@@ -35,6 +44,7 @@ pub use presentation::{
     CachedPropertyResolution, PhysicalMaterialBinding, PhysicalMaterialDefinition,
     PresentationCoverage, PresentationData, PresentationScope, PresentationSource,
 };
+pub use reader::{DocumentReader, ReadOutput};
 pub use visual::{
     NativeAppearance, NativeAppearanceExtension, NativeShaderParameters, NativeString,
     NativeTextureBlock, NativeTextureMappingHypothesis, SavedDisplayState, UnresolvedVisualBinding,
@@ -93,5 +103,16 @@ pub mod archive;
 pub fn presentation_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindgen::JsError> {
     let doc = parse(bytes, filename).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
     serde_json::to_string(&doc.presentation())
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
+}
+
+/// Inspect source records and opaque byte ranges as JSON without semantic decoding.
+/// Recognized unsupported containers produce an inventory with an explicit error.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn inventory_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bindgen::JsError> {
+    let reader = DocumentReader::open(bytes, filename, Limits::default())
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    serde_json::to_string(reader.inventory())
         .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
 }

@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+- Add a source inventory inspector with verified record spans/hashes, duplicates,
+  rejected/index records, opaque byte accounting and on-demand paged XML/binary views.
+- Support source-aware UTF-8/UTF-16 XML inspection, wrapped KeyWords payloads,
+  namespaces, text and ambiguous syntactic references without invented native ownership.
+- Add a decode-once document reader with cached metadata/geometry and borrowed
+  stream views; use it in the viewer to avoid a second Part decompression pass.
+- Share checked transactional binary/string readers and retain existing convenience
+  APIs; add CLI/WASM inventory access and reproducible census/performance examples.
+
 - Inventory saved per-configuration mate headers, explicit native families and
   selection-reference evidence; expose a bipartite reference graph, CLI audit,
   web metadata and inspector counts without changing saved placements.

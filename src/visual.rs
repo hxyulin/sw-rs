@@ -5,6 +5,7 @@
 // See NOTICE-cadmpeg.md and LICENSE-Apache-2.0.
 //! Supported native visual-property prefixes and explicit saved cache relationships.
 //! Class declarations delimit candidate intervals, not a complete MFC object graph.
+use crate::BinaryReader as Reader;
 use crate::{
     AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin, AppearanceTarget,
     Configuration, PresentationScope, PresentationSource, mesh,
@@ -12,14 +13,8 @@ use crate::{
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Exact framed binary string and its decoded-stream byte location.
-#[derive(Clone, Debug, Serialize)]
-pub struct NativeString {
-    /// Exact UTF-16 string, including blank values and original path separators.
-    pub value: String,
-    /// Byte offset of its CString frame in the source stream.
-    pub offset: usize,
-}
+/// Exact native framed string; shared with the checked binary reader.
+pub type NativeString = crate::FramedString;
 
 /// Supported binary visual-property prefix, independent of physical material.
 #[derive(Clone, Debug, Serialize)]
@@ -244,63 +239,6 @@ fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
         bytes.get(at..at.checked_add(4)?)?.try_into().ok()?,
     ))
 }
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
-}
-impl Reader<'_> {
-    fn take(&mut self, len: usize) -> Option<&[u8]> {
-        let end = self.at.checked_add(len)?;
-        let bytes = self.bytes.get(self.at..end)?;
-        self.at = end;
-        Some(bytes)
-    }
-    fn u32(&mut self) -> Option<u32> {
-        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
-    }
-    fn words<const N: usize>(&mut self) -> Option<[u32; N]> {
-        let mut values = [0; N];
-        for value in &mut values {
-            *value = self.u32()?;
-        }
-        Some(values)
-    }
-    fn doubles<const N: usize>(&mut self) -> Option<[f64; N]> {
-        let mut values = [0.; N];
-        for value in &mut values {
-            *value = f64::from_le_bytes(self.take(8)?.try_into().ok()?);
-        }
-        values.iter().all(|v| v.is_finite()).then_some(values)
-    }
-    fn floats<const N: usize>(&mut self) -> Option<[f32; N]> {
-        let values = self.words::<N>()?.map(f32::from_bits);
-        values.iter().all(|v| v.is_finite()).then_some(values)
-    }
-    fn string(&mut self) -> Option<NativeString> {
-        let offset = self.at;
-        if self.take(3)? != [0xff, 0xfe, 0xff] {
-            return None;
-        }
-        let first = self.take(1)?[0];
-        let count = match first {
-            254 => u16::from_le_bytes(self.take(2)?.try_into().ok()?) as usize,
-            255 => usize::try_from(self.u32()?).ok()?,
-            count => count as usize,
-        };
-        let units = self
-            .take(count.checked_mul(2)?)?
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|b| u16::from_le_bytes(*b))
-            .collect::<Vec<_>>();
-        Some(NativeString {
-            value: String::from_utf16(&units).ok()?,
-            offset,
-        })
-    }
-}
-
 pub(crate) fn native_string_at(bytes: &[u8], at: usize) -> Option<(NativeString, usize)> {
     let mut reader = Reader { bytes, at };
     let value = reader.string()?;

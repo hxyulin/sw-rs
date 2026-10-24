@@ -35,3 +35,9 @@ validated against local files; declaration intervals are not treated as a comple
 MFC reference graph. Native topology ownership is not inferred. Synthetic tests
 are authored here. No source CAD, original shader implementations or texture
 assets are distributed. The adapted module retains Apache-2.0 terms.
+
+The checked UTF-16 string cursor was extracted from `src/visual.rs` into
+`src/binary.rs` for shared use by record decoders. Changes: transactional reads,
+checked borrowed slices, public primitive helpers, and direct surrogate-aware
+Unicode decoding without an intermediate UTF-16 allocation. It retains
+Apache-2.0 terms and the appearance-framing provenance above.

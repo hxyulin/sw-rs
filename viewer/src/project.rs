@@ -44,12 +44,19 @@ pub struct Scene {
     /// Complete, disjoint triangle ranges, including unassigned diagnostic ranges.
     pub batches: Vec<MaterialBatch>,
 }
+struct SourceInspection {
+    path: String,
+    inventory: sw_rs::DocumentInventory,
+    container: Option<sw_rs::Container>,
+    stream: Option<sw_rs::StreamInspection>,
+}
 pub struct Project {
     pub files: FileSet,
     metadata: BTreeMap<String, Document>,
     embedded_documents: BTreeMap<String, Arc<[u8]>>,
     embedded_files: BTreeMap<String, FileSet>,
     geometry: BTreeMap<String, Result<sw_rs::GeometryDocument, String>>,
+    inspection: Option<SourceInspection>,
 }
 impl Project {
     pub fn new(files: FileSet) -> Self {
@@ -59,6 +66,7 @@ impl Project {
             embedded_documents: BTreeMap::new(),
             embedded_files: BTreeMap::new(),
             geometry: BTreeMap::new(),
+            inspection: None,
         }
     }
     fn document(&mut self, path: &str) -> Result<&Document, String> {
@@ -70,9 +78,38 @@ impl Project {
                 .or_else(|| self.embedded_documents.get(path))
                 .cloned()
                 .ok_or("document not present")?;
-            let mut container = sw_rs::Container::parse(&bytes, sw_rs::Limits::unlimited())
+            let reader = sw_rs::DocumentReader::open(&bytes, path, sw_rs::Limits::unlimited())
                 .map_err(|e| e.to_string())?;
-            let stream_names = container.streams.keys().cloned().collect();
+            let is_part = reader.metadata().map_err(|e| e.to_string())?.document_type == "part";
+            if is_part {
+                let _ = reader.geometry();
+            }
+            let output = reader.finish().map_err(|e| e.to_string())?;
+            let mut container = output.container;
+            let mut doc = output.metadata.expect("requested metadata");
+            if let Some(geometry) = output.geometry {
+                let retained: usize = self
+                    .geometry
+                    .values()
+                    .filter_map(|g| g.as_ref().ok())
+                    .flat_map(|g| &g.model.tessellations)
+                    .map(|m| m.vertices.len())
+                    .sum();
+                if retained > 2_000_000 {
+                    self.geometry.clear();
+                }
+                self.geometry.insert(
+                    path.into(),
+                    geometry
+                        .map(|mut g| {
+                            for configuration in &mut g.configurations {
+                                configuration.preview_png = Vec::new();
+                            }
+                            g
+                        })
+                        .map_err(|e| e.to_string()),
+                );
+            }
             let names: Vec<_> = container
                 .streams
                 .keys()
@@ -110,8 +147,7 @@ impl Project {
                 embedded.documents.insert(name, bytes);
             }
             self.embedded_files.insert(path.into(), embedded);
-            let mut doc = sw_rs::metadata_from_container(container, path);
-            doc.stream_names = stream_names;
+
             // The inspector does not display PNGs; do not retain duplicate caches.
             doc.preview_png = Vec::new();
             for config in &mut doc.configurations {
@@ -120,6 +156,104 @@ impl Project {
             self.metadata.insert(path.into(), doc);
         }
         Ok(&self.metadata[path])
+    }
+    /// Keep one source/stream decoded while inspecting; paginate the JSON projection.
+    pub fn inventory(
+        &mut self,
+        path: &str,
+        stream: Option<&str>,
+        offset: usize,
+    ) -> Result<serde_json::Value, String> {
+        if self
+            .inspection
+            .as_ref()
+            .is_none_or(|selected| selected.path != path)
+        {
+            let bytes = self
+                .files
+                .documents
+                .get(path)
+                .or_else(|| self.embedded_documents.get(path))
+                .ok_or("document not present")?;
+            let reader = sw_rs::DocumentReader::open(bytes, path, sw_rs::Limits::unlimited())
+                .map_err(|e| e.to_string())?;
+            reader.inventory();
+            let unsupported_inventory = reader
+                .container()
+                .is_err()
+                .then(|| reader.inventory().clone());
+            let (inventory, container) = match reader.finish() {
+                Ok(output) => (
+                    output.inventory.expect("requested inventory"),
+                    Some(output.container),
+                ),
+                Err(_) => (
+                    unsupported_inventory.expect("failed container inventory"),
+                    None,
+                ),
+            };
+            self.inspection = Some(SourceInspection {
+                path: path.into(),
+                inventory,
+                container,
+                stream: None,
+            });
+        }
+        let selected = self.inspection.as_mut().expect("selected inspection");
+        if let Some(name) = stream
+            && selected
+                .stream
+                .as_ref()
+                .is_none_or(|s| s.source_stream != name)
+        {
+            selected.stream = selected
+                .container
+                .as_ref()
+                .and_then(|c| c.inspect_stream(name));
+        }
+        let inventory = &selected.inventory;
+        let size = 100;
+        let (inspection, total) = match stream.and(selected.stream.as_ref()) {
+            Some(s) => {
+                let counts = [
+                    s.xml_elements.len(),
+                    s.xml_text.len(),
+                    s.xml_references.len(),
+                    s.class_declarations.len(),
+                    s.framed_strings.len(),
+                ];
+                let value = serde_json::json!({"source_stream":s.source_stream,"structure_status":s.structure_status,"xml_error":s.xml_error,"xml_encoding":s.xml_encoding,"xml_payload_span":s.xml_payload_span,"opaque_prefix":s.opaque_prefix,
+                    "xml_elements":s.xml_elements.iter().skip(offset).take(size).collect::<Vec<_>>(),
+                    "xml_text":s.xml_text.iter().skip(offset).take(size).collect::<Vec<_>>(),
+                    "xml_references":s.xml_references.iter().skip(offset).take(size).collect::<Vec<_>>(),
+                    "class_declarations":s.class_declarations.iter().skip(offset).take(size).collect::<Vec<_>>(),
+                    "framed_strings":s.framed_strings.iter().skip(offset).take(size).collect::<Vec<_>>(),
+                    "native_object_graph_decoded":false,"record_counts":{"xml_elements":counts[0],"xml_text":counts[1],"xml_references":counts[2],"class_declarations":counts[3],"framed_strings":counts[4]}});
+                (Some(value), *counts.iter().max().unwrap_or(&0))
+            }
+            None => (
+                None,
+                inventory
+                    .records
+                    .len()
+                    .max(inventory.unclassified_ranges.len()),
+            ),
+        };
+        let source_record = stream
+            .and_then(|name| inventory.streams.iter().find(|s| s.name == name))
+            .and_then(|s| inventory.records.get(s.source_record_index));
+        Ok(serde_json::json!({"path":path,"inventory":{
+            "schema":"sw-rs-inventory-summary-v1","source_sha256":inventory.source_sha256,"source_bytes":inventory.source_bytes,
+            "format":inventory.format,"container_error":inventory.container_error,"decoded_streams_available":inventory.decoded_streams_available,
+            "streams":inventory.streams,"verified_container_bytes":inventory.verified_container_bytes},
+            "container_record_count":inventory.records.len(),
+            "container_records":inventory.records.iter().skip(offset).take(size).collect::<Vec<_>>(),
+            "unclassified_ranges":inventory.unclassified_ranges.iter().skip(offset).take(size).collect::<Vec<_>>(),
+            "source_record":source_record,"inspection":inspection,"page":{"offset":offset,"size":size,"total":total}}))
+    }
+    /// Release all decoded streams retained solely for source inspection.
+    pub fn clear_inventory(&mut self) {
+        self.inspection = None;
     }
     pub fn scene(&mut self, path: &str, config: usize, show_hidden: bool) -> Scene {
         let mut scene = Scene::default();

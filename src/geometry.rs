@@ -3,7 +3,6 @@
 //! Byte-based cached Part geometry adapter.
 use crate::{Container, Limits, ParseError, document, mesh};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 /// Native identity of the original input document.
 #[derive(Debug, Serialize)]
@@ -78,6 +77,29 @@ pub fn geometry_with_limits(
         ));
     }
     let mut container = Container::parse(bytes, limits)?;
+    let name = carrier_name(&container)?;
+    // The consuming convenience API can release unrelated decoded streams before
+    // mesh allocation. Shared readers retain them intentionally for further access.
+    let data = std::mem::take(container.streams.get_mut(&name).expect("selected carrier"));
+    let doc = document::build(container, filename);
+    from_display(&data, name, &doc, crate::inventory::hash(bytes))
+}
+
+pub(crate) fn from_decoded(
+    container: &Container,
+    doc: &crate::Document,
+    source_hash: String,
+) -> Result<GeometryDocument, ParseError> {
+    if doc.document_type != "part" {
+        return Err(ParseError(
+            "cached geometry profile accepts Parts only".into(),
+        ));
+    }
+
+    let name = carrier_name(container)?;
+    from_display(&container.streams[&name], name.clone(), doc, source_hash)
+}
+fn carrier_name(container: &Container) -> Result<String, ParseError> {
     let carriers: Vec<_> = container
         .streams
         .keys()
@@ -93,13 +115,17 @@ pub fn geometry_with_limits(
             carriers.len()
         )));
     }
-    let name = carriers[0].clone();
-    // Keep stream inventory intact while moving the carrier out without copying it.
-    let data = std::mem::take(container.streams.get_mut(&name).expect("selected carrier"));
-    let doc = document::build(container, filename);
-    let faces = mesh::section_display_faces(&data);
+    Ok(carriers[0].clone())
+}
+fn from_display(
+    data: &[u8],
+    name: String,
+    doc: &crate::Document,
+    source_hash: String,
+) -> Result<GeometryDocument, ParseError> {
+    let faces = mesh::section_display_faces(data);
     let mut presentation = doc.presentation();
-    let cached = crate::visual::cached(&data, &name, &faces, &doc.configurations);
+    let cached = crate::visual::cached(data, &name, &faces, &doc.configurations);
     presentation.append_visuals(&cached);
     presentation.coverage.cached_appearance_bindings_decoded = true;
     let mut meshes: Vec<_> = faces
@@ -114,7 +140,7 @@ pub fn geometry_with_limits(
         // A saved environment/lighting-only DisplayLists is not malformed mesh
         // data. Keep it distinct from a known face class whose tables fail the
         // supported grammar; neither case licenses inventing B-Rep geometry.
-        let reason = if mesh::has_face_tessellation_marker(&data) {
+        let reason = if mesh::has_face_tessellation_marker(data) {
             "face-class markers exist but their headers or descriptor tables are unsupported or invalid"
         } else {
             "DisplayLists has no uoTempFaceTessData_c records; no cached faces in the supported profile"
@@ -141,14 +167,11 @@ pub fn geometry_with_limits(
     }
     Ok(GeometryDocument {
         source: GeometrySource {
-            sha256: Sha256::digest(bytes)
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect(),
+            sha256: source_hash,
         },
         length_unit: "millimeter",
         coordinate_frame: crate::SOLIDWORKS_MODEL_FRAME,
-        configurations: doc.configurations,
+        configurations: doc.configurations.clone(),
         model: GeometryModel { tessellations },
         presentation,
         limitations: vec![

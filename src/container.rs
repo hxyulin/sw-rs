@@ -65,7 +65,7 @@ impl fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 /// Evidence for an unselected or malformed record.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Diagnostic {
     /// Byte offset of the marker (or zero for document-level diagnostics).
     pub offset: usize,
@@ -84,9 +84,25 @@ fn u32_at(data: &[u8], pos: usize) -> usize {
     u32::from_le_bytes(data[pos..pos + 4].try_into().expect("checked header")) as usize
 }
 impl Container {
+    /// Structurally inspect one retained stream without decoding the container again.
+    /// Returns owned XML records or binary candidates; raw bytes remain unchanged.
+    pub fn inspect_stream(&self, name: &str) -> Option<crate::StreamInspection> {
+        self.streams
+            .get(name)
+            .map(|bytes| crate::inventory::inspect(name, bytes))
+    }
+
     /// Decode inline raw-deflate records with CRC and size verification.
     /// OLE2 and ZIP/OPC are recognized but unsupported.
     pub fn parse(data: &[u8], limits: Limits) -> Result<Self, ParseError> {
+        Self::parse_traced(data, limits, None)
+    }
+    pub(crate) fn parse_traced(
+        data: &[u8],
+        limits: Limits,
+        mut trace: Option<&mut Vec<crate::inventory::ContainerRecord>>,
+    ) -> Result<Self, ParseError> {
+        use crate::inventory::{ByteSpan, ContainerRecord, ContainerRecordStatus};
         let fail = |s: &str| ParseError(s.into());
         if data.len() > limits.max_file_bytes {
             return Err(fail("input size limit exceeded"));
@@ -114,65 +130,131 @@ impl Container {
             if records > limits.max_records {
                 return Err(fail("record count limit exceeded"));
             }
-            let mut warn = |message: &str| {
-                result.diagnostics.push(Diagnostic {
-                    offset: at,
-                    message: message.into(),
-                })
-            };
+            let mut record = trace.as_deref_mut().map(|records| {
+                records.push(ContainerRecord::candidate(at));
+                records.last_mut().expect("inserted candidate")
+            });
             if data.len() - at < 26 {
-                warn("truncated header");
+                trace_warning(&mut result, &mut record, at, "truncated header");
                 continue;
             }
             let crc = u32_at(data, at + 10) as u32;
             let compressed = u32_at(data, at + 14);
             let expected = u32_at(data, at + 18);
             let name_len = u32_at(data, at + 22);
+            if let Some(record) = record.as_deref_mut() {
+                record.family_word = Some(u32_at(data, at + 6) as u32);
+                record.expected_crc32 = Some(crc);
+                record.declared_compressed_bytes = Some(compressed);
+                record.declared_decoded_bytes = Some(expected);
+            }
             // Tail-directory names follow a 14-byte descriptor, rather than
             // the inline header. Recognize them before trying to inflate bytes.
             if crc == 0
                 && expected == 0
                 && name_len != 0
-                && let Some(record) = data
+                && let Some(index_record) = data
                     .get(at..)
                     .and_then(|tail| tail.get(..name_len.checked_add(46)?))
-                && record[40..40 + name_len]
+                && index_record[40..40 + name_len]
                     .iter()
                     .all(|b| (0x20..0x7f).contains(&b.rotate_left(u32::from(data[7]) & 7)))
             {
-                warn("directory index record (no inline payload)");
+                if let Some(record) = record.as_deref_mut() {
+                    record.status = ContainerRecordStatus::DirectoryIndex;
+                    record.name_span = Some(ByteSpan {
+                        offset: at + 40,
+                        length: name_len,
+                    });
+                    record.name = String::from_utf8(
+                        data[at + 40..at + 40 + name_len]
+                            .iter()
+                            .map(|b| b.rotate_left(u32::from(data[7]) & 7))
+                            .collect(),
+                    )
+                    .ok();
+                }
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "directory index record (no inline payload)",
+                );
                 continue;
             }
             let name_start = at + 26;
             // Subtraction checks avoid overflow on wasm32.
             if name_len == 0 || name_len > data.len() - name_start {
-                warn("invalid or truncated stream name");
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "invalid or truncated stream name",
+                );
                 continue;
+            }
+            if let Some(record) = record.as_deref_mut() {
+                record.name_span = Some(ByteSpan {
+                    offset: name_start,
+                    length: name_len,
+                });
             }
             let decoded: Vec<u8> = data[name_start..name_start + name_len]
                 .iter()
                 .map(|b| b.rotate_left(u32::from(data[7]) & 7))
                 .collect();
             let Ok(name) = String::from_utf8(decoded) else {
-                warn("invalid UTF-8 stream name or index record");
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "invalid UTF-8 stream name or index record",
+                );
                 continue;
             };
             if name.chars().any(char::is_control) {
-                warn("control character in stream name or index record");
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "control character in stream name or index record",
+                );
                 continue;
+            }
+            if let Some(record) = record.as_deref_mut() {
+                record.name = Some(name.clone());
             }
             // Non-inline record families must not be treated as deflate data.
             if expected != 0
                 && crc == (expected as u32).wrapping_mul(2)
                 && compressed == expected / 2
             {
-                warn("cache index record (no inline payload)");
+                if let Some(record) = record.as_deref_mut() {
+                    record.status = ContainerRecordStatus::CacheIndex;
+                }
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "cache index record (no inline payload)",
+                );
                 continue;
             }
             let start = name_start + name_len;
             if compressed > limits.max_compressed_bytes || compressed > data.len() - start {
-                warn("invalid or truncated compressed payload");
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "invalid or truncated compressed payload",
+                );
                 continue;
+            }
+            if let Some(record) = record.as_deref_mut() {
+                record.payload_span = Some(ByteSpan {
+                    offset: start,
+                    length: compressed,
+                });
             }
             if expected > limits.max_stream_bytes {
                 return Err(fail("stream size limit exceeded"));
@@ -210,6 +292,9 @@ impl Container {
                     _ => {}
                 }
             }
+            if let Some(record) = record.as_deref_mut() {
+                record.decoded_bytes = Some(output.len());
+            }
             if output.len() > budget {
                 return Err(ParseError(format!(
                     "decoded byte limit exceeded at {at} ({name}): total={total}, stream={}, budget={budget}",
@@ -218,26 +303,50 @@ impl Container {
             }
             total += output.len();
             if !complete {
-                warn("invalid or incomplete deflate stream");
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "invalid or incomplete deflate stream",
+                );
                 continue;
             }
             if decoder.total_in() != compressed as u64 || output.len() != expected {
-                warn("compressed or decoded size mismatch");
+                trace_warning(
+                    &mut result,
+                    &mut record,
+                    at,
+                    "compressed or decoded size mismatch",
+                );
                 continue;
             }
             if crc32fast::hash(&output) != crc {
-                warn("CRC mismatch");
+                trace_warning(&mut result, &mut record, at, "CRC mismatch");
                 continue;
+            }
+            if let Some(record) = record.as_deref_mut() {
+                record.decoded_sha256 = Some(crate::inventory::hash(&output));
+                record.status = if result.streams.contains_key(&name) {
+                    ContainerRecordStatus::Duplicate
+                } else {
+                    ContainerRecordStatus::Selected
+                };
             }
             use std::collections::btree_map::Entry;
             match result.streams.entry(name) {
                 Entry::Vacant(e) => {
                     e.insert(output);
                 }
-                Entry::Occupied(e) => result.diagnostics.push(Diagnostic {
-                    offset: at,
-                    message: format!("duplicate stream: {} (first wins)", e.key()),
-                }),
+                Entry::Occupied(e) => {
+                    let message = format!("duplicate stream: {} (first wins)", e.key());
+                    if let Some(record) = record {
+                        record.diagnostic = Some(message.clone());
+                    }
+                    result.diagnostics.push(Diagnostic {
+                        offset: at,
+                        message,
+                    });
+                }
             }
             pos = start + compressed;
         }
@@ -246,4 +355,19 @@ impl Container {
         }
         Ok(result)
     }
+}
+
+fn trace_warning(
+    container: &mut Container,
+    record: &mut Option<&mut crate::inventory::ContainerRecord>,
+    offset: usize,
+    message: &str,
+) {
+    if let Some(record) = record.as_deref_mut() {
+        record.diagnostic = Some(message.into());
+    }
+    container.diagnostics.push(Diagnostic {
+        offset,
+        message: message.into(),
+    });
 }

@@ -13,7 +13,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Cached values copied from source tokens; units, frame, and freshness are unverified.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MassProperties {
     /// Saved center-of-gravity tokens (not guaranteed metres).
     #[serde(serialize_with = "serialize_com")]
@@ -30,7 +30,7 @@ pub struct MassProperties {
     pub products_of_inertia: [f64; 3],
 }
 /// One saved component occurrence; external paths are retained without resolution.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Component {
     /// Occurrence name, preserving Unicode.
     pub name: String,
@@ -51,7 +51,7 @@ pub struct Component {
     pub transform: Option<[f64; 16]>,
 }
 /// A saved configuration, identified by its native Config-N index.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Configuration {
     /// Native configuration index.
     pub index: u32,
@@ -84,7 +84,7 @@ pub struct ReferenceReplacement {
     pub replacement_path: String,
 }
 /// A partial metadata view of a modern SolidWorks document.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Document {
     /// Extension-derived kind: part, assembly, or drawing.
     #[serde(rename = "doc_type")]
@@ -123,8 +123,17 @@ pub struct Document {
     /// Versioned metadata interchange identity.
     pub schema: &'static str,
 }
-pub(crate) fn build(mut container: Container, filename: &str) -> Document {
-    let streams = &container.streams;
+pub(crate) fn build(container: Container, filename: &str) -> Document {
+    build_streams(&container.streams, container.diagnostics, filename)
+}
+pub(crate) fn build_borrowed(container: &Container, filename: &str) -> Document {
+    build_streams(&container.streams, container.diagnostics.clone(), filename)
+}
+fn build_streams(
+    streams: &BTreeMap<String, Vec<u8>>,
+    mut diagnostics: Vec<Diagnostic>,
+    filename: &str,
+) -> Document {
     let get = |name: &str| streams.get(name).map(Vec::as_slice).unwrap_or_default();
     let version = streams
         .keys()
@@ -266,7 +275,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
     }
     let materials = streams
         .get(material::STREAM)
-        .and_then(|bytes| material::parse(bytes, &mut container.diagnostics));
+        .and_then(|bytes| material::parse(bytes, &mut diagnostics));
     if let Some(materials) = &materials {
         for configuration in &mut configurations {
             let matches = materials
@@ -277,7 +286,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
             if let [assignment] = matches.as_slice() {
                 configuration.material = Some((*assignment).clone());
             } else if matches.len() > 1 {
-                container.diagnostics.push(Diagnostic {
+                diagnostics.push(Diagnostic {
                     offset: 0,
                     message: format!(
                         "{}: ambiguous references for configuration {}; no assignment selected",
@@ -290,7 +299,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
     }
     // Normal index records are inventory facts, not thousands of warnings.
     let mut index_counts = BTreeMap::<String, usize>::new();
-    container.diagnostics.retain(|d| {
+    diagnostics.retain(|d| {
         if d.message.starts_with("cache index record")
             || d.message.starts_with("directory index record")
         {
@@ -301,7 +310,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         }
     });
     for (message, count) in index_counts {
-        container.diagnostics.push(Diagnostic {
+        diagnostics.push(Diagnostic {
             offset: 0,
             message: format!("{count} {message}s"),
         });
@@ -311,13 +320,13 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         if (name.ends_with(".xml") || name.ends_with("COMPINSTANCETREE"))
             && xml::parse(data).is_none()
         {
-            container.diagnostics.push(Diagnostic {
+            diagnostics.push(Diagnostic {
                 offset: 0,
                 message: format!("invalid or unsupported XML encoding: {name}"),
             });
         }
     }
-    container.diagnostics.push(Diagnostic {offset: 0, message: "partial metadata reader: B-Rep geometry, mates and drawing render semantics are not decoded; cached physical units remain unverified".into()});
+    diagnostics.push(Diagnostic {offset: 0, message: "partial metadata reader: B-Rep geometry, mates and drawing render semantics are not decoded; cached physical units remain unverified".into()});
     let preview = get("PreviewPNG");
     let magic = b"\x89PNG\r\n\x1a\n";
     let preview_png = preview
@@ -330,7 +339,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
             Some(pairs) => pairs,
             None => {
                 if !get("SwDocMgrTempStorage/ReplaceRef").is_empty() {
-                    container.diagnostics.push(Diagnostic {
+                    diagnostics.push(Diagnostic {
                         offset: 0,
                         message:
                             "unsupported or truncated replacement-reference table; mappings ignored"
@@ -371,7 +380,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
         configurations,
         preview_png,
         stream_names: streams.keys().cloned().collect(),
-        diagnostics: container.diagnostics,
+        diagnostics,
     }
 }
 
@@ -391,7 +400,7 @@ fn png(bytes: &[u8]) -> Vec<u8> {
         .unwrap_or_default()
 }
 /// Saved weldment feature and resolved custom properties.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct CutListItem {
     /// Saved feature name.
     pub name: String,
@@ -401,7 +410,7 @@ pub struct CutListItem {
     pub properties: BTreeMap<String, String>,
 }
 /// Saved drawing-sheet identity and referenced views.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Sheet {
     /// Saved sheet name, preserving Unicode.
     pub name: String,
@@ -409,7 +418,7 @@ pub struct Sheet {
     pub views: Vec<SheetView>,
 }
 /// Saved drawing-view source reference.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SheetView {
     /// Saved view name.
     pub name: String,

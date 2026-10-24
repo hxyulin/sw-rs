@@ -5,18 +5,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
     let first = args
         .next()
-        .ok_or("usage: sw-dump [metadata|geometry|mates] MODEL | --version")?;
+        .ok_or("usage: sw-dump [metadata|geometry|mates|inventory] MODEL | --version")?;
     if first == "--version" {
         println!("sw-rs {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     let geometry = first == "geometry";
     let mates = first == "mates";
-    let path = if geometry || mates || first == "metadata" {
+    let inventory = first == "inventory";
+    let path = if geometry || mates || inventory || first == "metadata" {
         args.next().ok_or("missing native document path")?
     } else {
         first
     };
+    let inspect_stream = if inventory { args.next() } else { None };
     if args.next().is_some() {
         return Err("unexpected argument".into());
     }
@@ -25,7 +27,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data = Vec::new();
     file.take((sw_rs::Limits::default().max_file_bytes as u64) + 1)
         .read_to_end(&mut data)?;
-    let result = if geometry {
+    let result = if inventory {
+        let reader =
+            sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;
+        let inspection = inspect_stream
+            .as_ref()
+            .map(|name| reader.inspect_stream(&name.to_string_lossy()))
+            .transpose()?;
+        serde_json::json!({"inventory":reader.inventory(),"inspection":inspection.flatten()})
+    } else if geometry {
         match sw_rs::geometry(&data, &path.to_string_lossy()) {
             Ok(doc) => {
                 serde_json::json!({"schema":"sw-rs-geometry-v1","geometry":doc,"diagnostics":[]})

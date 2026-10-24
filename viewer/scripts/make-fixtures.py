@@ -28,7 +28,7 @@ def native_visual_state():
             bytes(43)+bytes([255])*16+bytes(20)+u32(18000,1,1,2)+
             visual_class('visStateVisualPropertiesAttribute_c')+u32(1)+
             visual_class('moVisualProperties_c')+visual_property([34,68,102],'Saved native default'))
-def part(size, material=False, visual=False):
+def part(size, material=False, visual=False, extra_streams=()):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
@@ -46,7 +46,7 @@ def part(size, material=False, visual=False):
     if visual: streams.append(('ThirdPtyStore/VisualStates',native_visual_state()))
     if material:
         streams.append(('swXmlContents/MATERIALTREE', b'<mstns:materials xmlns:mstns="http://www.solidworks.com/sldmaterials"><classification name="Aluminum"><material name="test materials|6061 Alloy" matid="21"><swatchcolor RGB="151515"/><shaders><pwshader name="black low gloss plastic" path="designlibrary/appearances/plastic/low gloss/black low gloss plastic.p2m"/></shaders><physicalproperties><DENS value="2700"/></physicalproperties></material></classification><configurationslist><configuration name="Default" material="test materials|6061 Alloy|21"/></configurationslist></mstns:materials>'))
-    return container(streams)
+    return container([*streams,*extra_streams])
 def assembly(missing=False):
     files='<swFile id="root" swPath="Demo.SLDASM"/>'
     models=''
@@ -148,3 +148,9 @@ with zipfile.ZipFile(OUT/'mates.zip','w',zipfile.ZIP_DEFLATED) as archive:
     archive.writestr('Mated.SLDASM',linked_assembly('Mated.SLDASM',['Base.SLDPRT','Base.SLDPRT'],
                      [('Contents/Config-0-MatesList',mates)]))
     archive.writestr('Base.SLDPRT',files['Base.SLDPRT'])
+
+# Source inspection retains unknown XML, opaque bytes, and candidate-only framing.
+inspection_xml = b'<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema" xmlns:x="urn:extra"><swFile id="a"/><swModel id="b" swFileRef="a" x:unknown="keep">A&amp;B</swModel></swSolidWorks>'
+inspection_binary = visual_class('UnknownClass')+mfc_string('<img src=x onerror=alert(1)>')+b'opaque tail'
+(OUT/'inventory.SLDPRT').write_bytes(part([.18,.10,.02],extra_streams=[('swXmlContents/Features',inspection_xml),('swXmlContents/Unicode',b'\xff\xfe'+'<root>纹理😀</root>'.encode('utf-16le')),('Mystery/Unknown',inspection_binary),('Mystery/Many',b''.join(mfc_string(f'entry{i}') for i in range(180)))]))
+(OUT/'legacy.SLDPRT').write_bytes(b'\xd0\xcf\x11\xe0'+bytes(64))

@@ -449,6 +449,22 @@ impl ArchiveProject {
             scene: Scene::default(),
         })
     }
+    /// On-demand source inventory; never changes scene selection or mesh buffers.
+    pub fn inventory(
+        &mut self,
+        path: &str,
+        stream: Option<String>,
+        offset: Option<u32>,
+    ) -> Result<String, JsValue> {
+        self.project
+            .inventory(path, stream.as_deref(), offset.unwrap_or(0) as usize)
+            .map(|value| value.to_string())
+            .map_err(error)
+    }
+    /// Release streams retained by the optional inventory inspector.
+    pub fn clear_inventory(&mut self) {
+        self.project.clear_inventory();
+    }
     pub fn paths(&self) -> String {
         let mut paths: Vec<_> = self.project.files.documents.keys().collect();
         paths.sort_by_key(|p| {

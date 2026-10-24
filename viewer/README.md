@@ -236,3 +236,10 @@ configuration when a MatesList stream exists. Scene metadata includes the partia
 mate inventory and reference candidates. These records do not drive placement or
 animation; reused class/object references, ownership and parameters remain
 unresolved. See [mate relations](../docs/mates.md).
+
+Use **Inspect source…** beside the standard view controls to browse the selected
+document's record/stream inventory. Filter stream names, inspect XML or binary
+candidates and use Previous/Next records for large reports. Unsupported native
+containers retain an opaque inventory. The worker retains one inspected source
+and one stream report until closing the dialog; inspection does not request a
+scene or change placement. See [the inventory/reader contract](../docs/reader-inventory.md).

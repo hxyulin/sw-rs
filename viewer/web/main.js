@@ -2,6 +2,7 @@
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 import init, { WebApp } from "./pkg/sw_viewer.js";
 import { SceneView } from "./scene.js";
+import { InventoryPanel } from "./inventory.js";
 const sidebar = document.querySelector("#sidebar"),
   input = document.querySelector("#file"),
   status = document.querySelector("#status"),
@@ -32,6 +33,7 @@ const chooser = document.querySelector("#assembly-chooser"),
   hierarchyPanel = document.querySelector("#hierarchy-panel"),
   occurrenceTree = document.querySelector("#occurrence-tree");
 let assemblyPaths = [], awaitingChoice = false;
+const inventoryPanel = new InventoryPanel(data => { if (worker && loaded) worker.postMessage(data); });
 function selectDocument(path, configuration) {
   app.select_document(path, configuration);
   awaitingChoice = false;
@@ -57,6 +59,7 @@ function openChooser() {
   assemblyFilter.focus();
 }
 function resetOverlays() {
+  inventoryPanel.reset();
   awaitingChoice = false;
   chooser.close();
   chooseAssembly.hidden = true;
@@ -303,6 +306,7 @@ function startWorker() {
   const active = (worker = new Worker("./worker.js", { type: "module" }));
   active.onmessage = ({ data }) => {
     if (worker !== active) return;
+    if (data.type === "inventory") { inventoryPanel.receive(data); return; }
     if (data.type === "progress") {
       const fraction = data.total > 0 ? data.completed / data.total : undefined;
       progress(data.label, fraction);
@@ -336,6 +340,7 @@ function startWorker() {
           ].join("\n"),
         );
         app.show_scene(JSON.stringify(data.scene));
+        inventoryPanel.setDocument(controls.path);
         renderHierarchy(data.scene, occurrenceTree, selectDocument);
         hierarchyPanel.hidden = !data.scene.hierarchy?.length;
         progress("Uploading mesh to the viewport…");

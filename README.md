@@ -33,6 +33,9 @@ noncommercial sldkit code or source CAD is included.
   density tokens from `MATERIALTREE`, with source paths and unresolved references.
 - Cached Part DisplayLists meshes, normals, source offsets and preserved winding,
   with single-configuration ownership and validated decoding.
+- Source-aware record/stream inventories with hashes, byte spans, duplicates,
+  rejected/index records and explicit opaque ranges.
+- On-demand XML/UTF-16 structural inspection and binary class/string candidates.
 - Raw decoded streams and diagnostics for later format work.
 
 This is **not a complete openswx port** or a CAD kernel. OLE2 and ZIP/OPC return
@@ -155,6 +158,27 @@ remain unsupported. See [mate relations and decoding TODOs](docs/mates.md).
 ```sh
 mbx run --locked --bin sw-dump -- mates assembly.SLDASM
 mbx run --release --locked --features archive --example inspect_mates -- ARCHIVE.zip
+```
+
+## Document inventory and shared reader
+
+**Inspect source…** in the web viewer opens a filterable stream inventory with
+source hashes, validation results, opaque ranges and paged XML/binary inspection.
+Legacy OLE and other unsupported native containers retain an opaque inventory.
+Structural candidates and available decoders are distinguished from semantic
+coverage; this is not a claim that every native object is understood.
+
+For multiple projections, `DocumentReader::open(bytes, filename, limits)` validates
+and decompresses once, then caches requested `metadata()` and `geometry()` results.
+`stream(name)` borrows decoded bytes; `inventory()` and `inspect_stream(name)`
+provide source/structural views. `finish()` transfers owned results and buffers.
+Existing `parse`/`geometry` convenience APIs remain available. A shared checked
+`BinaryReader` provides transactional primitive/UTF-16 reads for future decoders.
+See [reader interface, inventory contract and measurements](docs/reader-inventory.md).
+
+```sh
+mbx run --locked --bin sw-dump -- inventory part.SLDPRT
+mbx run --locked --bin sw-dump -- inventory part.SLDPRT swXmlContents/MATERIALTREE
 ```
 
 ## Native use

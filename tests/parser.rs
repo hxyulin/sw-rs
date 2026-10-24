@@ -217,6 +217,20 @@ fn cached_geometry_is_byte_based_hashed_and_preserves_winding_and_units() {
     let payload = display_payload();
     let bytes = file(&[("Contents/DisplayLists", &payload)]);
     let g = sw_rs::geometry(&bytes, "synthetic.SLDPRT").unwrap();
+    let reader =
+        sw_rs::DocumentReader::open(&bytes, "synthetic.SLDPRT", Limits::default()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&g).unwrap(),
+        serde_json::to_value(reader.geometry().unwrap()).unwrap()
+    );
+    assert!(std::ptr::eq(
+        reader.geometry().unwrap(),
+        reader.geometry().unwrap()
+    ));
+    assert_eq!(
+        reader.stream("Contents/DisplayLists").unwrap(),
+        Some(payload.as_slice())
+    );
     assert_eq!(g.source.sha256.len(), 64);
     assert_eq!(g.length_unit, "millimeter");
     assert_eq!(g.coordinate_frame, sw_rs::SOLIDWORKS_MODEL_FRAME);

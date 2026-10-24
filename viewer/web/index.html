@@ -181,6 +181,20 @@
       #occurrence-tree [role=treeitem]:focus > .node-row { outline: 2px solid #72d5c7; }
       #occurrence-tree button { padding: 2px 5px; font-size: 11px; }
       #occurrence-tree .node-state { color: #edb27b; }
+      #source-inventory { width: min(1100px, calc(100vw - 48px)); max-width: none;
+        height: min(760px, calc(100vh - 48px)); box-sizing: border-box; color: #d0dce6;
+        background: #111b26; border: 1px solid #3e5264; border-radius: 8px; }
+      #source-inventory::backdrop { background: #0009; }
+      #inventory-title { overflow-wrap: anywhere; }
+      #inventory-summary { white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; }
+      #inventory-layout { display: grid; grid-template-columns: minmax(200px, 35%) minmax(0, 1fr);
+        gap: 12px; height: calc(100% - 265px); min-height: 120px; }
+      #inventory-streams, #inventory-detail { min-width: 0; margin: 0; overflow: auto; }
+      #inventory-streams button { display: block; width: 100%; margin-bottom: 5px; text-align: left;
+        overflow-wrap: anywhere; white-space: normal; }
+      #inventory-detail { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; background: #0b1016; padding: 10px; }
+      #inventory-filter { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+      #inventory-status { font-size: 12px; }
       [hidden] { display: none !important; }
       @media (max-width: 720px) {
         main {
@@ -232,6 +246,7 @@
           </select></label>
           <button data-view="front">Front</button><button data-view="top">Top</button>
           <button data-view="right">Right</button><button data-view="iso">Isometric</button>
+          <button id="inspect-source" disabled>Inspect source…</button>
         </div>
         <canvas id="axis-triad" width="110" height="110" role="img" aria-label="Model axes: X red, Y green, Z blue"></canvas>
         <div id="loading">
@@ -258,6 +273,16 @@
       <div id="assembly-options"></div>
       <p id="assembly-no-results" hidden>No matching assemblies.</p>
       <button id="assembly-close">Browse individual documents</button>
+    </dialog>
+    <dialog id="source-inventory" aria-labelledby="inventory-title">
+      <h2 id="inventory-title">Source inventory</h2>
+      <p id="inventory-summary"></p>
+      <p id="inventory-status" role="status" aria-live="polite"></p>
+      <input id="inventory-filter" type="search" aria-label="Filter source streams" placeholder="Filter source streams…" />
+      <div id="inventory-layout"><div id="inventory-streams" aria-label="Source streams"></div>
+        <pre id="inventory-detail" tabindex="0" aria-label="Source inspection details"></pre></div>
+      <div><button id="inventory-previous" disabled>Previous records</button> <span id="inventory-page"></span> <button id="inventory-next" disabled>Next records</button></div>
+      <button id="inventory-close">Close source inspector</button>
     </dialog>
     <input
       id="file"
