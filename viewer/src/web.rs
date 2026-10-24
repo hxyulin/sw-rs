@@ -509,6 +509,23 @@ impl ArchiveProject {
             info.push(format!("Cached mass token: {mass:.5} (units unverified)"));
         }
         info.extend(crate::material_info::lines(&self.scene.metadata, config));
+        if let Some(index) = self.scene.metadata["configurations"][config]["index"].as_u64()
+            && let Some(streams) = self.scene.metadata["mates"]["configurations"].as_array()
+        {
+            for stream in streams
+                .iter()
+                .filter(|s| s["configuration_index"].as_u64() == Some(index))
+            {
+                let recognized = stream["records"].as_array().map_or(0, Vec::len);
+                let declared = stream["declared_count"]
+                    .as_u64()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "unknown".into());
+                info.push(format!(
+                    "Saved mates: {recognized}/{declared} headers · partial relationships"
+                ));
+            }
+        }
         if let Some(props) = self.scene.metadata["global_properties"].as_object() {
             for (key, value) in props.iter().take(8) {
                 info.push(

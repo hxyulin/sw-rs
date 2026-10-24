@@ -27,6 +27,8 @@ noncommercial sldkit code or source CAD is included.
 - Assembly occurrence names, external paths, referenced configurations,
   suppression/visibility/BOM flags, and optional saved 16-value transforms.
 - Saved weldment cut lists and basic drawing-sheet/view/reference metadata.
+- Partial configuration-local mate inventories, explicit native families and saved
+  reference-string evidence graphs, with unresolved class/entity references.
 - Saved physical-material definitions, explicit configuration assignments and
   density tokens from `MATERIALTREE`, with source paths and unresolved references.
 - Cached Part DisplayLists meshes, normals, source offsets and preserved winding,
@@ -35,7 +37,7 @@ noncommercial sldkit code or source CAD is included.
 
 This is **not a complete openswx port** or a CAD kernel. OLE2 and ZIP/OPC return
 unsupported-format errors. Drawing containers can be inspected, but drawing
-rendering, Parasolid B-Rep, STEP export, mates and BOM file resolution are not
+rendering, Parasolid B-Rep, STEP export, mate solving and BOM file resolution are not
 implemented. Cached Part meshes are supported only by the profile below. Unknown
 container record families remain diagnostics. Malformed XML is reported.
 
@@ -139,6 +141,21 @@ one part/body/feature/face override at a time, an override on just one of two
 repeated assembly occurrences, two configurations and two display states, and
 one texture-mapping parameter changed per save. Those comparisons are needed to
 verify the remaining reference graph and projection semantics.
+
+## Mate relationships
+
+`Document::mates` inventories supported `Contents/Config-N-MatesList` streams,
+retaining exact mate names, source offsets, explicit class families and unresolved
+reused class tags. Saved selection/occurrence strings remain reference candidates;
+`ConfigurationMates::reference_graph()` groups their mentions without inventing
+component pairs, topology ownership or joints. The web inspector reports saved
+mate header counts. Alignment, suppression, dimension/limit parameters and solving
+remain unsupported. See [mate relations and decoding TODOs](docs/mates.md).
+
+```sh
+mbx run --locked --bin sw-dump -- mates assembly.SLDASM
+mbx run --release --locked --features archive --example inspect_mates -- ARCHIVE.zip
+```
 
 ## Native use
 

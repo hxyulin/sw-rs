@@ -103,6 +103,8 @@ pub struct Document {
     pub materials: Option<MaterialData>,
     /// Independently decoded native visual prefixes and partial scoped relationships.
     pub visuals: crate::VisualData,
+    /// Partial per-configuration mate records and unresolved selection references.
+    pub mates: crate::MateData,
     /// Document PNG preview bytes, without decoding the image.
     #[serde(skip_serializing)]
     pub preview_png: Vec<u8>,
@@ -360,6 +362,7 @@ pub(crate) fn build(mut container: Container, filename: &str) -> Document {
             Vec::new()
         },
         visuals: crate::visual::parse(streams, &configurations, kind),
+        mates: crate::mates::parse(streams),
         materials,
         document_type: kind.into(),
         coordinate_frame: (kind != "drawing").then_some(crate::SOLIDWORKS_MODEL_FRAME),

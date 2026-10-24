@@ -11,6 +11,7 @@ mod container;
 mod document;
 mod frame;
 mod geometry;
+mod mates;
 mod mesh;
 mod presentation;
 mod visual;
@@ -24,6 +25,10 @@ pub use document::{
 pub use frame::{CoordinateFrame, SOLIDWORKS_MODEL_FRAME};
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
+};
+pub use mates::{
+    ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
+    MateReferenceNode,
 };
 pub use presentation::{
     AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin, AppearanceTarget,

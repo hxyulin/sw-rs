@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Inventory saved per-configuration mate headers, explicit native families and
+  selection-reference evidence; expose a bipartite reference graph, CLI audit,
+  web metadata and inspector counts without changing saved placements.
+- Retain unresolved mate class/object references and explicit unknown ownership,
+  parameter and solver support, with source offsets and verification TODOs.
+
 - Preserve additional raw native shader parameters and expose opt-in provisional
   texture-mapping candidates with source offsets and controlled-save TODOs;
   retain unknown units, projection modes, dimensions and ownership explicitly.

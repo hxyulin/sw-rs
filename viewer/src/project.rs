@@ -540,6 +540,7 @@ mod traversal_tests {
             coordinate_frame: (kind != "drawing").then_some(sw_rs::SOLIDWORKS_MODEL_FRAME),
             materials: None,
             visuals: Default::default(),
+            mates: Default::default(),
             version: 0,
             global_properties: Default::default(),
             configurations: vec![sw_rs::Configuration {

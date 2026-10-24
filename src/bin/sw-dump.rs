@@ -5,13 +5,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
     let first = args
         .next()
-        .ok_or("usage: sw-dump [metadata|geometry] MODEL | --version")?;
+        .ok_or("usage: sw-dump [metadata|geometry|mates] MODEL | --version")?;
     if first == "--version" {
         println!("sw-rs {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     let geometry = first == "geometry";
-    let path = if geometry || first == "metadata" {
+    let mates = first == "mates";
+    let path = if geometry || mates || first == "metadata" {
         args.next().ok_or("missing native document path")?
     } else {
         first
@@ -38,7 +39,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        serde_json::to_value(sw_rs::parse(&data, &path.to_string_lossy())?)?
+        let doc = sw_rs::parse(&data, &path.to_string_lossy())?;
+        if mates {
+            serde_json::json!({"schema":"sw-rs-mates-v1","mates":doc.mates})
+        } else {
+            serde_json::to_value(doc)?
+        }
     };
     serde_json::to_writer(std::io::stdout().lock(), &result)?;
     Ok(())

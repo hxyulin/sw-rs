@@ -301,6 +301,12 @@ impl Reader<'_> {
     }
 }
 
+pub(crate) fn native_string_at(bytes: &[u8], at: usize) -> Option<(NativeString, usize)> {
+    let mut reader = Reader { bytes, at };
+    let value = reader.string()?;
+    Some((value, reader.at))
+}
+
 fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
     let legacy_texture_block = match reader.u32()? {
         0 => {

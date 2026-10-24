@@ -604,3 +604,34 @@ test("appearance style recreates saved shader separately from physical family wi
   await expect(style).toHaveValue("family");
   expect(await pixels()).toBe(family);
 });
+
+test("assembly metadata exports partial mate relations without changing saved placement", async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("message", ({data}) => {
+          if (data.type === "scene") window.mateScene = data.scene;
+        });
+      }
+    };
+  });
+  await ready(page);
+  await page.locator("#file").setInputFiles(path.join(fixtures,"mates.zip"));
+  await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(24);
+  const scene = await page.evaluate(() => window.mateScene);
+  const mates = scene.metadata.mates.configurations[0];
+  expect(mates.configuration_index).toBe(0);
+  expect(mates.declared_count).toBe(2);
+  expect(mates.inventory_matches_declared_count).toBe(true);
+  expect(mates.entity_ownership_decoded).toBe(false);
+  expect(mates.parameters_decoded).toBe(false);
+  expect(mates.records[0].kind).toBe("width");
+  expect(mates.records[0].reference_candidates).toHaveLength(4);
+  expect(mates.records[1].kind).toBeNull();
+  expect(mates.records[1].class_reference).toBe(0x80c1);
+  expect(scene.info.join("\n")).toContain("Saved mates: 2/2 headers · partial relationships");
+  expect(scene.occurrences).toBe(2);
+  expect(scene.missing_references).toBe(0);
+});

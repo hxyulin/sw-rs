@@ -230,3 +230,9 @@ prefixes, scoped document defaults and cache-local property links. Coverage flag
 and unresolved identities distinguish these from complete native face/body or
 component ownership. The current rendered presets remain approximations while
 those ownership and texture-projection rules await controlled SolidWorks saves.
+
+The inspector reports recognized/saved mate-header counts for the selected native
+configuration when a MatesList stream exists. Scene metadata includes the partial
+mate inventory and reference candidates. These records do not drive placement or
+animation; reused class/object references, ownership and parameters remain
+unresolved. See [mate relations](../docs/mates.md).
