@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Decode every top-level row in grouped mate/cache surface descriptors, retaining
+  exact text spans, order and duplicates. Block feature candidates when later rows
+  disagree or remain invalid; keep nested expressions opaque and mate endpoints
+  unresolved. Add plural mate-reference access without selecting the first row.
+
 - Load legacy OLE/CFB documents with strict sector/directory validation and bounded
   raw/ZLB stream extraction. Retain fragmented source ranges, original paths,
   hashes and ZLB member spans in inventory; reject normalized-name collisions.

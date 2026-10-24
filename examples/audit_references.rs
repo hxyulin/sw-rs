@@ -117,7 +117,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let mut mate_surface_status = BTreeMap::<String, usize>::new();
                 for link in &graph.links {
-                    if let Some(reference) = &link.selection_surface_reference {
+                    for reference in link
+                        .selection_surface_reference
+                        .iter()
+                        .chain(&link.selection_surface_references)
+                    {
                         *mate_surface_status
                             .entry(
                                 serde_json::to_value(reference.status)?

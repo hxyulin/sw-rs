@@ -197,3 +197,107 @@ fn every_truncated_frame_and_invalid_surrogates_remain_unresolved() {
         .is_empty()
     );
 }
+
+#[test]
+fn multiline_frames_preserve_every_row_and_block_false_feature_consensus() {
+    let first = "  moSimpleSurfIdRep_c,7,2,-1, \r\n";
+    let second = "moSimpleSurfIdRep_c,8,3, \n";
+    let text = format!("{first}\n{second}");
+    let source = FramedString {
+        offset: 27,
+        value: text.clone(),
+    };
+    assert!(SavedSurfaceReference::parse(&source).is_none());
+    let records = SavedSurfaceReference::parse_all(&source);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].source.value, first);
+    assert_eq!(records[0].source.offset, 27);
+    assert_eq!(records[1].source.offset, 27);
+    // Row excerpts retain exact original bytes and the common frame offset.
+    for record in &records {
+        let span = record.text_span.unwrap();
+        assert_eq!(
+            span.slice(text.as_bytes()).unwrap(),
+            record.source.value.as_bytes()
+        );
+        assert_eq!(record.status, SurfaceReferenceStatus::Complete);
+    }
+    let bytes = framed(&text);
+    let found = CachedSurfaceReferences::inspect(
+        &bytes,
+        ByteSpan {
+            offset: 0,
+            length: bytes.len(),
+        },
+    );
+    assert_eq!(found.references.len(), 2);
+    assert_eq!(found.feature_source_id(), None);
+    assert_eq!(
+        found.identity_resolution(),
+        SurfaceIdentityResolution::Conflicting
+    );
+}
+
+#[test]
+fn multiline_duplicates_nested_tails_and_unknown_rows_remain_distinct() {
+    let one = "moSimpleSurfIdRep_c,7,2,";
+    let same = framed(&format!("{one}\n{one}\n"));
+    let found = CachedSurfaceReferences::inspect(
+        &same,
+        ByteSpan {
+            offset: 0,
+            length: same.len(),
+        },
+    );
+    assert_eq!(found.references.len(), 2);
+    assert_eq!(found.feature_source_id(), Some(7));
+    assert!(matches!(
+        found.identity_resolution(),
+        SurfaceIdentityResolution::Consistent { .. }
+    ));
+
+    let nested = "moCopySurfIdRep_c,7,0,<moSimpleSurfIdRep_c,99,2>,";
+    let text = format!("{one}\n{nested}\n");
+    let records = SavedSurfaceReference::parse_all(&FramedString {
+        offset: 0,
+        value: text,
+    });
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[1].status, SurfaceReferenceStatus::OpaqueTail);
+    assert_eq!(records[1].feature_source_id, Some(7));
+    assert!(records[1].identity.is_none());
+    assert!(
+        records[1]
+            .tail_tokens
+            .iter()
+            .any(|token| token.contains("<moSimpleSurfIdRep_c"))
+    );
+
+    let nested = format!(
+        "{one}\nmoCopySurfIdRep_c,7,0,<moSimpleSurfIdRep_c,99,2,\nmoSimpleSurfIdRep_c,100,3>,\n"
+    );
+    let nested = SavedSurfaceReference::parse_all(&FramedString {
+        offset: 0,
+        value: nested,
+    });
+    assert_eq!(nested.len(), 2);
+    assert_eq!(nested[1].status, SurfaceReferenceStatus::OpaqueTail);
+    assert_eq!(nested[1].feature_source_id, Some(7));
+
+    for unknown in [
+        "unknown saved text",
+        "moBodyIdRep_c,7,2,",
+        "moCopySurfIdRep_c,7,0,<moSimpleSurfIdRep_c,8,2,",
+    ] {
+        let text = format!("{one}\n{unknown}\n");
+        let records = SavedSurfaceReference::parse_all(&FramedString {
+            offset: 0,
+            value: text.clone(),
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].status, SurfaceReferenceStatus::Invalid);
+        assert_eq!(records[0].source.value, text);
+        assert_eq!(records[0].feature_source_id, None);
+        assert!(records[0].identity.is_none());
+    }
+}

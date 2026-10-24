@@ -36,6 +36,43 @@ comma presence remain available. Extended UTF-16 count forms are supported by
 the shared checked reader. A complete tuple is lexical interpretation, not proof
 of cross-save stability or an existing face/body.
 
+## Grouped descriptor records
+
+One CString can contain several newline-separated surface records. The parser
+preserves every top-level row in order, including duplicates. Newlines inside a
+balanced angle-bracket expression stay inside its opaque tail. Unknown nonblank
+rows or unbalanced grouped expressions retain the full recognized frame as invalid
+evidence; they cannot leave a usable first-row identity behind.
+
+`SavedSurfaceReference::parse_all` reads the group. The singular `parse` and
+`MateReferenceCandidate::surface_reference` return None for multiple rows;
+`surface_references` exposes all rows. In a reference graph, multi-row mate
+descriptors use `selection_surface_references`; the existing singular field is
+absent. A single-row descriptor retains its existing representation.
+
+Each grouped record's `source.offset` identifies the enclosing CString frame.
+Its `source.value` is an exact row excerpt. `text_span` identifies that excerpt
+as a UTF-8 byte range within the original decoded CString value. It is not an
+offset in the binary stream and does not describe a separate string frame.
+Mate links also retain the complete original `selection_descriptor`.
+
+Cache consensus includes every row in every recovered frame. Matching first-row
+feature IDs no longer hide a later conflicting ID. This changes source-reference
+candidates, not native face ownership or renderer assignments.
+
+The 2026-10-25 public audit covers 60 assemblies and 171 unique modern Parts.
+It finds 72 grouped mate descriptor frames containing 202 rows, and 538 grouped
+cache frames containing 1,296 rows. Across 22,812 inspected cache tables, the new
+consensus rule blocks 145 candidate feature links that previously used matching
+first-row IDs while ignoring later conflicting rows. Normal metadata projections
+remain identical to the saved public baseline.
+
+Sources are pinned public Talaria-Robotics, GeoKylin and blussyya files from the
+[public corpus audit](parsing-coverage.md#ole-follow-up-2026-10-25). Per-file
+reports and the comparison script remain ignored under
+`local-assets/modern-reference-investigation/`. These counts measure saved text
+interpretation, not resolved mate endpoints or effective surface appearances.
+
 ## Native measurements
 
 The census uses the same 340 EGA and 240 design-library native entries as the

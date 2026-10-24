@@ -32,8 +32,14 @@ pub enum SurfaceReferenceStatus {
 /// A recognized surface-reference string, including incomplete and invalid values.
 #[derive(Clone, Debug, Serialize)]
 pub struct SavedSurfaceReference {
-    /// Original framed string and decoded-stream offset, without normalization.
+    /// Exact text and enclosing CString frame offset, without normalization.
+    /// For a multi-row frame this is one row; `text_span` locates it in the full text.
     pub source: FramedString,
+    /// Multi-row record's UTF-8 byte range within the original decoded CString value.
+    /// Not a source-stream byte offset or a separate CString frame. Absent for a
+    /// single-record value, whose `source` retains the entire original string.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_span: Option<ByteSpan>,
     /// Exact saved reference-class name; no class/object-map ID is inferred.
     pub class_name: String,
     /// Supported positive source ID, or None for missing/invalid/reserved values.
@@ -52,7 +58,8 @@ pub struct SavedSurfaceReference {
 impl SavedSurfaceReference {
     /// Interpret a framed `mo*SurfIdRep_c` string while retaining its exact source.
     /// Unrecognized class families return None; malformed recognized records remain
-    /// Invalid. Parsing a tuple does not establish its configuration or entity owner.
+    /// Invalid. Multiple rows return None; use `parse_all` to preserve the group.
+    /// Parsing a tuple does not establish its configuration or entity owner.
     ///
     /// ```
     /// let raw = sw_rs::FramedString {
@@ -63,6 +70,101 @@ impl SavedSurfaceReference {
     /// assert_eq!(saved.source.offset, 64);
     /// ```
     pub fn parse(source: &FramedString) -> Option<Self> {
+        let mut records = Self::parse_all(source);
+        (records.len() == 1).then(|| records.remove(0))
+    }
+
+    /// Decode every nonblank row in a surface-reference CString, preserving order
+    /// and duplicates. Rows retain their common frame offset and original text range.
+    /// Unknown nonblank rows invalidate the whole recognized frame, so ignoring a
+    /// later row can never manufacture a unique feature or surface identity.
+    /// Nested angle-bracket expressions remain opaque; they are not flattened.
+    pub fn parse_all(source: &FramedString) -> Vec<Self> {
+        let text = source.value.trim();
+        let first_class = text.split([',', '\r', '\n']).next().unwrap_or("");
+        if !first_class.starts_with("mo") || !first_class.ends_with("SurfIdRep_c") {
+            return Vec::new();
+        }
+        if !text.contains(['\r', '\n']) {
+            return Self::parse_one(source, None).into_iter().collect();
+        }
+        let invalid_frame = || {
+            Self::parse_one(source, None)
+                .map(|mut record| {
+                    record.feature_source_id = None;
+                    record.local_surface_id = None;
+                    record.identity = None;
+                    record.status = SurfaceReferenceStatus::Invalid;
+                    record
+                })
+                .into_iter()
+                .collect()
+        };
+        // Only top-level newlines separate records. A nested expression remains
+        // opaque even when it spans lines; it must never become another owner.
+        let mut rows = Vec::new();
+        let mut start = 0;
+        let mut depth = 0usize;
+        for (at, ch) in source.value.char_indices() {
+            if at < start {
+                continue;
+            } // LF already consumed with its CR.
+            match ch {
+                '<' => depth += 1,
+                '>' => {
+                    let Some(parent) = depth.checked_sub(1) else {
+                        return invalid_frame();
+                    };
+                    depth = parent;
+                }
+                '\r' | '\n' if depth == 0 => {
+                    let end = at
+                        + if ch == '\r' && source.value.as_bytes().get(at + 1) == Some(&b'\n') {
+                            2
+                        } else {
+                            1
+                        };
+                    if !source.value[start..end].trim().is_empty() {
+                        rows.push(ByteSpan {
+                            offset: start,
+                            length: end - start,
+                        });
+                    }
+                    start = end;
+                }
+                _ => {}
+            }
+        }
+        if depth != 0 {
+            return invalid_frame();
+        }
+        if !source.value[start..].trim().is_empty() {
+            rows.push(ByteSpan {
+                offset: start,
+                length: source.value.len() - start,
+            });
+        }
+        if rows.len() <= 1 {
+            return Self::parse_one(source, None).into_iter().collect();
+        }
+        let mut records = Vec::new();
+        for span in rows {
+            let fragment = FramedString {
+                value: source.value[span.offset..span.offset + span.length].into(),
+                offset: source.offset,
+            };
+            if let Some(record) = Self::parse_one(&fragment, Some(span)) {
+                records.push(record);
+            } else {
+                // Retain the complete recognized frame, including unknown text,
+                // as invalid evidence rather than selecting only known rows.
+                return invalid_frame();
+            }
+        }
+        records
+    }
+
+    fn parse_one(source: &FramedString, text_span: Option<ByteSpan>) -> Option<Self> {
         let text = source.value.trim();
         let mut fields = text.split(',');
         let class_name = fields.next()?;
@@ -101,6 +203,7 @@ impl SavedSurfaceReference {
         };
         Some(Self {
             source: source.clone(),
+            text_span,
             class_name: class_name.into(),
             feature_source_id,
             local_surface_id,
@@ -229,9 +332,8 @@ impl CachedSurfaceReferences {
         while end.saturating_sub(at) >= 4 {
             let mut reader = BinaryReader::at(bounded, at).expect("bounded offset");
             if let Some(source) = reader.string() {
-                if let Some(reference) = SavedSurfaceReference::parse(&source) {
-                    out.references.push(reference);
-                }
+                out.references
+                    .extend(SavedSurfaceReference::parse_all(&source));
                 at = reader.position();
             } else {
                 at += 1;

@@ -61,6 +61,31 @@ assert.deepEqual(geometry.geometry.model.tessellations[0].vertices, [[0, 0, 0], 
 assert.deepEqual(geometry.geometry.model.tessellations[0].triangles, [[0, 1, 2]]);
 assert.throws(() => geometry_json(file, 'assembly.SLDASM'), /Parts only/);
 console.log('WASM Part geometry, units, winding, source hashing and errors passed.');
+const { geometry_references_json, references_json } = require('../pkg/node/sw_rs.js');
+function framed(value) {
+  const raw = Buffer.from(value, 'utf16le');
+  assert.ok(raw.length / 2 < 254);
+  return Buffer.concat([Buffer.from([255, 254, 255, raw.length / 2]), raw]);
+}
+const descriptorGroup = 'moSimpleSurfIdRep_c,7,2, \nmoSimpleSurfIdRep_c,8,3, \n';
+const cacheGraph = JSON.parse(geometry_references_json(container('Contents/DisplayLists', Buffer.concat([payload, framed(descriptorGroup)])), 'grouped.SLDPRT'));
+const saved = cacheGraph.nodes.find(node => node.record.kind === 'cached_surface').record.surface_references.references;
+assert.deepEqual(saved.map(ref => ref.feature_source_id), [7, 8]);
+assert.equal(saved[1].source.offset, payload.length);
+assert.ok(saved[1].text_span.offset > 0);
+assert.equal(cacheGraph.topology_ownership_decoded, false);
+const mateClass = Buffer.from('moMateCoincident');
+const mateClassHeader = Buffer.from([255, 255, 1, 0, mateClass.length, 0]);
+const mate = Buffer.concat([Buffer.from([193, 0, 0, 0, 1, 0]), mateClassHeader, mateClass,
+  Buffer.from([12, 128]), framed('Edited name'), Buffer.from([0, 1, 0, 0, 0, 0, 0, 64, 27, 0, 0, 0, 0, 0, 0, 0]),
+  framed(''), framed(descriptorGroup), Buffer.from([1, 0, 0, 0]), framed('Part-1@Root')]);
+const mateGraph = JSON.parse(references_json(container('Contents/Config-7-MatesList', mate), 'grouped.SLDASM'));
+const selection = mateGraph.links.find(link => link.relation === 'mate_selection');
+assert.deepEqual(selection.selection_surface_references.map(ref => ref.feature_source_id), [7, 8]);
+assert.equal(selection.selection_surface_reference, undefined);
+assert.equal(selection.selection_descriptor.value, descriptorGroup);
+assert.equal(selection.resolution, 'unresolved');
+console.log('WASM grouped mate/cache references preserve all rows without resolving topology.');
 if (process.argv[2]) {
   const path = process.argv[2];
   const source = require('node:fs').readFileSync(path);

@@ -45,6 +45,48 @@ fn reference(out: &mut Vec<u8>, descriptor: &str, path: &str) {
     out.extend(1_u32.to_le_bytes());
     text(out, path);
 }
+
+#[test]
+fn multiline_selection_descriptors_keep_all_rows_without_choosing_an_endpoint() {
+    let mut bytes = header(1);
+    record(&mut bytes, Some("moMateCoincident"), "edited name", 27);
+    let descriptor = "moSimpleSurfIdRep_c,7,2, \nmoFromSktEntSurfIdRep_c,8,4, \n";
+    reference(&mut bytes, descriptor, "Part-2@Root");
+    let data = parse_stream(&bytes, "Contents/Config-7-MatesList", 7);
+    let selection = &data.records[0].reference_candidates[0];
+    assert_eq!(
+        selection.geometry_descriptor.as_ref().unwrap().value,
+        descriptor
+    );
+    assert!(selection.surface_reference().is_none());
+    let surfaces = selection.surface_references();
+    assert_eq!(surfaces.len(), 2);
+    assert_eq!(surfaces[0].feature_source_id, Some(7));
+    assert_eq!(surfaces[1].feature_source_id, Some(8));
+    let doc = crate::metadata_from_container(
+        crate::Container {
+            streams: BTreeMap::from([("Contents/Config-7-MatesList".into(), bytes)]),
+            diagnostics: vec![],
+        },
+        "part.SLDASM",
+    );
+    let graph =
+        crate::ReferenceGraph::build("hash", &crate::FeatureCatalog::parse(None), &doc, &[]);
+    let link = graph
+        .links
+        .iter()
+        .find(|l| l.relation == crate::ReferenceRelation::MateSelection)
+        .unwrap();
+    assert!(link.selection_surface_reference.is_none());
+    assert_eq!(link.selection_surface_references.len(), 2);
+    assert_eq!(
+        link.selection_descriptor.as_ref().unwrap().value,
+        descriptor
+    );
+    assert!(link.candidates.is_empty());
+    assert_eq!(link.resolution, crate::ReferenceResolution::Unresolved);
+    assert!(!graph.topology_ownership_decoded);
+}
 #[test]
 fn names_types_and_reference_graph_keep_occurrences_and_hyperedges_distinct() {
     let mut bytes = header(2);

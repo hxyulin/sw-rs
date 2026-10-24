@@ -69,10 +69,18 @@ pub struct MateReferenceCandidate {
     pub geometry_descriptor: Option<NativeString>,
 }
 impl MateReferenceCandidate {
-    /// Interpret the adjacent saved surface descriptor without resolving its owner.
-    /// Other geometry classes remain raw; invalid recognized surface tokens survive.
+    /// Interpret a single-row surface descriptor without resolving its owner.
+    /// Multi-row descriptors return None; use `surface_references` to retain every row.
     pub fn surface_reference(&self) -> Option<crate::SavedSurfaceReference> {
         crate::SavedSurfaceReference::parse(self.geometry_descriptor.as_ref()?)
+    }
+    /// Interpret all rows in the adjacent descriptor, retaining duplicates and
+    /// conflicting identities without choosing a mate endpoint or occurrence.
+    pub fn surface_references(&self) -> Vec<crate::SavedSurfaceReference> {
+        self.geometry_descriptor
+            .as_ref()
+            .map(crate::SavedSurfaceReference::parse_all)
+            .unwrap_or_default()
     }
 }
 

@@ -369,6 +369,34 @@ fn saved_surface_tuples_link_cache_evidence_without_promoting_topology_ownership
     ordinary.geometry().unwrap();
     assert!(ordinary.finish().unwrap().surface_references.is_none());
 }
+
+#[test]
+fn multiline_cache_descriptors_do_not_link_only_the_first_feature() {
+    let mut display = display_payload();
+    let value = "moSimpleSurfIdRep_c,42,3, \nmoSimpleSurfIdRep_c,43,4, \n";
+    display.extend([255, 254, 255, value.encode_utf16().count() as u8]);
+    display.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
+    let bytes = file(&[
+        ("Contents/DisplayLists", &display),
+        (
+            "swXmlContents/KeyWords",
+            b"<Keywords><Feature id=\"42\"/></Keywords>",
+        ),
+    ]);
+    let reader = sw_rs::DocumentReader::open(&bytes, "part.SLDPRT", Limits::default()).unwrap();
+    let surfaces = reader.surface_references().unwrap();
+    let references = &surfaces.records[0].surface_references;
+    assert_eq!(references.references.len(), 2);
+    assert_eq!(references.feature_source_id(), None);
+    let graph = reader.references_with_geometry().unwrap();
+    assert_eq!(
+        graph.links[0].resolution,
+        sw_rs::ReferenceResolution::Unresolved
+    );
+    assert!(graph.links[0].candidates.is_empty());
+    assert!(!graph.native_object_graph_decoded);
+    assert!(!graph.topology_ownership_decoded);
+}
 #[test]
 fn cached_geometry_rejects_missing_truncated_nonfinite_and_ambiguous_data() {
     assert!(sw_rs::geometry(&file(&[("other", b"x")]), "p.SLDPRT").is_err());

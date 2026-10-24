@@ -140,6 +140,10 @@ pub struct ReferenceLink {
     /// Does not establish the mate's endpoint or its component occurrence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_surface_reference: Option<crate::SavedSurfaceReference>,
+    /// Ordered rows when a mate descriptor contains more than one surface record.
+    /// The singular field is absent for these frames; no row is selected as owner.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub selection_surface_references: Vec<crate::SavedSurfaceReference>,
 }
 
 /// Shared source-reference layer. No geometry or renderer assumptions are required.
@@ -291,6 +295,7 @@ impl ReferenceGraph {
                     source_offset: Some(feature.span.offset),
                     selection_descriptor: None,
                     selection_surface_reference: None,
+                    selection_surface_references: Vec::new(),
                 });
             }
         }
@@ -312,9 +317,11 @@ impl ReferenceGraph {
                         mate_kind: mate.kind,
                     },
                 );
-                out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::NativeMateIdentity, reference: Some(mate.saved_identifier.to_string()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Mate identifier namespace and native object references not decoded; not joined to feature IDs".into(), source_offset: None, selection_descriptor: None, selection_surface_reference: None });
+                out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::NativeMateIdentity, reference: Some(mate.saved_identifier.to_string()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Mate identifier namespace and native object references not decoded; not joined to feature IDs".into(), source_offset: None, selection_descriptor: None, selection_surface_reference: None, selection_surface_references: Vec::new() });
                 for selection in &mate.reference_candidates {
-                    out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::MateSelection, reference: Some(selection.reference.value.clone()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Saved selection string retained; occurrence chain and geometric endpoint not decoded".into(), source_offset: Some(selection.reference.offset), selection_descriptor: selection.geometry_descriptor.clone(), selection_surface_reference: selection.surface_reference() });
+                    let mut surfaces = selection.surface_references();
+                    let surface = (surfaces.len() == 1).then(|| surfaces.remove(0));
+                    out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::MateSelection, reference: Some(selection.reference.value.clone()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Saved selection string retained; occurrence chain and geometric endpoint not decoded".into(), source_offset: Some(selection.reference.offset), selection_descriptor: selection.geometry_descriptor.clone(), selection_surface_reference: surface, selection_surface_references: surfaces });
                 }
             }
         }
@@ -350,6 +357,7 @@ impl ReferenceGraph {
                     source_offset: offset,
                     selection_descriptor: None,
                     selection_surface_reference: None,
+                    selection_surface_references: Vec::new(),
                 });
             }
         }
@@ -369,7 +377,7 @@ impl ReferenceGraph {
             1 => ReferenceResolution::Candidate,
             _ => ReferenceResolution::Ambiguous,
         };
-        self.links.push(ReferenceLink { from, relation, reference: id.map(|id| id.to_string()), candidates, resolution, reason: if id.is_none() { "No common valid source ID was decoded; missing, invalid or disagreeing references remain unresolved".into() } else if resolution == ReferenceResolution::Unresolved { "No supported saved feature matches this ID; absence does not establish a deleted entity".into() } else { reason.into() }, source_offset: None, selection_descriptor: None, selection_surface_reference: None });
+        self.links.push(ReferenceLink { from, relation, reference: id.map(|id| id.to_string()), candidates, resolution, reason: if id.is_none() { "No common valid source ID was decoded; missing, invalid or disagreeing references remain unresolved".into() } else if resolution == ReferenceResolution::Unresolved { "No supported saved feature matches this ID; absence does not establish a deleted entity".into() } else { reason.into() }, source_offset: None, selection_descriptor: None, selection_surface_reference: None, selection_surface_references: Vec::new() });
     }
     fn xml_links(&mut self, inspection: &StreamInspection) {
         let mut indices = BTreeMap::new();
@@ -422,6 +430,7 @@ impl ReferenceGraph {
                 source_offset: Some(inspection.xml_elements[reference.from_element].span.offset),
                 selection_descriptor: None,
                 selection_surface_reference: None,
+                selection_surface_references: Vec::new(),
             });
         }
     }

@@ -74,6 +74,12 @@ selection can contain additional `@` separators. The parser does not strip them,
 rewrite stale names, match basenames, resolve external paths, or infer topology
 from coincident meshes. Reused object references may have no new string at all.
 
+A geometry descriptor can contain several surface records in one CString.
+`MateReferenceCandidate::surface_references()` preserves all top-level rows;
+the singular accessor returns None for a group. The reference graph exposes
+these as `selection_surface_references` while retaining the full raw descriptor.
+No row is selected as the mate endpoint. See [grouped descriptor records](surface-reference-rules.md#grouped-descriptor-records).
+
 `ConfigurationMates::reference_graph()` produces a bipartite evidence graph:
 each distinct exact saved string lists the mate-record indices mentioning it.
 Duplicate mentions in one record are deduplicated only in this graph projection;
