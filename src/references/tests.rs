@@ -241,6 +241,10 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
         110
     );
     assert_eq!(graph.links[1].source_offset, Some(150));
+    let surface = graph.links[1].selection_surface_reference.as_ref().unwrap();
+    assert_eq!(surface.feature_source_id, Some(9));
+    assert_eq!(surface.local_surface_id, Some(227));
+    assert_eq!(surface.source.offset, 110);
     assert!(
         matches!(&graph.nodes[1].record, ReferenceRecord::Mate { configuration_index: 7, name, .. } if name == "edited name")
     );
@@ -250,4 +254,56 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
     doc.visuals.unresolved_bindings.push(binding);
     let graph = ReferenceGraph::build("hash", &catalog("<Keywords/>"), &doc, &[]);
     assert_eq!(graph.nodes.last().unwrap().source_offset, None);
+}
+
+#[test]
+fn cache_feature_candidates_preserve_duplicate_ids_and_conflicting_prefixes() {
+    let graph = ReferenceGraph::build(
+        "hash",
+        &catalog("<Keywords><Feature id=\"7\"/><Feature id=\"7\"/><Feature id=\"8\"/></Keywords>"),
+        &document(),
+        &[],
+    );
+    let record = |offset, values: &[&str]| crate::CachedSurfaceRecord {
+        source_stream: "Contents/DisplayLists".into(),
+        source_offset: offset,
+        surface_references: crate::CachedSurfaceReferences {
+            metadata_span: crate::ByteSpan {
+                offset: 100,
+                length: 200,
+            },
+            references: values
+                .iter()
+                .map(|v| {
+                    crate::SavedSurfaceReference::parse(&crate::FramedString {
+                        value: (*v).into(),
+                        offset: 100,
+                    })
+                    .unwrap()
+                })
+                .collect(),
+        },
+    };
+    let data = crate::CachedSurfaceData {
+        schema: "sw-rs-surface-references-v1",
+        source_sha256: "hash".into(),
+        configuration_index: 7,
+        configuration_name: "Alternate".into(),
+        records: vec![
+            record(12, &["moSimpleSurfIdRep_c,7,2,"]),
+            record(
+                24,
+                &["moSimpleSurfIdRep_c,7,2,", "moSimpleSurfIdRep_c,8,2,"],
+            ),
+        ],
+    };
+    let graph = graph.with_surfaces(&data).unwrap();
+    assert_eq!(graph.links[0].resolution, ReferenceResolution::Ambiguous);
+    assert_eq!(graph.links[0].candidates, [0, 1]);
+    assert_eq!(graph.links[1].resolution, ReferenceResolution::Unresolved);
+    assert!(graph.links[1].candidates.is_empty());
+    assert!(
+        matches!(&graph.nodes[3].record,ReferenceRecord::CachedSurface {configuration_index:7,configuration_name,..} if configuration_name=="Alternate")
+    );
+    assert!(!graph.topology_ownership_decoded);
 }

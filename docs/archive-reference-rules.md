@@ -89,6 +89,10 @@ missing evidence rather than resolve it.
 
 ## Topology identity is another decoding layer
 
+The follow-up [surface-reference investigation](surface-reference-rules.md)
+implements the saved tuple grammar and bounded cache inspection. It preserves
+numeric/opaque tails and conflicts without claiming native topology ownership.
+
 The pinned Apache-2.0 cadmpeg implementation distinguishes full surface identity
 from archive slots: framed `SurfIdRep` strings can carry feature source, local
 surface ID and ordered trailing fields; native `FACE_ID_2001` attributes provide

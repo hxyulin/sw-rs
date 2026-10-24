@@ -17,6 +17,10 @@ pub struct Tessellation {
     pub source_stream: String,
     /// Descriptor table offset in the decoded source stream, in bytes.
     pub source_offset: usize,
+    /// Adjacent decoded metadata window for optional reference inspection.
+    /// Not a native object boundary; omitted from ordinary geometry JSON.
+    #[serde(skip_serializing)]
+    pub metadata_span: crate::ByteSpan,
     /// Cached vertex positions in millimetres, converted from source float metres.
     pub vertices: Vec<[f64; 3]>,
     /// Ordered zero-based vertex indices; strip winding is preserved.
@@ -130,7 +134,7 @@ fn from_display(
     presentation.coverage.cached_appearance_bindings_decoded = true;
     let mut meshes: Vec<_> = faces
         .into_iter()
-        .map(|face| (face.table.start, face.mesh))
+        .map(|face| (face.table.start, face.mesh, face.metadata))
         .enumerate()
         .collect();
     // Legacy CAD IR sorts its generated mesh IDs lexicographically. Preserve that
@@ -149,21 +153,25 @@ fn from_display(
             "Part has no supported cached display tessellation: {reason}"
         )));
     }
+    if doc.configurations.len() != 1 {
+        return Err(ParseError(
+            "display tessellation configuration ownership is ambiguous".into(),
+        ));
+    }
     let mut tessellations = Vec::new();
-    for (_, (offset, m)) in meshes {
+    for (_, (offset, m, metadata)) in meshes {
         tessellations.push(Tessellation {
             source_stream: name.clone(),
             source_offset: offset,
+            metadata_span: crate::ByteSpan {
+                offset: metadata.start,
+                length: metadata.end.saturating_sub(metadata.start),
+            },
             vertices: m.vertices,
             triangles: m.triangles,
             strip_lengths: m.strip_lengths,
             normals: m.normals,
         });
-    }
-    if doc.configurations.len() != 1 {
-        return Err(ParseError(
-            "display tessellation configuration ownership is ambiguous".into(),
-        ));
     }
     Ok(GeometryDocument {
         source: GeometrySource {

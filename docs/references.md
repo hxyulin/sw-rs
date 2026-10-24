@@ -81,6 +81,12 @@ is only an investigation tool. The next decoding stages are:
 
 ## Corpus check
 
+Opt-in cache records and structured mate surface descriptors are now available;
+see [surface-reference rules and the expanded census](surface-reference-rules.md).
+`surface_references()` caches bounded metadata inspection;
+`references_with_geometry()` composes it with the base graph. Source-ID matches
+remain candidates and native topology flags remain false.
+
 `audit_references` was run on the same 340 EGA documents and 240 design-library
 documents used by the reader inventory; all source SHA-256 values match that
 inventory. All 487 supported modern documents have a decoded Keywords catalog:

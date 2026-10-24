@@ -11,6 +11,17 @@ const SW_NAMESPACE: &str = "http://www.solidworks.com/sw2003/schema";
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReferenceRecord {
+    /// Validated display table and its adjacent saved surface-reference evidence.
+    CachedSurface {
+        /// Native configuration index from the canonical single-config geometry.
+        configuration_index: u32,
+        /// Exact saved configuration name; empty remains unknown.
+        configuration_name: String,
+        /// Descriptor-table offset, not a native B-Rep face ID.
+        descriptor_offset: usize,
+        /// Bounded raw references and decoded numeric tuples.
+        surface_references: crate::CachedSurfaceReferences,
+    },
     /// Feature catalog record; IDs and raw attributes live in `features.records`.
     Feature {
         /// Index in this graph's feature catalog.
@@ -86,6 +97,8 @@ pub enum ReferenceResolution {
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceRelation {
+    /// Agreed cache-reference source ID matching a saved feature, without topology proof.
+    CachedSurfaceFeatureIdentity,
     /// Saved feature-tree nesting, not regeneration dependency.
     FeatureParent,
     /// Exact unqualified swFileRef to a same-stream swFile record.
@@ -123,6 +136,10 @@ pub struct ReferenceLink {
     /// Raw text and offset only; contained numbers are not decoded entity IDs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_descriptor: Option<crate::NativeString>,
+    /// Supported numeric surface descriptor, retaining opaque or invalid fields.
+    /// Does not establish the mate's endpoint or its component occurrence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection_surface_reference: Option<crate::SavedSurfaceReference>,
 }
 
 /// Shared source-reference layer. No geometry or renderer assumptions are required.
@@ -144,6 +161,76 @@ pub struct ReferenceGraph {
     pub topology_ownership_decoded: bool,
 }
 impl ReferenceGraph {
+    /// Add cache-table reference evidence from exactly the same original file.
+    /// Source/local/tail tuples remain distinct; only feature-ID candidates are
+    /// joined. Existing table locators are retained, making repeated calls idempotent.
+    /// Does not infer B-Rep ownership, apply appearances, or resolve mate endpoints.
+    pub fn with_surfaces(
+        mut self,
+        surfaces: &crate::CachedSurfaceData,
+    ) -> Result<Self, crate::ParseError> {
+        if surfaces.schema != "sw-rs-surface-references-v1" {
+            return Err(crate::ParseError(
+                "unsupported surface-reference schema".into(),
+            ));
+        }
+        if self.source_sha256 != surfaces.source_sha256 {
+            return Err(crate::ParseError(
+                "reference graph and surface data source hashes differ".into(),
+            ));
+        }
+        let mut feature_ids = BTreeMap::<u32, Vec<usize>>::new();
+        let mut cached = std::collections::BTreeSet::new();
+        for node in &self.nodes {
+            match &node.record {
+                ReferenceRecord::Feature { feature_index } => {
+                    if let Some(id) = self
+                        .features
+                        .records
+                        .get(*feature_index)
+                        .and_then(|f| f.source_id)
+                    {
+                        feature_ids.entry(id).or_default().push(node.index);
+                    }
+                }
+                ReferenceRecord::CachedSurface {
+                    descriptor_offset,
+                    configuration_index,
+                    configuration_name,
+                    ..
+                } => {
+                    if *configuration_index != surfaces.configuration_index
+                        || *configuration_name != surfaces.configuration_name
+                    {
+                        return Err(crate::ParseError(
+                            "cached surface configuration differs from existing graph records"
+                                .into(),
+                        ));
+                    }
+                    cached.insert((node.source.stream.clone(), *descriptor_offset));
+                }
+                _ => {}
+            }
+        }
+        for table in &surfaces.records {
+            if !cached.insert((table.source_stream.clone(), table.source_offset)) {
+                continue;
+            }
+            let node = self.node(
+                &table.source_stream,
+                format!("table[{}]", table.source_offset),
+                Some(table.source_offset),
+                ReferenceRecord::CachedSurface {
+                    configuration_index: surfaces.configuration_index,
+                    configuration_name: surfaces.configuration_name.clone(),
+                    descriptor_offset: table.source_offset,
+                    surface_references: table.surface_references.clone(),
+                },
+            );
+            self.identity_link(node,ReferenceRelation::CachedSurfaceFeatureIdentity,table.surface_references.feature_source_id(),&feature_ids,"Cache metadata agrees on the feature source ID; timestamp and native face/body ownership are not decoded");
+        }
+        Ok(self)
+    }
     fn node(
         &mut self,
         stream: &str,
@@ -203,6 +290,7 @@ impl ReferenceGraph {
                     reason: "Saved XML containment only; not a feature dependency".into(),
                     source_offset: Some(feature.span.offset),
                     selection_descriptor: None,
+                    selection_surface_reference: None,
                 });
             }
         }
@@ -224,9 +312,9 @@ impl ReferenceGraph {
                         mate_kind: mate.kind,
                     },
                 );
-                out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::NativeMateIdentity, reference: Some(mate.saved_identifier.to_string()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Mate identifier namespace and native object references not decoded; not joined to feature IDs".into(), source_offset: None, selection_descriptor: None });
+                out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::NativeMateIdentity, reference: Some(mate.saved_identifier.to_string()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Mate identifier namespace and native object references not decoded; not joined to feature IDs".into(), source_offset: None, selection_descriptor: None, selection_surface_reference: None });
                 for selection in &mate.reference_candidates {
-                    out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::MateSelection, reference: Some(selection.reference.value.clone()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Saved selection string retained; occurrence chain and geometric endpoint not decoded".into(), source_offset: Some(selection.reference.offset), selection_descriptor: selection.geometry_descriptor.clone() });
+                    out.links.push(ReferenceLink { from: node, relation: ReferenceRelation::MateSelection, reference: Some(selection.reference.value.clone()), candidates: Vec::new(), resolution: ReferenceResolution::Unresolved, reason: "Saved selection string retained; occurrence chain and geometric endpoint not decoded".into(), source_offset: Some(selection.reference.offset), selection_descriptor: selection.geometry_descriptor.clone(), selection_surface_reference: selection.surface_reference() });
                 }
             }
         }
@@ -261,6 +349,7 @@ impl ReferenceGraph {
                     reason: binding.reason.clone(),
                     source_offset: offset,
                     selection_descriptor: None,
+                    selection_surface_reference: None,
                 });
             }
         }
@@ -280,7 +369,7 @@ impl ReferenceGraph {
             1 => ReferenceResolution::Candidate,
             _ => ReferenceResolution::Ambiguous,
         };
-        self.links.push(ReferenceLink { from, relation, reference: id.map(|id| id.to_string()), candidates, resolution, reason: if resolution == ReferenceResolution::Unresolved { "No supported saved feature matches this ID; absence does not establish a deleted entity".into() } else { reason.into() }, source_offset: None, selection_descriptor: None });
+        self.links.push(ReferenceLink { from, relation, reference: id.map(|id| id.to_string()), candidates, resolution, reason: if id.is_none() { "No common valid source ID was decoded; missing, invalid or disagreeing references remain unresolved".into() } else if resolution == ReferenceResolution::Unresolved { "No supported saved feature matches this ID; absence does not establish a deleted entity".into() } else { reason.into() }, source_offset: None, selection_descriptor: None, selection_surface_reference: None });
     }
     fn xml_links(&mut self, inspection: &StreamInspection) {
         let mut indices = BTreeMap::new();
@@ -332,6 +421,7 @@ impl ReferenceGraph {
                 .into(),
                 source_offset: Some(inspection.xml_elements[reference.from_element].span.offset),
                 selection_descriptor: None,
+                selection_surface_reference: None,
             });
         }
     }

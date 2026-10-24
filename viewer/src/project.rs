@@ -735,6 +735,7 @@ mod traversal_tests {
                     tessellations: vec![sw_rs::Tessellation {
                         source_stream: "synthetic".into(),
                         source_offset: 0,
+                        metadata_span: sw_rs::ByteSpan { offset: 0, length: 0 },
                         vertices: vec![[0., 0., 0.], [1000., 0., 0.], [0., 1000., 0.]],
                         triangles: vec![[0, 1, 2]],
                         strip_lengths: vec![3],

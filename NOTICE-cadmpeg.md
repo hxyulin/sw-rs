@@ -52,3 +52,15 @@ IDs, original tags/attributes, reserved tokens and source byte spans; omit
 operation evaluation, inferred suppression, IR projection and topology binding.
 Saved XML preorder is not asserted to be regeneration order. The adapted module
 retains Apache-2.0 terms; new reference-graph infrastructure is MIT.
+
+## Saved surface-reference tokens
+
+`src/surface.rs` adapts persistent surface-reference string interpretation and
+duplicate-consensus rules from `crates/cadmpeg-codec-sldprt/src/tessellation.rs`
+at Apache-2.0 revision `4df21312c62cc1207a4c2274e29b4118fd232ec6`.
+Changes: preserve raw framed text/offsets, class names, invalid required fields,
+opaque tail tokens and terminal-comma evidence; support checked extended CString
+lengths; keep complete tuples and partial feature references separate; expose an
+opt-in source-scoped inspection without CAD IR or native topology dependencies.
+Native B-Rep face/body ownership is not inferred. The adapted module retains
+Apache-2.0 terms. New fixtures and reader/graph integration retain their own notices.

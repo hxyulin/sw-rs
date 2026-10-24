@@ -20,8 +20,10 @@ mod object_archive;
 mod presentation;
 mod reader;
 mod references;
+mod surface;
 mod visual;
 mod xml;
+mod zlb;
 pub use binary::{BinaryReader, FramedString};
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
@@ -54,11 +56,16 @@ pub use references::{
     ReferenceGraph, ReferenceLink, ReferenceNode, ReferenceRecord, ReferenceRelation,
     ReferenceResolution,
 };
+pub use surface::{
+    CachedSurfaceData, CachedSurfaceRecord, CachedSurfaceReferences, SavedSurfaceIdentity,
+    SavedSurfaceReference, SurfaceIdentityResolution, SurfaceReferenceStatus,
+};
 pub use visual::{
     NativeAppearance, NativeAppearanceExtension, NativeShaderParameters, NativeString,
     NativeTextureBlock, NativeTextureMappingHypothesis, SavedDisplayState, UnresolvedVisualBinding,
     VisualData, VisualDiagnostic,
 };
+pub use zlb::{ZlbChunk, ZlbStream, decode_zlb};
 
 /// Parse a modern document using bounded default resource limits.
 /// `filename` supplies the document kind; it is never opened or resolved.
@@ -136,4 +143,20 @@ pub fn references_json(bytes: &[u8], filename: &str) -> Result<String, wasm_bind
         .references()
         .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
     serde_json::to_string(graph).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
+}
+
+/// Compose same-source cached Part surface evidence with source-reference JSON.
+/// Requires canonical cached geometry; native face/body ownership remains unresolved.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn geometry_references_json(
+    bytes: &[u8],
+    filename: &str,
+) -> Result<String, wasm_bindgen::JsError> {
+    let reader = DocumentReader::open(bytes, filename, Limits::default())
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    let graph = reader
+        .references_with_geometry()
+        .map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))?;
+    serde_json::to_string(&graph).map_err(|e| wasm_bindgen::JsError::new(&e.to_string()))
 }

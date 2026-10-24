@@ -162,6 +162,10 @@ mbx run --release --locked --features archive --example inspect_mates -- ARCHIVE
 
 ## Document inventory and shared reader
 
+See [measured parsing coverage](docs/parsing-coverage.md) for separate container,
+metadata, relationship and geometry counts; container recovery is not an overall
+semantic parsing percentage.
+
 Saved feature IDs and cross-record evidence are available through the opt-in
 `DocumentReader::features()` / `references()` APIs and `sw-dump references FILE`.
 These distinguish resolved XML relationships from provisional native ID matches;
@@ -172,6 +176,15 @@ The [binary reference investigation](docs/archive-reference-rules.md) documents
 confirmed MFC rules, native corpus checks and unresolved mate-context hypotheses.
 `ArchiveContext` provides checked class/object map operations for sequential
 schema-specific decoders; the configuration-name reader now validates these maps.
+
+[Surface-reference rules and coverage](docs/surface-reference-rules.md) describe
+typed source/local/tail identities shared by mate descriptors and opt-in cached
+surface inspection. Use `surface_references()` or `references_with_geometry()`;
+native face/body ownership remains unresolved.
+
+[Legacy ZLB framing](docs/legacy-zlb-rules.md) is decoded by `decode_zlb` for
+already extracted streams, including multiple zlib members; OLE document
+container support remains pending.
 
 **Inspect source…** in the web viewer opens a filterable stream inventory with
 source hashes, validation results, opaque ranges and paged XML/binary inspection.

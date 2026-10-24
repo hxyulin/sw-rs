@@ -23,6 +23,8 @@ pub struct ReadOutput {
     pub features: Option<crate::FeatureCatalog>,
     /// Requested source-reference graph; candidate links remain unverified.
     pub references: Option<crate::ReferenceGraph>,
+    /// Independently requested cached surface-reference inspection, without mesh copies.
+    pub surface_references: Option<crate::CachedSurfaceData>,
 }
 
 /// Borrow source bytes and decompress/validate their container exactly once.
@@ -52,6 +54,7 @@ pub struct DocumentReader<'a> {
     inventory: OnceCell<DocumentInventory>,
     features: OnceCell<crate::FeatureCatalog>,
     references: OnceCell<crate::ReferenceGraph>,
+    surface_references: OnceCell<crate::CachedSurfaceData>,
 }
 impl<'a> DocumentReader<'a> {
     /// Validate/decompress once, retaining trace records and container errors for inventory.
@@ -72,6 +75,7 @@ impl<'a> DocumentReader<'a> {
             inventory: OnceCell::new(),
             features: OnceCell::new(),
             references: OnceCell::new(),
+            surface_references: OnceCell::new(),
         })
     }
     /// Borrow original encoded source bytes; no copy or decompression occurs.
@@ -151,6 +155,44 @@ impl<'a> DocumentReader<'a> {
             crate::ReferenceGraph::build(&self.source_hash, features, metadata, &xml)
         }))
     }
+    /// Inspect cached Part surface references once, separately from geometry decoding.
+    /// Uses retained carrier bytes and table metadata windows; no mesh buffers are copied.
+    /// Ordinary `geometry()` and the viewer never pay for this opt-in scan.
+    pub fn surface_references(&self) -> Result<&crate::CachedSurfaceData, ParseError> {
+        let geometry = self.geometry()?;
+        let container = self.container()?;
+        Ok(self.surface_references.get_or_init(|| {
+            let configuration = &geometry.configurations[0]; // canonical geometry invariant
+            crate::CachedSurfaceData {
+                schema: "sw-rs-surface-references-v1",
+                source_sha256: self.source_hash.clone(),
+                configuration_index: configuration.index,
+                configuration_name: configuration.name.clone(),
+                records: geometry
+                    .model
+                    .tessellations
+                    .iter()
+                    .map(|table| crate::CachedSurfaceRecord {
+                        source_stream: table.source_stream.clone(),
+                        source_offset: table.source_offset,
+                        surface_references: crate::CachedSurfaceReferences::inspect(
+                            &container.streams[&table.source_stream],
+                            table.metadata_span,
+                        ),
+                    })
+                    .collect(),
+            }
+        }))
+    }
+    /// Compose an owned graph with cached Part surface-reference evidence.
+    /// Reuses cached container/metadata/geometry, copies graph records but never
+    /// copies mesh buffers. Requires the supported canonical Part geometry profile.
+    /// `references()` itself remains independent of geometry decoding.
+    pub fn references_with_geometry(&self) -> Result<crate::ReferenceGraph, ParseError> {
+        self.references()?
+            .clone()
+            .with_surfaces(self.surface_references()?)
+    }
     /// Transfer retained streams and requested cached results without copying their buffers.
     /// Source-file errors remain errors; unused projections remain None.
     pub fn finish(self) -> Result<ReadOutput, ParseError> {
@@ -161,6 +203,7 @@ impl<'a> DocumentReader<'a> {
             inventory: self.inventory.into_inner(),
             features: self.features.into_inner(),
             references: self.references.into_inner(),
+            surface_references: self.surface_references.into_inner(),
         })
     }
 }

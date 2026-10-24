@@ -68,6 +68,13 @@ pub struct MateReferenceCandidate {
     /// Present only for descriptor + word(1) + reference string framing.
     pub geometry_descriptor: Option<NativeString>,
 }
+impl MateReferenceCandidate {
+    /// Interpret the adjacent saved surface descriptor without resolving its owner.
+    /// Other geometry classes remain raw; invalid recognized surface tokens survive.
+    pub fn surface_reference(&self) -> Option<crate::SavedSurfaceReference> {
+        crate::SavedSurfaceReference::parse(self.geometry_descriptor.as_ref()?)
+    }
+}
 
 /// A supported common mate header and the reference evidence in its source interval.
 #[derive(Clone, Debug, Serialize)]

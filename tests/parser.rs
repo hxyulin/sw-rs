@@ -300,6 +300,75 @@ fn cached_geometry_is_byte_based_hashed_and_preserves_winding_and_units() {
     );
     assert!(sw_rs::geometry(&bytes, "assembly.SLDASM").is_err());
 }
+
+#[test]
+fn saved_surface_tuples_link_cache_evidence_without_promoting_topology_ownership() {
+    fn text(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend([255, 254, 255, value.encode_utf16().count() as u8]);
+        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
+    }
+    let mut display = display_payload();
+    let metadata_start = display.len();
+    text(&mut display, "moSimpleSurfIdRep_c,42,3,-1,");
+    text(&mut display, "moSimpleSurfIdRep_c,42,3,-1,");
+    let keywords = b"<Keywords><Feature id=\"42\" Name=\"renamed feature\"/></Keywords>";
+    let bytes = file(&[
+        ("Contents/DisplayLists", &display),
+        ("swXmlContents/KeyWords", keywords),
+    ]);
+    let reader = sw_rs::DocumentReader::open(&bytes, "part.SLDPRT", Limits::default()).unwrap();
+    let basic = reader.references().unwrap();
+    assert_eq!(basic.nodes.len(), 1);
+    let geometry = reader.geometry().unwrap();
+    let table = &geometry.model.tessellations[0];
+    assert!(
+        serde_json::to_value(table)
+            .unwrap()
+            .get("metadata_span")
+            .is_none()
+    );
+    let surfaces = reader.surface_references().unwrap();
+    assert!(std::ptr::eq(surfaces, reader.surface_references().unwrap()));
+    let surface_references = &surfaces.records[0].surface_references;
+    assert_eq!(surface_references.metadata_span.offset, metadata_start);
+    assert_eq!(surface_references.references.len(), 2);
+    assert!(matches!(
+        surface_references.identity_resolution(),
+        sw_rs::SurfaceIdentityResolution::Consistent { .. }
+    ));
+    let graph = reader.references_with_geometry().unwrap();
+    assert_eq!(graph.nodes.len(), 2);
+    assert_eq!(graph.links.len(), 1);
+    assert_eq!(
+        graph.links[0].relation,
+        sw_rs::ReferenceRelation::CachedSurfaceFeatureIdentity
+    );
+    assert_eq!(
+        graph.links[0].resolution,
+        sw_rs::ReferenceResolution::Candidate
+    );
+    assert_eq!(graph.links[0].candidates, [0]);
+    assert!(!graph.topology_ownership_decoded);
+    assert!(!graph.native_object_graph_decoded);
+    let again = graph.clone().with_surfaces(surfaces).unwrap();
+    assert_eq!(again.nodes.len(), graph.nodes.len());
+    assert_eq!(again.links.len(), graph.links.len());
+    let mut other = surfaces.clone();
+    other.source_sha256 = "another source".into();
+    assert!(graph.clone().with_surfaces(&other).is_err());
+    other.source_sha256 = graph.source_sha256.clone();
+    other.configuration_index += 1;
+    assert!(graph.clone().with_surfaces(&other).is_err());
+    other.configuration_index = surfaces.configuration_index;
+    other.schema = "unknown";
+    assert!(graph.with_surfaces(&other).is_err());
+    assert_eq!(reader.references().unwrap().nodes.len(), 1); // optional composition never mutates the cached base graph.
+    let output = reader.finish().unwrap();
+    assert!(output.surface_references.is_some());
+    let ordinary = sw_rs::DocumentReader::open(&bytes, "part.SLDPRT", Limits::default()).unwrap();
+    ordinary.geometry().unwrap();
+    assert!(ordinary.finish().unwrap().surface_references.is_none());
+}
 #[test]
 fn cached_geometry_rejects_missing_truncated_nonfinite_and_ambiguous_data() {
     assert!(sw_rs::geometry(&file(&[("other", b"x")]), "p.SLDPRT").is_err());

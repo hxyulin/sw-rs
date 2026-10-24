@@ -20,6 +20,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         first
     };
     let inspect_stream = if inventory { args.next() } else { None };
+    let include_geometry = if references {
+        match args.next() {
+            Some(flag) if flag == "--geometry" => true,
+            Some(_) => return Err("expected --geometry".into()),
+            None => false,
+        }
+    } else {
+        false
+    };
     if args.next().is_some() {
         return Err("unexpected argument".into());
     }
@@ -31,7 +40,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = if references {
         let reader =
             sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;
-        serde_json::to_value(reader.references()?)?
+        if include_geometry {
+            serde_json::to_value(reader.references_with_geometry()?)?
+        } else {
+            serde_json::to_value(reader.references()?)?
+        }
     } else if inventory {
         let reader =
             sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;

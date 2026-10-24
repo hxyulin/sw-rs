@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+- Decode the observed legacy chunked ZLB wrapper with exact size/checksum/member
+  validation and source spans; add native-corpus audit tooling without enabling
+  unsupported OLE document parsing.
+
+- Decode saved surface-reference tuples in mate descriptors and opt-in cache
+  inspections, preserving signed tail bits, opaque fields, invalid tokens and
+  conflicting duplicates without inventing native face/body ownership.
+- Add same-source cache-to-feature reference candidates, CLI/core WASM inspection
+  and an expanded corpus audit; keep normal geometry loading free of the new scan.
+
 - Add checked archive-local class/object maps, including class-only declarations,
   backreferences, cycles, explicit external mappings and wide indices; validate
   configuration record classes and reused slots during sequential metadata parsing.
