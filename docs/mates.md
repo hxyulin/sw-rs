@@ -140,7 +140,14 @@ separates inherited-context candidates from local reuse. Run
 the first unsupported position and raw tag in another sample. The opt-in reference
 graph now retains 41 of these cases as separate saved-handle candidates with
 configuration framing evidence. All 46 class-map stops remain visible; neither
-mate families nor selected entities are resolved from these candidates.
+mate families nor selected entities are resolved from these candidates. The
+[five earlier stops](archive-reference-rules.md#the-five-earlier-stops-edge-reference-context)
+all have earlier edge-reference chains; four also appear to reuse objects rather
+than write new handle strings. Those branches need object payloads and map
+accounting, beyond class-name reuse. The
+[sequential subtree reader](references.md#sequential-reference-subtrees) now
+implements the supported child layouts and typed backreferences. It requires
+a verified archive context; the five original face stops remain unresolved.
 
 1. TODO(mate-object-map): reconstruct the external/shared MFC class and object
    dictionary. This should recover reused mate families and reused selections,

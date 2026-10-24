@@ -48,8 +48,9 @@ pub use mates::{
     MateReferenceNode,
 };
 pub use native_reference::{
-    NativeDocumentReference, NativeDocumentReferenceCandidate, NativeHandleClassEvidence,
-    NativeReferenceStop,
+    NativeArchivePointer, NativeDocumentReference, NativeDocumentReferenceCandidate,
+    NativeExternalObjectProfile, NativeHandleClassEvidence, NativeReferenceStop,
+    NativeSubtreeObject, NativeSubtreePayload, NativeSubtreeReader,
 };
 pub use object_archive::{ArchiveContext, ArchiveEntry, ArchiveError, ArchiveObjectHeader};
 pub use ole::{OleCompression, OleStreamSource};

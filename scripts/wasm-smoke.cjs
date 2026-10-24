@@ -141,6 +141,26 @@ for (const [contextName, bytes] of [['Contents/Config-8', context],
   assert.equal(rejected.native_reference_stops.length, 1);
 }
 console.log('WASM handle candidates preserve class-map blockers and reject ambiguous or cross-config context.');
+const edgePrefix = Buffer.from(reusedPrefix);
+edgePrefix.write('moEdgeRef_c', 6, 'ascii');
+const edgeFile = Buffer.concat([candidateFile('Contents/Config-7', context),
+  container('Contents/Config-7-ResolvedFeatures', edgePrefix).subarray(header.length)]);
+const edgeGraph = JSON.parse(references_json(edgeFile, 'edge.SLDASM'));
+const edgeNode = edgeGraph.nodes.find(node => node.record.reference?.reference_class === 'moEdgeRef_c');
+assert.equal(edgeNode.record.kind, 'native_document_reference_candidate');
+assert.equal(edgeNode.record.reference.source_stream, 'Contents/Config-7-ResolvedFeatures');
+assert.equal(edgeNode.record.reference.configuration_index, 7);
+assert.equal(edgeNode.record.reference.document.value, '../source/Part.SLDPRT');
+assert.equal(edgeGraph.links.find(link => link.from === edgeNode.index).resolution, 'unresolved');
+assert.equal(edgeGraph.native_reference_stops.length, 2);
+const unrelatedEdge = Buffer.concat([container('Contents/Config-7-ResolvedFeatures', edgePrefix),
+  container('Contents/Config-7', context).subarray(header.length)]);
+const unrelatedGraph = JSON.parse(references_json(unrelatedEdge, 'edge.SLDASM'));
+assert.equal(unrelatedGraph.nodes.some(node => node.record.reference?.reference_class === 'moEdgeRef_c'), false);
+assert.equal(edgeGraph.native_object_graph_decoded, false);
+assert.equal(edgeGraph.topology_ownership_decoded, false);
+console.log('WASM edge-prefix evidence retains configuration scope without assigning face owners.');
+
 if (process.argv[2]) {
   const path = process.argv[2];
   const source = require('node:fs').readFileSync(path);

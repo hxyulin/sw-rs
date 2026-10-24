@@ -189,12 +189,16 @@ impl ReferenceGraph {
         for (name, bytes) in container.streams.iter().filter(|(name, _)| {
             name.as_str() == "ThirdPtyStore/VisualStates"
                 || crate::mates::source_index(name).is_some()
+                || (name.ends_with("-ResolvedFeatures")
+                    && crate::native_reference::configuration_scope(name).is_some_and(
+                        |(_, base)| container.streams.contains_key(&format!("{base}-MatesList")),
+                    ))
         }) {
             let mut prefix_end = 0;
             let evidence = std::cell::OnceCell::new();
             for class in crate::mesh::class_intervals(bytes)
                 .iter()
-                .filter(|c| c.name == "moFaceRef_c")
+                .filter(|c| matches!(c.name.as_str(), "moFaceRef_c" | "moEdgeRef_c"))
             {
                 // Checked CStrings are data, including any class-looking bytes.
                 if class.class_offset < prefix_end {
@@ -223,12 +227,15 @@ impl ReferenceGraph {
                                 continue;
                             }
                             let frames = evidence.get_or_init(|| {
-                                crate::mates::source_index(name).and_then(|_| {
-                                    let source = name.strip_suffix("-MatesList")?;
-                                    container.streams.get(source).and_then(|bytes| {
-                                        crate::NativeHandleClassEvidence::scan_unique(bytes, source)
-                                    })
-                                })
+                                crate::native_reference::configuration_scope(name).and_then(
+                                    |(_, source)| {
+                                        container.streams.get(source).and_then(|bytes| {
+                                            crate::NativeHandleClassEvidence::scan_unique(
+                                                bytes, source,
+                                            )
+                                        })
+                                    },
+                                )
                             });
                             // Multiple frames may represent separate archive contexts.
                             // Never choose one by tag, path text, or first occurrence.

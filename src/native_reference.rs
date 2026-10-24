@@ -5,7 +5,26 @@ use crate::{BinaryReader, ByteSpan, FramedString};
 use serde::Serialize;
 
 mod context;
+mod subtree;
 pub use context::{NativeDocumentReferenceCandidate, NativeHandleClassEvidence};
+pub use subtree::{
+    NativeArchivePointer, NativeExternalObjectProfile, NativeSubtreeObject, NativeSubtreePayload,
+    NativeSubtreeReader,
+};
+
+pub(crate) fn configuration_scope(source: &str) -> Option<(u32, &str)> {
+    let base = source
+        .strip_suffix("-MatesList")
+        .or_else(|| source.strip_suffix("-ResolvedFeatures"))?;
+    let digits = base.strip_prefix("Contents/Config-")?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((digits.parse().ok()?, base))
+}
+fn is_face(class: &str) -> bool {
+    class == "moFaceRef_c"
+}
 
 const COMPONENT_MARKER: [u8; 16] = [
     0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54,
@@ -17,7 +36,7 @@ const COMPONENT_MARKER: [u8; 16] = [
 pub struct NativeReferenceStop {
     /// Exact decoded source stream.
     pub source_stream: String,
-    /// Start of the candidate moFaceRef_c declaration.
+    /// Start of the candidate face/edge reference declaration.
     pub prefix_offset: usize,
     /// First unsupported field's exact decoded-stream position.
     pub offset: usize,
@@ -35,9 +54,12 @@ pub struct NativeReferenceStop {
 pub struct NativeDocumentReference {
     /// Exact decoded stream containing the prefix.
     pub source_stream: String,
+    /// Explicit face/edge root class. Face is omitted in JSON for compatibility.
+    #[serde(skip_serializing_if = "is_face")]
+    pub reference_class: String,
     /// Complete checked prefix through the document CString, not an object boundary.
     pub prefix_span: ByteSpan,
-    /// Native Config-N index when the source is an exact mate-list stream.
+    /// Native Config-N index for an exact mate-list or resolved-feature stream.
     /// Visual-state configuration/display-state ownership remains unknown.
     pub configuration_index: Option<u32>,
     /// Five saved header words, without interpreting counts, stamps or object IDs.
@@ -94,13 +116,13 @@ fn entity_prefix<'a>(
     bytes: &'a [u8],
     source: &str,
     offset: usize,
-) -> Result<(BinaryReader<'a>, [u32; 5], String), NativeReferenceStop> {
+) -> Result<(BinaryReader<'a>, [u32; 5], String, String), NativeReferenceStop> {
     let failure = |at, stage, class| stop(bytes, source, offset, at, stage, class);
-    let mut reader =
-        BinaryReader::at(bytes, offset).ok_or_else(|| failure(offset, "moFaceRef_c", true))?;
-    if declaration(&mut reader).as_deref() != Some("moFaceRef_c") {
-        return Err(failure(offset, "moFaceRef_c", true));
-    }
+    let mut reader = BinaryReader::at(bytes, offset)
+        .ok_or_else(|| failure(offset, "face_or_edge_reference_class", true))?;
+    let reference_class = declaration(&mut reader)
+        .filter(|name| matches!(name.as_str(), "moFaceRef_c" | "moEdgeRef_c"))
+        .ok_or_else(|| failure(offset, "face_or_edge_reference_class", true))?;
     let header_offset = reader.position();
     let words = reader
         .words::<5>()
@@ -129,11 +151,11 @@ fn entity_prefix<'a>(
             return Err(failure(at, expected, true));
         }
     }
-    Ok((reader, words, entity_class))
+    Ok((reader, words, entity_class, reference_class))
 }
 
 impl NativeDocumentReference {
-    /// Read the supported moFaceRef_c prefix at an exact decoded-stream offset.
+    /// Read a supported moFaceRef_c/moEdgeRef_c prefix at an exact decoded-stream offset.
     /// Every class must be explicitly declared with schema 1. Unknown/reused classes
     /// and malformed prefixes return None; no slots or object lengths are guessed.
     pub fn parse_prefix(bytes: &[u8], source_stream: &str, offset: usize) -> Option<Self> {
@@ -147,7 +169,8 @@ impl NativeDocumentReference {
         source_stream: &str,
         offset: usize,
     ) -> Result<Self, NativeReferenceStop> {
-        let (mut reader, raw_header, entity_class) = entity_prefix(bytes, source_stream, offset)?;
+        let (mut reader, raw_header, entity_class, reference_class) =
+            entity_prefix(bytes, source_stream, offset)?;
         let at = reader.position();
         if declaration(&mut reader).as_deref() != Some("moCStringHandle_c") {
             return Err(stop(
@@ -165,11 +188,12 @@ impl NativeDocumentReference {
             .ok_or_else(|| stop(bytes, source_stream, offset, at, "document_cstring", false))?;
         Ok(Self {
             source_stream: source_stream.into(),
+            reference_class,
             prefix_span: ByteSpan {
                 offset,
                 length: reader.position() - offset,
             },
-            configuration_index: crate::mates::source_index(source_stream),
+            configuration_index: configuration_scope(source_stream).map(|(index, _)| index),
             raw_header,
             entity_class,
             document,
@@ -185,11 +209,11 @@ impl NativeDocumentReferenceCandidate {
         evidence: &NativeHandleClassEvidence,
         protected_end: &mut usize,
     ) -> Option<Self> {
-        let configuration_index = crate::mates::source_index(source_stream)?;
-        if evidence.source_stream != source_stream.strip_suffix("-MatesList")? {
+        let (configuration_index, base) = configuration_scope(source_stream)?;
+        if evidence.source_stream != base {
             return None;
         }
-        let (mut reader, raw_header, entity_class) =
+        let (mut reader, raw_header, entity_class, reference_class) =
             entity_prefix(bytes, source_stream, offset).ok()?;
         let at = reader.position();
         let raw_tag = reader.u16()?;
@@ -202,6 +226,7 @@ impl NativeDocumentReferenceCandidate {
         let document = reader.string()?;
         Some(Self {
             source_stream: source_stream.into(),
+            reference_class,
             prefix_span: ByteSpan {
                 offset,
                 length: reader.position() - offset,

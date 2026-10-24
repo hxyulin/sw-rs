@@ -501,3 +501,46 @@ fn failed_counted_strings_do_not_expose_nested_candidate_markers() {
     context.extend([0, 0]); // Outer frame fails after a complete counted string.
     assert!(NativeHandleClassEvidence::scan_unique(&context, "Contents/Config-17").is_none());
 }
+
+#[test]
+fn edge_prefixes_keep_root_class_and_require_matching_mate_feature_carriers() {
+    let mut bytes = reused_handle("saved-edge-part.SLDPRT", 0x8010);
+    bytes[6..6 + "moEdgeRef_c".len()].copy_from_slice(b"moEdgeRef_c");
+    let report = graph(vec![
+        ("Contents/Config-17-ResolvedFeatures", bytes.clone()),
+        ("Contents/Config-17-MatesList", vec![]),
+        ("Contents/Config-17", configuration(0x8010)),
+    ]);
+    let refs = candidates(&report);
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].reference_class, "moEdgeRef_c");
+    assert_eq!(refs[0].source_stream, "Contents/Config-17-ResolvedFeatures");
+    assert_eq!(refs[0].configuration_index, 17);
+    assert_eq!(
+        serde_json::to_value(refs[0]).unwrap()["reference_class"],
+        "moEdgeRef_c"
+    );
+    assert_eq!(report.native_reference_stops.len(), 1);
+    let report = graph(vec![
+        ("Contents/Config-17-ResolvedFeatures", bytes),
+        ("Contents/Config-18-MatesList", vec![]),
+        ("Contents/Config-17", configuration(0x8010)),
+    ]);
+    assert!(candidates(&report).is_empty());
+    assert!(report.native_reference_stops.is_empty());
+    let mut bytes = prefix("edge");
+    bytes[6..6 + "moEdgeRef_c".len()].copy_from_slice(b"moEdgeRef_c");
+    let edge =
+        NativeDocumentReference::parse_prefix(&bytes, "Contents/Config-17-ResolvedFeatures", 0)
+            .unwrap();
+    assert_eq!(edge.reference_class, "moEdgeRef_c");
+    assert_eq!(edge.configuration_index, Some(17));
+    let face = NativeDocumentReference::parse_prefix(&prefix("face"), "s", 0).unwrap();
+    assert_eq!(face.reference_class, "moFaceRef_c");
+    assert!(
+        serde_json::to_value(face)
+            .unwrap()
+            .get("reference_class")
+            .is_none()
+    );
+}

@@ -40,9 +40,10 @@ Source locators refer to decoded stream bytes, never compressed file offsets.
 
 ## Native document-handle prefixes
 
-The opt-in graph also inspects `ThirdPtyStore/VisualStates` and exact
-`Contents/Config-N-MatesList` streams for supported explicit `moFaceRef_c`
-prefixes. `NativeDocumentReference::parse_prefix` exposes the same checked decoder
+The opt-in graph inspects `ThirdPtyStore/VisualStates`, exact
+`Contents/Config-N-MatesList` streams, and matching `Config-N-ResolvedFeatures`
+streams when the same literal configuration has a mate stream. It reads supported
+explicit `moFaceRef_c` and `moEdgeRef_c` prefixes. `NativeDocumentReference::parse_prefix` exposes the same checked decoder
 at a caller-supplied decoded-stream offset.
 
 The observed prefix has five u32 words beginning with `1, 0`, the repeated
@@ -53,8 +54,10 @@ Every declaration must use schema 1. Reused class tags and unknown layouts stop
 the prefix; no archive slots are guessed and no unknown payload is skipped.
 
 `ReferenceRecord::NativeDocumentReference` retains the entire checked prefix span,
-raw words, entity class, saved document handle and its CString offset. For mate
-streams, the native configuration index comes only from the exact stream name.
+raw words, entity class, saved document handle and its CString offset.
+`reference_class` identifies edge roots; face roots omit this field in JSON for
+compatibility. For supported configuration streams, the native index comes only
+from the exact stream name.
 Visual-state configuration ownership remains unknown. The prefix ends at the
 CString, not at a validated complete native-object boundary.
 
@@ -116,7 +119,7 @@ Object/null tags, unsupported classes earlier in the prefix, wide tags and
 invalid strings remain unsupported. Counted string contents are excluded from
 nested declaration scans, including when a later frame field fails.
 
-The public validation retains all 67 explicit visual prefixes and adds 41 mate
+The initial candidate validation retains all 67 explicit visual prefixes and adds 41 mate
 handle candidates, including one blank string. All 46 class stops remain visible:
 a handle candidate does not remove its class-map blocker. An independent byte
 walker checks both source intervals and the exact saved candidate text. Ordinary
@@ -127,6 +130,107 @@ through `Config-N` and `Config-N-ResolvedFeatures`. Matching frame tags cannot
 establish object registrations, local class slots, archive order or current
 selection ownership. No synthetic empty map slots or declaration-order dictionary
 are inserted. See the [public prefix investigation](archive-reference-rules.md#public-mate-prefix-follow-up-2026-10-25).
+
+## Sequential reference subtrees
+
+`NativeSubtreeReader` implements supported reference payloads using a caller-supplied
+`ArchiveContext`. It resolves class and object tags through that actual shared map,
+including wide tags. It does not infer slots from scanned declarations, saved
+paths, the leading mate-stream word, or the conditional trial dictionaries.
+
+The supported payloads are:
+
+- `moCStringHandle_c`: one checked CString.
+- `moExtObject_c`: two independently serialized handle pointers, a checked
+  byte(2)/word(0) prefix, a raw u32, saved CStrings, fixed raw scalar blocks and a
+  configuration-looking CString. That text does not establish ownership.
+- `moFR_c`: an external-object pointer and two raw u32 words.
+- `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c` and `moFilletSurfIdRep_c`:
+  word(0), an FR pointer and one raw trailing word.
+- `moEndFaceSurfIdRep_c`: the same prefix with two trailing words.
+- `moDerivedSurfIdRep_c`: word(0), an FR pointer, a recursive representation
+  pointer and one trailing word.
+
+Other representation families, including `moEndFace3IntSurfIdRep_c`,
+`moFromSktEnt3IntSurfIdRep_c` and `moLPatternSurfIdRep_c`, remain unsupported.
+The Photo360 edge chain contains these classes, so a recovered map alone will
+not make its entire array readable.
+
+All classes require saved schema one. Nulls and duplicate pointers are retained.
+A backreference must point to a complete object of the expected type already
+consumed by this reader. A known class header without a decoded payload is
+insufficient. Cycles into in-progress payloads remain unsupported and stop.
+
+`NativeExternalObjectProfile` is explicit; no universal version gate is claimed:
+
+| Profile | Saved CStrings | Raw bytes before configuration CString | Raw trailing bytes |
+| --- | ---: | ---: | ---: |
+| `TwoStrings` | 2 | 17 | 12 |
+| `ThreeStrings` | 3 | 18 | 16 |
+
+Both handle pointers precede these fields. The scalar blocks remain raw because
+their field meanings and some byte boundaries are unverified. Both profiles are
+checked against independently located FR-field boundaries in projections of the
+five public samples. Those private projections rewrite archive tags; one also
+substitutes an unavailable handle reference. They verify field consumption, not
+original archive-map continuity or identity.
+
+`read_reference_array_prefix` consumes the supported face/edge header, component
+marker, zero word and the declared surface-pointer count. It retains null entries
+and recursive pointers in source order. It **does not consume the enclosing
+face/edge object's trailer**. Its arena record has `complete_payload: false`;
+the checked span is a prefix, and it cannot satisfy a complete-object backreference.
+The caller must decode the remaining parent fields before advancing to a sibling.
+`read_surface` and `read_external_object` consume their complete supported payloads.
+
+Every public read rolls back the cursor, shared-map registrations, decoded values
+and pointer budget after failure. Previously decoded objects remain unchanged.
+The default cumulative budget is 100,000 pointer occurrences and depth 64;
+`with_limits` can reduce these, and depth is always capped at 64. Unknown schemas,
+classes, wrong pointer types, missing values, invalid strings, excessive counts
+and unsupported layouts stop without resynchronizing.
+
+`archive_mut` lets an enclosing sequential decoder append known class/object or
+explicit MapObject operations for layouts outside this reader. It must preserve
+the context's identity and must not guess missing registrations. `read_string_handle`
+can consume handles directly in a configuration payload before later references
+reuse them. Adopted map entries without decoded values still stop on backreference.
+
+The reader stores definitions once by archive object slot. Pointer occurrences
+retain their own source stream and header span. Definitions retain their defining
+stream and checked span, so cross-stream backreferences do not acquire the later
+stream's provenance. These are archive identities, not current geometry owners.
+
+### Probe a fresh archive only
+
+```sh
+cargo run --locked --example inspect_native_subtree -- model.SLDASM 'Contents/Config-0-ResolvedFeatures' 8378 two_strings
+```
+
+This example deliberately supplies an empty archive. Its JSON labels that context
+and reports either the checked definitions or an exact error. It does not fill
+missing slots. An arbitrary saved stream offset normally needs an inherited map;
+the command is a diagnostic probe, not a whole-file graph decoder. The optional
+last argument selects `array` (a prefix), `surface` or `external`.
+
+### Public-file result
+
+Extending prefix inspection to edge roots and matching resolved-feature carriers
+retains 53 handle candidates: 47 face prefixes and six edge prefixes, with two
+blank strings. This adds 12 candidates to the initial 41. The 67 fully explicit
+visual prefixes remain unchanged. There are now 70 class stops across the wider
+scan; candidates do not remove their unresolved class tags.
+
+All five earlier edge chains now retain their own saved-handle candidates.
+Those records are not assigned to the later blocked face references. The five
+original face stops remain unchanged. Starting each edge subtree with an empty
+map stops at its first inherited handle class and rolls back all registrations.
+Metadata remains unchanged across all 344 modern baseline entries. Private audits
+and projected payloads live in `local-assets/native-subtree-implementation/`.
+
+Remaining work includes the verified `Config-N` / resolved-feature archive
+handoff, unread parent trailers and the other surface families listed above. The new payload reader supplies the child
+layouts and typed backreferences; it does not reconstruct that missing context.
 
 ## Resolution rules
 

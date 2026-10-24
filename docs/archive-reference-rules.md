@@ -161,6 +161,90 @@ Before adding reused-class support, decode and validate the intervening payloads
 and map registrations. A controlled save can then test whether adding one object
 moves the predicted slots without changing the selected entity.
 
+## The five earlier stops: edge-reference context
+
+A follow-up traced all five non-handle stops to an earlier explicit `moEdgeRef_c`
+chain. Three chains occur earlier in the same mate stream; two occur in the
+matching `ResolvedFeatures` stream. All five pinned source hashes and decoded
+stream CRCs were checked again. The following are raw little-endian words at the
+stopping position, not a decoded dictionary:
+
+| Public sample | Stop offset | Raw continuation | Earlier edge declaration |
+| --- | ---: | --- | --- |
+| `Photo360/Study-Photo360.SLDASM` | 2124 | `8101 8103 8011`, then CString | ResolvedFeatures: 8378 |
+| `Study-Toolbox.SLDASM` | 4842 | `8138 0000 8133 0136` | MatesList: 1776 |
+| `Study-模具设计.SLDASM` | 5496 | `80D4 0000 80D6 00D9` | MatesList: 1774 |
+| `Study-装配体2.SLDASM` | 5021 | `80D7 0000 80D9 00DC` | MatesList: 1760 |
+| `terminalBlocks.SLDASM` | 15344 | `8111 0000 8113 8115 0117 0118` | ResolvedFeatures: 9918 |
+
+The surrounding layouts suggest three different reuse forms:
+
+- Photo360 reuses the FR, external-object and handle classes, followed by a new
+  framed string. Its text differs from the earlier edge's saved document text.
+  Reusing a class cannot justify copying the earlier object's handle.
+- Toolbox, mold and assembly-2 appear to reuse an external object. At the
+  hypothesized external-object pointer position, their words are respectively
+  `0136`, `00D9` and `00DC`, which have the short object-reference tag form.
+  Those slots are one above the candidate external-object class slots in the
+  earlier edge chains. No new document CString follows those words.
+- The terminal-block case appears to create a new external object using two
+  existing string handles: `0117` and `0118`. Their positions follow the reused
+  external-object class tag `8115`. The earlier edge chain contains two framed
+  strings. Object-slot accounting is still needed to associate them.
+
+These are structural hypotheses. The earlier surface-class declarations suggest
+`moFromSktEntSurfIdRep_c` for Toolbox, `moDerivedSurfIdRep_c` for the mold sample,
+`moFromSktEntSurfIdRep_c` for assembly-2 and `moSimpleSurfIdRep_c` for terminal
+blocks. No production class assignment or saved-handle candidate is added from
+these correlations. The original five stops remain unchanged.
+
+### Conditional surface-array trials
+
+Private trial walkers supplied the hypothesized class tags explicitly and consumed
+only the proposed payload layouts, without resynchronizing after unknown bytes.
+They are not archive-map reconstruction. In the reused external-object branch,
+the trial leaf shape is:
+
+```text
+entity class tag, zero u16, FR class tag, external-object reference,
+three raw u32 words
+```
+
+This consumes 20 bytes for the proposed FromSktEnt/Fillet leaf profiles. The
+EndFace profile consumes one extra u32. The proposed Derived profile contains two
+raw u32 words after the external-object reference, then a nested representation
+and a trailing u32. None of those words is promoted to a topology ID or timestamp.
+
+With these assumptions, Toolbox, mold and assembly-2 each consume five non-null
+outer records and one null entry. Their third raw face-header word is six in each
+case. The conditional walks end at decoded offsets 4952, 5706 and 5127. These are
+array-trial endpoints, not complete native-object boundaries.
+
+The terminal-block sample has a third raw header word of 157. After its opaque
+first record, 155 consecutive 20-byte records occupy offsets 15439 through 18539,
+followed by a zero word. This is consistent with one first record, 155 later
+records and a null entry. The first record's external-object payload remains
+opaque, so no complete sequential walk is claimed. The header word is still raw
+in the public API; count semantics need broader and controlled validation.
+
+### Next decoding target
+
+The [sequential subtree reader](references.md#sequential-reference-subtrees) now
+implements the supported child payloads and typed backreferences against a real
+caller-supplied map. Array roots remain incomplete prefixes. The public five still
+need their inherited context; the trial dictionary is not used in production.
+
+The remaining target is the `moEdgeRef_c` subtree and its `moFR_c` /
+`moExtObject_c` payloads. A reader must handle new classes, class reuse and object
+backreferences separately, including both saved string handles. Then the leaf
+and recursive surface layouts can be checked against a real shared map. Skipping
+an opaque first object or seeding empty slots would invalidate the later indices.
+
+`audit_mate_prefixes` now includes raw stop lookahead and reference-declaration
+candidates in both mate and feature carriers. It never assigns those declarations
+to raw slots. Per-source extracts, pointer-position probes and conditional array
+reports remain ignored in `local-assets/mate-remaining-investigation/`.
+
 ## Topology identity is another decoding layer
 
 The follow-up [surface-reference investigation](surface-reference-rules.md)

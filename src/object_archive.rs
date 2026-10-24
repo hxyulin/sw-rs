@@ -102,6 +102,10 @@ impl ArchiveContext {
     pub fn entries(&self) -> &[ArchiveEntry] {
         &self.entries
     }
+    // Subtree readers can roll back registrations after a class-specific failure.
+    pub(crate) fn rollback(&mut self, count: usize) {
+        self.entries.truncate(count);
+    }
     fn push(&mut self, entry: ArchiveEntry) -> u32 {
         self.entries.push(entry);
         self.entries.len() as u32

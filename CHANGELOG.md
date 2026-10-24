@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Add sequential native reference-subtree profiles with typed object/handle
+  backreferences, source spans, raw external-object scalar blocks and rollback on
+  failure. Keep face/edge arrays explicitly incomplete until their parent trailers
+  are decoded. Inspect edge prefixes and matching resolved-feature carriers for
+  additional saved-handle candidates without guessing archive slots or owners.
+
 - Retain first unsupported native-prefix fields and configuration-backed handle
   candidates in the opt-in reference graph. Include both source intervals and
   unresolved class tags; reject ambiguous or cross-configuration context. Keep

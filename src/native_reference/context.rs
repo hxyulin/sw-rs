@@ -30,11 +30,14 @@ pub struct NativeHandleClassEvidence {
 /// The handle class and archive continuity remain candidates, not decoded facts.
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeDocumentReferenceCandidate {
-    /// Exact mate-list source stream.
+    /// Exact mate-list or matching resolved-feature source stream.
     pub source_stream: String,
+    /// Explicit face/edge root class. Face is omitted in JSON for compatibility.
+    #[serde(skip_serializing_if = "super::is_face")]
+    pub reference_class: String,
     /// Checked prefix framing through the candidate CString; not an object boundary.
     pub prefix_span: ByteSpan,
-    /// Native index from the exact mate-list stream name.
+    /// Native index from the exact supported configuration stream name.
     pub configuration_index: u32,
     /// Opaque saved header words, without assigning CAD identities.
     pub raw_header: [u32; 5],

@@ -34,6 +34,31 @@ fn offsets(bytes: &[u8], name: &str) -> Vec<usize> {
         .collect()
 }
 
+fn reference_declarations(bytes: &[u8]) -> Vec<Value> {
+    bytes
+        .windows(4)
+        .enumerate()
+        .filter_map(|(offset, tag)| {
+            if tag != [255, 255, 1, 0] {
+                return None;
+            }
+            let mut cursor = BinaryReader::at(bytes, offset)?;
+            let name = declaration(&mut cursor)?;
+            if !(name.ends_with("SurfIdRep_c")
+                || name.ends_with("SurfIdRep2_c")
+                || name.ends_with("EdgeIdRep_c")
+                || matches!(
+                    name.as_str(),
+                    "moEdgeRef_c" | "moFaceRef_c" | "moFR_c" | "moExtObject_c"
+                ))
+            {
+                return None;
+            }
+            Some(json!({"offset":offset,"end":cursor.position(),"class_name":name}))
+        })
+        .collect()
+}
+
 // This is a framing correlation, not a ReadObject walk or a recovered class slot.
 fn handle_frames(bytes: &[u8]) -> Vec<Value> {
     offsets(bytes, "moCStringHandle_c")
@@ -91,9 +116,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     _ => None,
                 }
             });
+            if let Some(reference) = candidate {
+                prefix_end = reference.prefix_span.offset + reference.prefix_span.length;
+            }
+            let lookahead = stop.as_ref().map(|stop| {
+                let remaining = data.get(stop.offset..).unwrap_or_default();
+                json!({"offset":stop.offset,"bytes":&remaining[..remaining.len().min(16)]})
+            });
             candidates.push(
                 json!({"offset":offset,"stop":stop,"explicit_prefix":explicit,
-                "handle_candidate":candidate}),
+                "handle_candidate":candidate,"raw_stop_lookahead":lookahead}),
             );
         }
         if candidates.is_empty() {
@@ -104,10 +136,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .strip_suffix("-MatesList")
             .ok_or("invalid mate stream name")?
             .to_owned();
+        let resolved_source = format!("{base}-ResolvedFeatures");
         let mut carriers = Vec::new();
         for name in [
             base.clone(),
-            format!("{base}-ResolvedFeatures"),
+            resolved_source.clone(),
+            config.source_stream.clone(),
             format!("{base}-ModelHeader"),
             "Contents/CMgr".into(),
         ] {
@@ -115,12 +149,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             };
             carriers.push(json!({"stream":name,"handle_frames":handle_frames(data),
+                "reference_class_declaration_candidates":reference_declarations(data),
                 "mo_fr_declaration_candidates":offsets(data,"moFR_c"),
                 "simple_surface_declaration_candidates":offsets(data,"moSimpleSurfIdRep_c")}));
         }
+        let relevant = |source: &str| source == config.source_stream || source == resolved_source;
+        let related = graph
+            .nodes
+            .iter()
+            .filter(|node| {
+                relevant(&node.source.stream)
+                    && matches!(
+                        &node.record,
+                        sw_rs::ReferenceRecord::NativeDocumentReference { .. }
+                            | sw_rs::ReferenceRecord::NativeDocumentReferenceCandidate { .. }
+                    )
+            })
+            .collect::<Vec<_>>();
+        let stops = graph
+            .native_reference_stops
+            .iter()
+            .filter(|stop| relevant(&stop.source_stream))
+            .collect::<Vec<_>>();
         configurations.push(
             json!({"stream":config.source_stream,"header_word":config.header_word,
-            "candidates":candidates,"carrier_framing_evidence":carriers}),
+            "candidates":candidates,"carrier_framing_evidence":carriers,
+            "related_prefix_evidence":related,"native_reference_stops":stops}),
         );
     }
     serde_json::to_writer(
