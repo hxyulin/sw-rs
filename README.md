@@ -98,6 +98,11 @@ strings; six legacy optical values (and exact hexadecimal bits); supported shade
 identifiers and appearance/surface-finish references. Conditional texture blocks
 and mapping numbers are retained raw. Their axes, projection types and physical
 units are not established, so `texture_mappings_decoded` remains false.
+`shader_parameters` additionally preserves supported raw shader groups.
+`NativeAppearanceExtension::texture_mapping_hypothesis()` offers an opt-in,
+explicitly provisional grouping of plausible directions/origin/repeat dimensions;
+negative/default dimensions remain unresolved. It does not produce a verified UV
+transform. See [appearance research and verification TODOs](docs/appearance-research.md).
 
 Verified part-default class chains can produce document-level bindings scoped to
 one uniquely matched configuration/display-state key. Ambiguous prefixes,
@@ -125,7 +130,8 @@ incomplete. The WASM `presentation_json(bytes, filename)` entry point exposes th
 metadata projection; geometry JSON additionally exposes cache-local bindings.
 
 Use `mbx run --release --features archive --example inspect_appearances -- ARCHIVE --cached` to audit locally, with per-file source hashes and explicit unsupported
-containers/geometry. Original CAD and reports stay outside Git. Legacy OLE
+containers/geometry. Add `--hypotheses` for raw mapping records and provisional
+interpretations. Original CAD and reports stay outside Git. Legacy OLE
 containers remain unsupported by the runtime.
 
 The next verification needs controlled SolidWorks saves: an unchanged baseline,

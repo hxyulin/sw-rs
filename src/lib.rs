@@ -31,8 +31,9 @@ pub use presentation::{
     PresentationCoverage, PresentationData, PresentationScope, PresentationSource,
 };
 pub use visual::{
-    NativeAppearance, NativeAppearanceExtension, NativeString, NativeTextureBlock,
-    SavedDisplayState, UnresolvedVisualBinding, VisualData, VisualDiagnostic,
+    NativeAppearance, NativeAppearanceExtension, NativeShaderParameters, NativeString,
+    NativeTextureBlock, NativeTextureMappingHypothesis, SavedDisplayState, UnresolvedVisualBinding,
+    VisualData, VisualDiagnostic,
 };
 
 /// Parse a modern document using bounded default resource limits.

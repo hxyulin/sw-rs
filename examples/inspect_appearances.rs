@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 //! Reproducible private-corpus appearance audit; writes JSONL, never source assets.
-//! Run with `--features archive --example inspect_appearances -- ARCHIVE [--cached]`.
+//! Run with `--features archive --example inspect_appearances -- ARCHIVE [--cached] [--hypotheses]`.
 #[cfg(feature = "archive")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use sha2::{Digest, Sha256};
@@ -9,8 +9,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let archive = args
         .next()
-        .ok_or("usage: inspect_appearances ARCHIVE [--cached]")?;
-    let cached = args.next().as_deref() == Some("--cached");
+        .ok_or("usage: inspect_appearances ARCHIVE [--cached] [--hypotheses]")?;
+    let mut cached = false;
+    let mut hypotheses = false;
+    for argument in args {
+        match argument.as_str() {
+            "--cached" => cached = true,
+            "--hypotheses" => hypotheses = true,
+            _ => return Err(format!("unknown argument: {argument}").into()),
+        }
+    }
     let mut zip = zip::ZipArchive::new(std::fs::File::open(archive)?)?;
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index)?;
@@ -77,9 +85,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .filter(|s| matches!(s.configuration, sw_rs::PresentationScope::Unknown))
             .count();
+        let mapping_hypotheses = hypotheses.then(|| {
+            presentation
+                .appearances
+                .iter()
+                .enumerate()
+                .filter_map(|(index, appearance)| {
+                    let extension = appearance.native.as_ref()?.extension.as_ref()?;
+                    Some(serde_json::json!({
+                        "appearance_index": index, "source": appearance.source,
+                        "raw": extension, "hypothesis": extension.texture_mapping_hypothesis(),
+                    }))
+                })
+                .collect::<Vec<_>>()
+        });
         println!(
             "{}",
-            serde_json::json!({"path":name,"sha256":hash,"configuration_names":doc.configurations.iter().map(|c| &c.name).collect::<Vec<_>>(),
+            serde_json::json!({"path":name,"sha256":hash,"mapping_hypotheses":mapping_hypotheses,"configuration_names":doc.configurations.iter().map(|c| &c.name).collect::<Vec<_>>(),
             "definitions":native.len(),"extensions":extensions,"display_keys":presentation.display_states,"unknown_state_keys":unknown_states,
             "document_bindings":document_bindings,"cached_bindings":cached_bindings,"unresolved":presentation.unresolved_visual_bindings,
             "diagnostics":presentation.visual_diagnostics,"tables":tables,"triangles":triangles,"cache_error":cache_error})

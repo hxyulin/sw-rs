@@ -478,3 +478,73 @@ fn packed_color_sentinels_remain_raw_instead_of_becoming_white_or_alpha() {
     assert_eq!(native.color_rgb, None);
     assert_eq!(native.material_name.value, "label");
 }
+
+#[test]
+fn shader_parameters_are_preserved_without_pbr_interpretation() {
+    let mut bytes = property([1, 2, 3], "", "");
+    extension_bytes(&mut bytes);
+    let native = definition(&bytes, 0, "test").unwrap().native.unwrap();
+    let extension = native.extension.unwrap();
+    let parameters = &extension.shader_parameters;
+    assert_eq!(parameters.label.value, "");
+    assert_eq!(parameters.selectors, [1, 1, 3, 0]);
+    assert_eq!(bytes[parameters.offset], parameters.discriminator);
+    assert_eq!(parameters.discriminator, 2);
+    assert_eq!(parameters.packed_word, 0x00abcdef);
+    assert_eq!(parameters.values, [1.; 10]);
+    assert_eq!(parameters.mode, 1);
+    assert_eq!(parameters.parameters, [0.; 5]);
+    assert_eq!(parameters.flags, [0; 3]);
+    assert_eq!(parameters.appearance_word, 0);
+    assert_eq!(parameters.finish_values, [0.4, 1.]);
+    // The synthetic all-ones mapping isn't a plausible orthonormal frame.
+    assert!(extension.texture_mapping_hypothesis().is_none());
+}
+
+#[test]
+fn provisional_mapping_keeps_offsets_sentinels_and_uninterpreted_values() {
+    let mut bytes = property([1, 2, 3], "", "");
+    extension_bytes(&mut bytes);
+    let mut extension = definition(&bytes, 0, "test")
+        .unwrap()
+        .native
+        .unwrap()
+        .extension
+        .unwrap();
+    extension.mapping_values = [
+        0., 1., 0., 0., 0., 1., 2., 3., 4., 1., 90., 1., 0.0254, 0.00635,
+    ];
+    let raw = extension.mapping_values;
+    let guess = extension.texture_mapping_hypothesis().unwrap();
+    assert_eq!(guess.status, "provisional");
+    assert_eq!(guess.source_offset, extension.mapping_offset + 20);
+    assert_eq!(guess.u_direction_candidate, [0., 1., 0.]);
+    assert_eq!(guess.v_direction_candidate, [0., 0., 1.]);
+    assert_eq!(guess.origin_candidate, [2., 3., 4.]);
+    assert_eq!(guess.repeat_size_candidate, Some([0.0254, 0.00635]));
+    assert_eq!(guess.remaining_values, [1., 90., 1.]);
+    assert_eq!(
+        serde_json::to_value(&guess).unwrap()["status"],
+        "provisional"
+    );
+    assert_eq!(extension.mapping_values, raw);
+    for size in [[-1., -1.], [0., 1.], [1., -1.]] {
+        extension.mapping_values[12..].copy_from_slice(&size);
+        assert!(
+            extension
+                .texture_mapping_hypothesis()
+                .unwrap()
+                .repeat_size_candidate
+                .is_none()
+        );
+    }
+    for (index, value) in [(0, 1.), (1, 0.), (6, f32::NAN), (12, f32::INFINITY)] {
+        extension.mapping_values = raw;
+        extension.mapping_values[index] = value;
+        assert!(extension.texture_mapping_hypothesis().is_none());
+    }
+    // Plausible data never promotes a native coverage claim or an entity binding.
+    let data = doc(&root("<A>_State", &bytes), &["A"], "part.SLDPRT").presentation();
+    assert!(!data.coverage.texture_mappings_decoded);
+    assert!(!data.coverage.appearance_bindings_decoded);
+}

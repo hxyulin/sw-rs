@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- Preserve additional raw native shader parameters and expose opt-in provisional
+  texture-mapping candidates with source offsets and controlled-save TODOs;
+  retain unknown units, projection modes, dimensions and ownership explicitly.
+
 - Decode supported native visual-property prefixes, exact scoped part defaults,
   display-state keys and conditional raw shader/texture/mapping records.
 - Preserve unresolved feature/body/component identities with byte provenance;

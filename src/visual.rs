@@ -68,6 +68,8 @@ pub struct NativeTextureBlock {
 pub struct NativeAppearanceExtension {
     /// Conditional legacy texture block; distinct from the later mapping fields.
     pub legacy_texture_block: Option<NativeTextureBlock>,
+    /// Saved shader parameters preceding the resource and mapping records.
+    pub shader_parameters: NativeShaderParameters,
     /// Exact realtime shader identifier, not a shader implementation.
     pub shader_identifier: NativeString,
     /// Exact saved appearance-library reference, typically a p2m path.
@@ -84,6 +86,97 @@ pub struct NativeAppearanceExtension {
     pub mapping_values: [f32; 14],
     /// End of the decoded extension prefix; trailing fields remain unsupported.
     pub prefix_end: usize,
+}
+
+/// Saved shader fields whose binary framing is supported but semantics are partial.
+/// These are source values, never converted to renderer/PBR coefficients.
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeShaderParameters {
+    /// Exact framed label preceding shader selection, including blank values.
+    pub label: NativeString,
+    /// Four saved selector words, including the unknown third selector.
+    pub selectors: [u32; 4],
+    /// Byte offset of the discriminator after the shader identifier.
+    pub offset: usize,
+    /// Raw shader discriminator byte.
+    pub discriminator: u8,
+    /// Raw packed word; no color or inheritance interpretation is established.
+    pub packed_word: u32,
+    /// Ten finite floats, preserved in order without asserting a matrix layout.
+    pub values: [f32; 10],
+    /// Raw word separating the two float groups.
+    pub mode: u32,
+    /// Five finite parameter values without guessed renderer meanings.
+    pub parameters: [f32; 5],
+    /// Three trailing raw flag words.
+    pub flags: [u32; 3],
+    /// Raw packed word following the appearance-library reference.
+    pub appearance_word: u32,
+    /// Two finite values preceding the surface-finish reference.
+    pub finish_values: [f32; 2],
+}
+
+/// Opt-in interpretation of a raw mapping block, not verified native mapping.
+///
+/// The field grouping is inferred from recurring orthogonal vectors and size-like
+/// values in the EGA/design-library corpus and the public IRenderMaterial API.
+/// It does not establish projection type, units, handedness or entity ownership.
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeTextureMappingHypothesis {
+    /// Always `provisional`; consumers must not mistake this for decoded coverage.
+    pub status: &'static str,
+    /// Offset of the fourteen-float block in its definition's decoded source stream.
+    pub source_offset: usize,
+    /// Candidate U direction from raw values 0..3, without normalization.
+    pub u_direction_candidate: [f32; 3],
+    /// Candidate V direction from raw values 3..6, without normalization.
+    pub v_direction_candidate: [f32; 3],
+    /// Candidate origin from raw values 6..9; length unit and frame are unknown.
+    pub origin_candidate: [f32; 3],
+    /// Candidate repeat width/height from raw values 12..14, only if both positive.
+    /// Units remain unknown; negative/default sentinels are never clamped.
+    pub repeat_size_candidate: Option<[f32; 2]>,
+    /// Raw values 9..12; no angle/scale meaning is asserted.
+    pub remaining_values: [f32; 3],
+    /// Required controlled-save comparisons before treating the candidates as decoded.
+    pub verification_required: [&'static str; 3],
+}
+
+impl NativeAppearanceExtension {
+    /// Offer a provisional grouping only for finite, approximately orthonormal
+    /// first/second vectors. This checks plausibility, not semantic correctness.
+    /// Raw fields and `texture_mappings_decoded` remain authoritative/unchanged.
+    pub fn texture_mapping_hypothesis(&self) -> Option<NativeTextureMappingHypothesis> {
+        let values = self.mapping_values;
+        if !values.iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let u = [values[0], values[1], values[2]];
+        let v = [values[3], values[4], values[5]];
+        let dot = |a: [f32; 3], b: [f32; 3]| a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f32>();
+        if (dot(u, u) - 1.).abs() > 1e-4 || (dot(v, v) - 1.).abs() > 1e-4 || dot(u, v).abs() > 1e-4
+        {
+            return None;
+        }
+        // TODO(native-mapping): controlled saves must verify U/V order and signs,
+        // origin frame/units, and independent width/height changes. Corpus defaults
+        // alone cannot distinguish these candidates from another field ordering.
+        Some(NativeTextureMappingHypothesis {
+            status: "provisional",
+            source_offset: self.mapping_offset.checked_add(20)?,
+            u_direction_candidate: u,
+            v_direction_candidate: v,
+            origin_candidate: [values[6], values[7], values[8]],
+            repeat_size_candidate: (values[12] > 0. && values[13] > 0.)
+                .then_some([values[12], values[13]]),
+            remaining_values: [values[9], values[10], values[11]],
+            verification_required: [
+                "change U and V directions independently; verify order, signs and frame",
+                "translate mapping origin; verify component/model frame and length units",
+                "change width and height independently; verify units and sentinel meaning",
+            ],
+        })
+    }
 }
 
 /// Saved state key and its independently resolved configuration and display name.
@@ -236,21 +329,22 @@ fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
         }
         _ => return None,
     };
-    reader.string()?;
+    let label = reader.string()?;
     let selectors = reader.words::<4>()?;
     if selectors[0] != 1 || selectors[1] != 1 || selectors[3] != 0 {
         return None;
     }
     let shader_identifier = reader.string()?;
-    reader.take(1)?;
-    reader.u32()?;
-    reader.floats::<10>()?;
-    reader.u32()?;
-    reader.floats::<5>()?;
-    reader.words::<3>()?;
+    let offset = reader.at;
+    let discriminator = reader.take(1)?[0];
+    let packed_word = reader.u32()?;
+    let values = reader.floats::<10>()?;
+    let mode = reader.u32()?;
+    let parameters = reader.floats::<5>()?;
+    let flags = reader.words::<3>()?;
     let appearance_reference = reader.string()?;
-    reader.u32()?;
-    reader.floats::<2>()?;
+    let appearance_word = reader.u32()?;
+    let finish_values = reader.floats::<2>()?;
     let surface_finish_reference = reader.string()?;
     let mapping_offset = reader.at;
     let mapping_scalars = reader.floats::<2>()?;
@@ -259,6 +353,19 @@ fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
     reader.string()?;
     Some(NativeAppearanceExtension {
         legacy_texture_block,
+        shader_parameters: NativeShaderParameters {
+            label,
+            selectors,
+            offset,
+            discriminator,
+            packed_word,
+            values,
+            mode,
+            parameters,
+            flags,
+            appearance_word,
+            finish_values,
+        },
         shader_identifier,
         appearance_reference,
         surface_finish_reference,
