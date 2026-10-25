@@ -28,7 +28,12 @@ fn external_tail(b: &mut Vec<u8>, profile: NativeExternalObjectProfile) {
     text(b, "saved note");
     match profile {
         NativeExternalObjectProfile::TwoStrings => b.push(0x7f),
-        NativeExternalObjectProfile::ThreeStrings => {
+        NativeExternalObjectProfile::ThreeStringsShortBlock => {
+            text(b, "third");
+            b.push(0x7f);
+        }
+        NativeExternalObjectProfile::ThreeStrings
+        | NativeExternalObjectProfile::ThreeStringsShortTail => {
             text(b, "third");
             tag(b, 0x1234);
         }
@@ -102,6 +107,7 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
     for profile in [
         NativeExternalObjectProfile::TwoStrings,
         NativeExternalObjectProfile::ThreeStrings,
+        NativeExternalObjectProfile::ThreeStringsShortTail,
     ] {
         let mut reader = NativeSubtreeReader::new(ArchiveContext::new(), profile);
         let edge = edge(profile);
@@ -174,15 +180,18 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
         assert_eq!(
             raw_before_configuration.len(),
             match profile {
-                NativeExternalObjectProfile::TwoStrings => 17,
+                NativeExternalObjectProfile::TwoStrings
+                | NativeExternalObjectProfile::ThreeStringsShortBlock => 17,
                 _ => 18,
             }
         );
         assert_eq!(
             raw_tail.len(),
             match profile {
-                NativeExternalObjectProfile::TwoStrings => 12,
-                _ => 16,
+                NativeExternalObjectProfile::TwoStrings
+                | NativeExternalObjectProfile::ThreeStringsShortTail
+                | NativeExternalObjectProfile::ThreeStringsShortBlock => 12,
+                NativeExternalObjectProfile::ThreeStrings => 16,
             }
         );
         let NativeSubtreePayload::StringHandle { text } = &reader.objects()[&10].payload else {
@@ -251,7 +260,7 @@ fn missing_payload_wrong_types_unknown_classes_and_cycles_stop_without_resuming(
     assert_eq!(cursor.position(), 0);
     assert_eq!(reader.archive().entries().len(), 2);
     let mut wrong = Vec::new();
-    class(&mut wrong, "moEndFace3IntSurfIdRep_c");
+    class(&mut wrong, "moSideFace3IntSurfIdRep_c");
     wrong.extend([0; 64]);
     assert!(
         reader
@@ -393,7 +402,7 @@ fn wrong_external_profile_and_scalar_marker_cannot_skip_to_later_objects() {
         .windows(7)
         .position(|w| w == [2, 0, 0, 0x78, 0x56, 0x34, 0x12])
         .unwrap();
-    bytes[at] = 3;
+    bytes[at] = 4;
     assert!(
         reader
             .read_reference_array_prefix(&mut BinaryReader::new(&bytes), "s")
@@ -472,3 +481,560 @@ fn enclosing_decoders_share_the_map_and_record_handles_before_later_reuse() {
     assert_eq!(reader.objects()[&4].source_stream, "Configuration");
     assert_eq!(reader.objects().len(), 2);
 }
+
+fn extended_surfaces() -> Vec<u8> {
+    let mut b = Vec::new();
+    array_header(&mut b, "moEdgeRef_c", 5); // class/object 1/2
+    class(&mut b, "moEndFace3IntSurfIdRep_c"); // 3/4
+    tag(&mut b, 0);
+    class(&mut b, "moFR_c"); // 5/6
+    tag(&mut b, 0); // unknown external object
+    words(&mut b, &[23, 0x12345678]);
+    words(&mut b, &[1, 18, 6]);
+    class(&mut b, "moFromSktEnt3IntSurfIdRep_c"); // 7/8
+    tag(&mut b, 0);
+    tag(&mut b, 6); // reuse complete FR
+    words(&mut b, &[8, u32::MAX, 0]);
+    class(&mut b, "moThinOffsetSurfIdRep_c"); // 9/10
+    tag(&mut b, 0);
+    tag(&mut b, 6);
+    words(&mut b, &[7]);
+    class(&mut b, "moLPatternSurfIdRep_c"); // 11/12
+    tag(&mut b, 0);
+    tag(&mut b, 6);
+    tag(&mut b, 0x8007); // new FromSktEnt3Int object 13
+    tag(&mut b, 0);
+    tag(&mut b, 6);
+    words(&mut b, &[6, u32::MAX, 0]);
+    words(&mut b, &[2, 1]);
+    tag(&mut b, 12); // reuse whole completed pattern
+    b
+}
+
+#[test]
+fn extended_surface_fields_and_recursive_pattern_have_exact_boundaries() {
+    let bytes = extended_surfaces();
+    let mut reader = NativeSubtreeReader::new(
+        ArchiveContext::new(),
+        NativeExternalObjectProfile::TwoStrings,
+    );
+    let mut cursor = BinaryReader::new(&bytes);
+    reader
+        .read_reference_array_prefix(&mut cursor, "Features")
+        .unwrap();
+    assert_eq!(cursor.position(), bytes.len());
+    assert_eq!(reader.archive().entries().len(), 13);
+    for (slot, expected) in [
+        (4, vec![1, 18, 6]),
+        (8, vec![8, u32::MAX, 0]),
+        (10, vec![7]),
+        (12, vec![2, 1]),
+        (13, vec![6, u32::MAX, 0]),
+    ] {
+        let object = &reader.objects()[&slot];
+        assert!(object.complete_payload);
+        let NativeSubtreePayload::Surface {
+            feature_reference,
+            nested,
+            raw_tail,
+        } = &object.payload
+        else {
+            panic!()
+        };
+        assert_eq!(feature_reference.header.object_index, Some(6));
+        assert_eq!(raw_tail, &expected);
+        assert_eq!(
+            nested.as_ref().map(|p| p.header.object_index),
+            if slot == 12 { Some(Some(13)) } else { None }
+        );
+    }
+    let NativeSubtreePayload::ReferenceArrayPrefix { records, .. } = &reader.objects()[&2].payload
+    else {
+        panic!()
+    };
+    assert_eq!(records[4].header.object_index, Some(12));
+    assert!(!records[4].header.is_new);
+    // Each leaf's definition ends exactly at the following class header.
+    for (slot, following) in [
+        (4, "moFromSktEnt3IntSurfIdRep_c"),
+        (8, "moThinOffsetSurfIdRep_c"),
+        (10, "moLPatternSurfIdRep_c"),
+    ] {
+        let span = reader.objects()[&slot].span;
+        let mut expected = Vec::new();
+        class(&mut expected, following);
+        assert!(bytes[span.offset + span.length..].starts_with(&expected));
+    }
+}
+
+#[test]
+fn extended_surface_truncations_and_recursive_failures_roll_back() {
+    let bytes = extended_surfaces();
+    let mut reader = NativeSubtreeReader::new(
+        ArchiveContext::new(),
+        NativeExternalObjectProfile::TwoStrings,
+    );
+    for end in 0..bytes.len() {
+        let mut cursor = BinaryReader::new(&bytes[..end]);
+        assert!(
+            reader
+                .read_reference_array_prefix(&mut cursor, "Features")
+                .is_err(),
+            "end={end}"
+        );
+        assert_eq!(cursor.position(), 0);
+        assert!(reader.archive().entries().is_empty());
+        assert!(reader.objects().is_empty());
+    }
+    for child in ["moLPatternSurfIdRep_c", "moSideFace3IntSurfIdRep_c"] {
+        let mut bad = Vec::new();
+        class(&mut bad, "moLPatternSurfIdRep_c");
+        tag(&mut bad, 0);
+        tag(&mut bad, 0);
+        if child == "moLPatternSurfIdRep_c" {
+            tag(&mut bad, 2); // cycle into the incomplete pattern
+        } else {
+            class(&mut bad, child); // unknown nested class
+        }
+        words(&mut bad, &[0; 16]);
+        let mut cursor = BinaryReader::new(&bad);
+        assert!(reader.read_surface(&mut cursor, "Features").is_err());
+        assert_eq!(cursor.position(), 0);
+        assert!(reader.archive().entries().is_empty());
+        assert!(reader.objects().is_empty());
+    }
+    let mut limited = NativeSubtreeReader::with_limits(
+        ArchiveContext::new(),
+        NativeExternalObjectProfile::TwoStrings,
+        100,
+        1,
+    );
+    assert!(
+        limited
+            .read_reference_array_prefix(&mut BinaryReader::new(&bytes), "Features")
+            .is_err()
+    );
+    assert!(limited.archive().entries().is_empty());
+}
+
+#[test]
+fn three_string_short_tail_keeps_feature_words_and_following_array_boundary() {
+    let profile = NativeExternalObjectProfile::ThreeStringsShortTail;
+    let mut bytes = Vec::new();
+    array_header(&mut bytes, "moFaceRef_c", 1); // 1/2
+    bytes[29..33].copy_from_slice(&768_u32.to_le_bytes());
+    class(&mut bytes, "moFromSktEntSurfIdRep_c"); // 3/4
+    tag(&mut bytes, 0);
+    class(&mut bytes, "moFR_c"); // 5/6
+    class(&mut bytes, "moExtObject_c"); // 7/8
+    class(&mut bytes, "moCStringHandle_c"); // 9/10
+    text(&mut bytes, "");
+    tag(&mut bytes, 0x8009);
+    text(&mut bytes, "authored Part"); // 11
+    external_tail(&mut bytes, profile);
+    let external_end = bytes.len();
+    words(&mut bytes, &[31, 0x6ab0b9b9]);
+    words(&mut bytes, &[3]);
+    let first_end = bytes.len();
+    // Explicit authored enclosing fields, not a claimed universal parent trailer.
+    words(&mut bytes, &[0, 0, 15000, 0, 0]);
+    let second_start = bytes.len();
+    tag(&mut bytes, 0x8001); // second face root object 12
+    words(&mut bytes, &[1, 0, 1, 768, 0]);
+    bytes.extend(COMPONENT_MARKER);
+    tag(&mut bytes, 0);
+    tag(&mut bytes, 0x8003); // surface object 13
+    tag(&mut bytes, 0);
+    tag(&mut bytes, 0x8005); // FR object 14
+    tag(&mut bytes, 8); // complete earlier external object
+    words(&mut bytes, &[31, 0x6ab0b9b9]);
+    words(&mut bytes, &[3]);
+    let mut reader = NativeSubtreeReader::new(ArchiveContext::new(), profile);
+    let mut cursor = BinaryReader::new(&bytes);
+    reader
+        .read_reference_array_prefix(&mut cursor, "Features")
+        .unwrap();
+    assert_eq!(cursor.position(), first_end);
+    let external = &reader.objects()[&8];
+    assert_eq!(external.span.offset + external.span.length, external_end);
+    let NativeSubtreePayload::ExternalObject { raw_tail, .. } = &external.payload else {
+        panic!()
+    };
+    assert_eq!(raw_tail.len(), 12);
+    let NativeSubtreePayload::FeatureReference { raw_words, .. } = &reader.objects()[&6].payload
+    else {
+        panic!()
+    };
+    assert_eq!(raw_words, &[31, 0x6ab0b9b9]);
+    let NativeSubtreePayload::Surface { raw_tail, .. } = &reader.objects()[&4].payload else {
+        panic!()
+    };
+    assert_eq!(raw_tail, &[3]);
+    assert_eq!(cursor.words::<5>(), Some([0, 0, 15000, 0, 0]));
+    assert_eq!(cursor.position(), second_start);
+    reader
+        .read_reference_array_prefix(&mut cursor, "Features")
+        .unwrap();
+    assert_eq!(cursor.position(), bytes.len());
+    let NativeSubtreePayload::FeatureReference {
+        raw_words,
+        external_object,
+    } = &reader.objects()[&14].payload
+    else {
+        panic!()
+    };
+    assert_eq!(raw_words, &[31, 0x6ab0b9b9]);
+    assert_eq!(external_object.header.object_index, Some(8));
+    assert!(!external_object.header.is_new);
+    // Array roots still exclude the enclosing fields consumed explicitly above.
+    assert!(!reader.objects()[&2].complete_payload);
+    assert!(!reader.objects()[&12].complete_payload);
+    let mut complete = NativeSubtreeReader::new(ArchiveContext::new(), profile);
+    let mut cursor = BinaryReader::new(&bytes);
+    complete
+        .read_face_reference(
+            &mut cursor,
+            "Features",
+            NativeFaceReferenceProfile::FiveWords,
+        )
+        .unwrap();
+    assert_eq!(cursor.position(), second_start);
+    // The longer external tail can consume a prefix, but cannot pass the checked
+    // parent trailer. It must not register a complete face at the wrong boundary.
+    let mut wrong = NativeSubtreeReader::new(
+        ArchiveContext::new(),
+        NativeExternalObjectProfile::ThreeStrings,
+    );
+    let mut cursor = BinaryReader::new(&bytes);
+    assert!(
+        wrong
+            .read_face_reference(
+                &mut cursor,
+                "Features",
+                NativeFaceReferenceProfile::FiveWords
+            )
+            .is_err()
+    );
+    assert_eq!(cursor.position(), 0);
+    assert!(wrong.archive().entries().is_empty());
+    assert!(wrong.objects().is_empty());
+}
+
+fn finish_face(bytes: &mut Vec<u8>, profile: NativeFaceReferenceProfile) {
+    // Both authored root declarations have the same 11-byte class-name length.
+    bytes[29..33].copy_from_slice(&768_u32.to_le_bytes());
+    match profile {
+        NativeFaceReferenceProfile::ThreeWords => words(bytes, &[0, 0, 0]),
+        NativeFaceReferenceProfile::FiveWords => words(bytes, &[0, 0, 15000, 0, 0]),
+    }
+}
+fn complete_face(
+    profile: NativeExternalObjectProfile,
+    tail: NativeFaceReferenceProfile,
+) -> Vec<u8> {
+    let mut b = edge(profile);
+    b[6..17].copy_from_slice(b"moFaceRef_c");
+    finish_face(&mut b, tail);
+    b
+}
+#[test]
+fn complete_faces_preserve_sequential_map_and_allow_complete_root_backreferences() {
+    for (external, tail) in [
+        (
+            NativeExternalObjectProfile::TwoStrings,
+            NativeFaceReferenceProfile::ThreeWords,
+        ),
+        (
+            NativeExternalObjectProfile::ThreeStrings,
+            NativeFaceReferenceProfile::FiveWords,
+        ),
+        (
+            NativeExternalObjectProfile::ThreeStringsShortTail,
+            NativeFaceReferenceProfile::FiveWords,
+        ),
+    ] {
+        let first = complete_face(external, tail);
+        let mut second = face(external);
+        finish_face(&mut second, tail);
+        let mut bytes = first.clone();
+        bytes.extend(&second);
+        tag(&mut bytes, 2);
+        let mut reader = NativeSubtreeReader::new(ArchiveContext::new(), external);
+        let mut cursor = BinaryReader::new(&bytes);
+        reader
+            .read_face_reference(&mut cursor, "Features", tail)
+            .unwrap();
+        assert_eq!(cursor.position(), first.len());
+        assert_eq!(
+            reader.objects()[&2].span.slice(&bytes),
+            Some(first.as_slice())
+        );
+        assert!(reader.objects()[&2].complete_payload);
+        reader
+            .read_face_reference(&mut cursor, "Features", tail)
+            .unwrap();
+        assert_eq!(cursor.position(), first.len() + second.len());
+        assert!(reader.objects()[&22].complete_payload);
+        let saved = serde_json::to_value(reader.objects()).unwrap();
+        let backref = reader
+            .read_face_reference(&mut cursor, "Later", tail)
+            .unwrap();
+        assert_eq!(backref.header.object_index, Some(2));
+        assert!(!backref.header.is_new);
+        assert_eq!(cursor.position(), bytes.len());
+        assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
+        let wrong_profile = match tail {
+            NativeFaceReferenceProfile::ThreeWords => NativeFaceReferenceProfile::FiveWords,
+            NativeFaceReferenceProfile::FiveWords => NativeFaceReferenceProfile::ThreeWords,
+        };
+        let mut pointer = BinaryReader::new(&[2, 0]);
+        assert!(
+            reader
+                .read_face_reference(&mut pointer, "Later", wrong_profile)
+                .is_err()
+        );
+        assert_eq!(pointer.position(), 0);
+    }
+}
+
+#[test]
+fn incomplete_or_invalid_complete_face_reads_roll_back_the_whole_object() {
+    for tail in [
+        NativeFaceReferenceProfile::ThreeWords,
+        NativeFaceReferenceProfile::FiveWords,
+    ] {
+        let bytes = complete_face(NativeExternalObjectProfile::ThreeStringsShortTail, tail);
+        let mut reader = NativeSubtreeReader::new(
+            ArchiveContext::new(),
+            NativeExternalObjectProfile::ThreeStringsShortTail,
+        );
+        for end in 0..bytes.len() {
+            let mut cursor = BinaryReader::new(&bytes[..end]);
+            assert!(
+                reader
+                    .read_face_reference(&mut cursor, "Features", tail)
+                    .is_err(),
+                "end={end}"
+            );
+            assert_eq!(cursor.position(), 0);
+            assert!(reader.archive().entries().is_empty());
+            assert!(reader.objects().is_empty());
+        }
+        // Mutate every checked trailer word. The middle FiveWords word remains raw.
+        let count = if tail == NativeFaceReferenceProfile::ThreeWords {
+            3
+        } else {
+            5
+        };
+        for index in 0..count {
+            if count == 5 && index == 2 {
+                continue;
+            }
+            let mut bad = bytes.clone();
+            let offset = bad.len() - count * 4 + index * 4;
+            bad[offset] = 1;
+            assert!(
+                reader
+                    .read_face_reference(&mut BinaryReader::new(&bad), "Features", tail)
+                    .is_err()
+            );
+            assert!(reader.archive().entries().is_empty());
+            assert!(reader.objects().is_empty());
+        }
+        let mut wrong_header = bytes.clone();
+        wrong_header[29..33].copy_from_slice(&512_u32.to_le_bytes());
+        assert!(
+            reader
+                .read_face_reference(&mut BinaryReader::new(&wrong_header), "Features", tail)
+                .is_err()
+        );
+        let edge = edge(NativeExternalObjectProfile::ThreeStringsShortTail);
+        assert!(
+            reader
+                .read_face_reference(&mut BinaryReader::new(&edge), "Features", tail)
+                .is_err()
+        );
+        reader
+            .read_face_reference(&mut BinaryReader::new(&bytes), "Features", tail)
+            .unwrap();
+        let saved = serde_json::to_value(reader.objects()).unwrap();
+        let mut next = face(NativeExternalObjectProfile::ThreeStringsShortTail);
+        finish_face(&mut next, tail);
+        *next.last_mut().unwrap() = 1;
+        assert!(
+            reader
+                .read_face_reference(&mut BinaryReader::new(&next), "Mates", tail)
+                .is_err()
+        );
+        assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
+        assert_eq!(reader.archive().entries().len(), 20);
+    }
+}
+
+fn finish_edge(bytes: &mut Vec<u8>, profile: NativeEdgeReferenceProfile) {
+    match profile {
+        NativeEdgeReferenceProfile::TwoWords => words(bytes, &[0, 0]),
+        NativeEdgeReferenceProfile::FourWords => words(bytes, &[0, 0, 17000, 0]),
+    }
+}
+#[test]
+fn complete_edges_preserve_sibling_boundaries_and_completed_root_backreferences() {
+    for (external, tail) in [
+        (
+            NativeExternalObjectProfile::TwoStrings,
+            NativeEdgeReferenceProfile::TwoWords,
+        ),
+        (
+            NativeExternalObjectProfile::ThreeStrings,
+            NativeEdgeReferenceProfile::FourWords,
+        ),
+    ] {
+        let mut first = edge(external);
+        finish_edge(&mut first, tail);
+        let mut second = face(external);
+        second[6..17].copy_from_slice(b"moEdgeRef_c");
+        finish_edge(&mut second, tail);
+        let mut bytes = first.clone();
+        bytes.extend(&second);
+        tag(&mut bytes, 2);
+        let mut reader = NativeSubtreeReader::new(ArchiveContext::new(), external);
+        let mut cursor = BinaryReader::new(&bytes);
+        reader
+            .read_edge_reference(&mut cursor, "Features", tail)
+            .unwrap();
+        assert_eq!(cursor.position(), first.len());
+        assert!(reader.objects()[&2].complete_payload);
+        assert_eq!(
+            reader.objects()[&2].span.slice(&bytes),
+            Some(first.as_slice())
+        );
+        reader
+            .read_edge_reference(&mut cursor, "Features", tail)
+            .unwrap();
+        assert_eq!(cursor.position(), first.len() + second.len());
+        assert!(reader.objects()[&22].complete_payload);
+        let NativeSubtreePayload::EdgeReference {
+            raw_header,
+            raw_tail,
+            records,
+            profile,
+        } = &reader.objects()[&22].payload
+        else {
+            panic!()
+        };
+        assert_eq!(*profile, tail);
+        assert_eq!(raw_header[3], 512);
+        assert_eq!(records[0].header.object_index, Some(4));
+        assert!(!records[0].header.is_new);
+        assert_eq!(
+            raw_tail,
+            if tail == NativeEdgeReferenceProfile::TwoWords {
+                &[0, 0][..]
+            } else {
+                &[0, 0, 17000, 0][..]
+            }
+        );
+        let saved = serde_json::to_value(reader.objects()).unwrap();
+        let backref = reader
+            .read_edge_reference(&mut cursor, "Mates", tail)
+            .unwrap();
+        assert_eq!(backref.header.object_index, Some(2));
+        assert!(!backref.header.is_new);
+        assert_eq!(cursor.position(), bytes.len());
+        assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
+        let wrong = if tail == NativeEdgeReferenceProfile::TwoWords {
+            NativeEdgeReferenceProfile::FourWords
+        } else {
+            NativeEdgeReferenceProfile::TwoWords
+        };
+        let mut cursor = BinaryReader::new(&[2, 0]);
+        assert!(
+            reader
+                .read_edge_reference(&mut cursor, "Mates", wrong)
+                .is_err()
+        );
+        assert_eq!(cursor.position(), 0);
+        assert!(
+            reader
+                .read_face_reference(&mut cursor, "Mates", NativeFaceReferenceProfile::ThreeWords)
+                .is_err()
+        );
+        assert_eq!(cursor.position(), 0);
+    }
+}
+
+#[test]
+fn invalid_edge_trailers_headers_and_prefix_backreferences_stop_transactionally() {
+    for tail in [
+        NativeEdgeReferenceProfile::TwoWords,
+        NativeEdgeReferenceProfile::FourWords,
+    ] {
+        let external = NativeExternalObjectProfile::ThreeStrings;
+        let mut bytes = edge(external);
+        let prefix_end = bytes.len();
+        finish_edge(&mut bytes, tail);
+        let mut reader = NativeSubtreeReader::new(ArchiveContext::new(), external);
+        for end in 0..bytes.len() {
+            let mut cursor = BinaryReader::new(&bytes[..end]);
+            assert!(
+                reader
+                    .read_edge_reference(&mut cursor, "Features", tail)
+                    .is_err(),
+                "end={end}"
+            );
+            assert_eq!(cursor.position(), 0);
+            assert!(reader.archive().entries().is_empty());
+            assert!(reader.objects().is_empty());
+        }
+        let count = if tail == NativeEdgeReferenceProfile::TwoWords {
+            2
+        } else {
+            4
+        };
+        for index in 0..count {
+            if count == 4 && index == 2 {
+                continue;
+            }
+            let mut bad = bytes.clone();
+            bad[prefix_end + index * 4] = 1;
+            assert!(
+                reader
+                    .read_edge_reference(&mut BinaryReader::new(&bad), "Features", tail)
+                    .is_err()
+            );
+            assert!(reader.archive().entries().is_empty());
+        }
+        // Adjacent observed flag variants need different evidence; do not mask bits.
+        for header in [0_u32, 518, 768, 772, 774] {
+            let mut bad = bytes.clone();
+            bad[29..33].copy_from_slice(&header.to_le_bytes());
+            assert!(
+                reader
+                    .read_edge_reference(&mut BinaryReader::new(&bad), "Features", tail)
+                    .is_err()
+            );
+            assert!(reader.archive().entries().is_empty());
+        }
+        let mut face = bytes.clone();
+        face[6..17].copy_from_slice(b"moFaceRef_c");
+        assert!(
+            reader
+                .read_edge_reference(&mut BinaryReader::new(&face), "Features", tail)
+                .is_err()
+        );
+        reader
+            .read_reference_array_prefix(&mut BinaryReader::new(&bytes), "Features")
+            .unwrap();
+        let saved = serde_json::to_value(reader.objects()).unwrap();
+        let mut backref = BinaryReader::new(&[2, 0]);
+        assert!(
+            reader
+                .read_edge_reference(&mut backref, "Mates", tail)
+                .is_err()
+        );
+        assert_eq!(backref.position(), 0);
+        assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
+    }
+}
+
+mod model_header;

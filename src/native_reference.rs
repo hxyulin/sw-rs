@@ -8,7 +8,9 @@ mod context;
 mod subtree;
 pub use context::{NativeDocumentReferenceCandidate, NativeHandleClassEvidence};
 pub use subtree::{
-    NativeArchivePointer, NativeExternalObjectProfile, NativeSubtreeObject, NativeSubtreePayload,
+    NativeArchivePointer, NativeEdgeReferenceProfile, NativeExternalObjectProfile,
+    NativeFaceReferenceProfile, NativeModelHeaderFields, NativeModelHeaderProfile,
+    NativeModelHeaderTail, NativeModelHeaderTailProfile, NativeSubtreeObject, NativeSubtreePayload,
     NativeSubtreeReader,
 };
 

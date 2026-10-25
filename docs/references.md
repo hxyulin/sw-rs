@@ -142,21 +142,27 @@ The supported payloads are:
 
 - `moCStringHandle_c`: one checked CString.
 - `moExtObject_c`: two independently serialized handle pointers, a checked
-  byte(2)/word(0) prefix, a raw u32, saved CStrings, fixed raw scalar blocks and a
+  saved byte (2, 3 or 5), a checked 16-bit word (0 or 0x0100), a raw u32, saved CStrings, fixed raw scalar blocks and a
   configuration-looking CString. That text does not establish ownership.
 - `moFR_c`: an external-object pointer and two raw u32 words.
-- `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c` and `moFilletSurfIdRep_c`:
+- `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`
+  and `moThinOffsetSurfIdRep_c`:
   word(0), an FR pointer and one raw trailing word.
 - `moEndFaceSurfIdRep_c`: the same prefix with two trailing words.
 - `moDerivedSurfIdRep_c`: word(0), an FR pointer, a recursive representation
   pointer and one trailing word.
 
-Other representation families, including `moEndFace3IntSurfIdRep_c`,
-`moFromSktEnt3IntSurfIdRep_c` and `moLPatternSurfIdRep_c`, remain unsupported.
-The Photo360 edge chain contains these classes, so a recovered map alone will
-not make its entire array readable.
+- `moEndFace3IntSurfIdRep_c` and `moFromSktEnt3IntSurfIdRep_c`: word(0),
+  an FR pointer and three raw trailing words.
+- `moLPatternSurfIdRep_c`: word(0), an FR pointer, a recursive representation
+  pointer and two raw trailing words.
 
-All classes require saved schema one. Nulls and duplicate pointers are retained.
+The trailing words retain their saved values, including `0xffffffff`; their
+meanings are not inferred from class names. `moSideFace3IntSurfIdRep_c` and other
+unlisted families remain unsupported.
+
+Reference, handle and log classes require saved schema one. The model-header
+string arrays require schema zero. Nulls and duplicate pointers are retained.
 A backreference must point to a complete object of the expected type already
 consumed by this reader. A known class header without a decoded payload is
 insufficient. Cycles into in-progress payloads remain unsupported and stop.
@@ -167,6 +173,8 @@ insufficient. Cycles into in-progress payloads remain unsupported and stop.
 | --- | ---: | ---: | ---: |
 | `TwoStrings` | 2 | 17 | 12 |
 | `ThreeStrings` | 3 | 18 | 16 |
+| `ThreeStringsShortTail` | 3 | 18 | 12 |
+| `ThreeStringsShortBlock` | 3 | 17 | 12 |
 
 Both handle pointers precede these fields. The scalar blocks remain raw because
 their field meanings and some byte boundaries are unverified. Both profiles are
@@ -175,6 +183,13 @@ five public samples. Those private projections rewrite archive tags; one also
 substitutes an unavailable handle reference. They verify field consumption, not
 original archive-map continuity or identity.
 
+`ThreeStringsShortTail` preserves the following FR words in controlled SW2022
+Part samples. Choosing `ThreeStrings` there consumes the FR's first word as part
+of the external object's tail. A structurally successful prefix read alone cannot
+establish which profile applies. Select the profile from independently established
+field and sibling boundaries; do not infer it from version, blank document text
+or the number of saved strings alone.
+
 `read_reference_array_prefix` consumes the supported face/edge header, component
 marker, zero word and the declared surface-pointer count. It retains null entries
 and recursive pointers in source order. It **does not consume the enclosing
@@ -182,6 +197,48 @@ face/edge object's trailer**. Its arena record has `complete_payload: false`;
 the checked span is a prefix, and it cannot satisfy a complete-object backreference.
 The caller must decode the remaining parent fields before advancing to a sibling.
 `read_surface` and `read_external_object` consume their complete supported payloads.
+
+`read_face_reference` consumes a complete supported `moFaceRef_c` payload. It
+requires saved header word three (zero-based) to equal 768 and an explicitly
+selected `NativeFaceReferenceProfile`:
+
+| Profile | Checked trailer words |
+| --- | --- |
+| `ThreeWords` | `[0, 0, 0]` |
+| `FiveWords` | `[0, 0, raw, 0, 0]` |
+
+The raw middle word is retained without assigning it a version meaning. Complete
+faces use the `FaceReference` payload and `complete_payload: true`. The next object
+can be read at the returned cursor without scanning. A later complete-face
+backreference must use the same trailer profile. A previously recorded array
+prefix remains incomplete and cannot satisfy that backreference. These profiles
+apply only to the supported face header. Edge objects use their own profiles.
+
+Conditional local relocations of 145 public stream segments consume two adjacent
+face objects and both trailers: 79 with `TwoStrings`/`ThreeWords`, 25 with
+`ThreeStrings`/`FiveWords`, and 41 with `ThreeStringsShortTail`/`FiveWords`. The
+relocations rewrite only checked local pointer positions into an authored map;
+they do not recover or import the original inherited native context. See
+[face-reference trailers](archive-reference-rules.md#face-reference-trailers-and-short-external-tails).
+
+
+`read_edge_reference` consumes the supported complete `moEdgeRef_c` layout with
+saved header word three (zero-based) equal to 512. It uses an explicit
+`NativeEdgeReferenceProfile`:
+
+| Profile | Checked trailer words |
+| --- | --- |
+| `TwoWords` | `[0, 0]` |
+| `FourWords` | `[0, 0, raw, 0]` |
+
+The `EdgeReference` payload retains all header, surface-pointer and trailer fields.
+The object is complete and can satisfy later edge backreferences with the same
+selected profile. Face and edge profiles cannot be exchanged. Header words 0,
+518, 768, 772 and 774 also occur in edge declaration candidates; the complete-edge
+reader rejects them rather than masking bits or guessing their trailers. Unknown
+child classes still stop. Two public source intervals support complete adjacent
+edge reads under local tag relocation: one `TwoStrings`/`TwoWords` pair and one
+`ThreeStrings`/`FourWords` pair. Neither establishes the inherited native map.
 
 Every public read rolls back the cursor, shared-map registrations, decoded values
 and pointer budget after failure. Previously decoded objects remain unchanged.
@@ -201,6 +258,110 @@ retain their own source stream and header span. Definitions retain their definin
 stream and checked span, so cross-stream backreferences do not acquire the later
 stream's provenance. These are archive identities, not current geometry owners.
 
+### Model-header prefixes
+
+`read_model_header_prefix` walks the saved `moHeader_c` prefix with the same typed
+archive reader. It consumes two `su_CStringArray` pointers, a `suObList` of
+`moLogs_c` records, two raw scalar words and a `moExtObjectList_c` pointer. Each
+log contains a short-count stamp collection, a raw word and a CString label.
+Each `moStamp_c` contains ten raw bytes and a CString. External objects use the
+caller's explicit `NativeExternalObjectProfile`.
+
+`NativeModelHeaderProfile::DirectArrays` starts directly with the two string arrays.
+`LeadingWord` preserves one raw u32 before them. Neither profile establishes a
+version gate. Schema-zero string arrays retain blanks, duplicates, order and exact
+frame offsets. Log labels, numeric words and stamp bytes remain saved evidence;
+they do not assign current users, dates, features or owners. All collections in
+this profile use supported short counts; extended counts stop.
+
+`ModelHeaderPrefix` records are incomplete because fields after the external-object
+list remain unread. Child arrays, logs, stamps, lists and supported external objects
+have complete typed definitions. Later known serialization operations can reuse
+them through the same `NativeSubtreeReader`. The cursor, map, values and budget
+roll back together if any field fails. No intervening class is scanned or skipped.
+
+Python and Rust independently agree on 922 explicit profile trials across 349
+original public model-header streams: 169 use direct arrays and 180 use a leading
+word. Multiple external profiles can describe the same prefix when its external
+list is null. Prefix success does not choose a universal external-object profile.
+These walks preserve source hashes, object/class slots, pointer occurrences,
+strings, scalar bytes and exact spans without rewriting tags or importing slots.
+They establish a local model-header map prefix, not a whole-file native graph.
+
+The configuration archive still has a separate bootstrap problem. In 347 checked
+matching resolved-feature streams, the first supported common name tag equals
+`0x8000 | (saved external-list count + 4)`; two other checked headers lack that
+stream. This correlation does not prove the intervening `MapObject` calls or their
+order. It is not used to seed a configuration or mate map.
+
+### Complete direct-array model headers
+
+`read_model_header` consumes the established `DirectArrays`/`TwoStrings` layout
+through its final scalar words. Other profile combinations remain unsupported by
+this complete read. The prefix reader continues to support both initial layouts.
+
+After the shared fields, the complete reader consumes a raw u32 and another
+external-object pointer, 42 raw scalar bytes, a null or empty `suObList`, three
+scalar words, an optional 80-byte block and three final scalar words. The third
+word before the optional block must be zero or one. Numeric block bytes are
+retained exactly; no geometry, units or owner is inferred. Nonempty trailing lists
+and unknown presence words stop without skipping bytes.
+
+`ModelHeader` records have `complete_payload: true`, shared `NativeModelHeaderFields`
+and a `NativeModelHeaderTail` with its exact source span. Prefix fields stay flat
+in JSON. A complete root can satisfy later same-profile backreferences; an
+incomplete prefix cannot. The reader consumes the object layout without requiring
+EOF, so a caller can continue with the next known serialization operation.
+
+On original public streams, Python and Rust independently consume 166 complete
+headers through EOF with matching slots, pointer occurrences, fields and spans.
+The optional block is present in 163 and absent in three. These complete objects
+are local to their model-header archive. They do not establish the configuration
+handoff, mate endpoints, current dependencies or appearance ownership.
+
+`read_model_header_with_tail` also consumes three established leading-word layouts.
+It requires the saved leading word to equal one and an explicit
+`NativeModelHeaderTailProfile`:
+
+| Header profile | External-object profile | Tail profile | Extension words |
+| --- | --- | --- | ---: |
+| `DirectArrays` | `TwoStrings` | `NoExtension` | 0 |
+| `DirectArrays` | `ThreeStringsShortBlock` | `Extension28` | 7 |
+| `DirectArrays` | `ThreeStringsShortTail` | `Extension32` | 8 |
+| `LeadingWord` | `ThreeStringsShortTail` | `Extension32` | 8 |
+| `LeadingWord` | `ThreeStringsShortTail` | `Extension64` | 16 |
+| `LeadingWord` | `ThreeStrings` | `Extension68` | 17 |
+
+The extension follows the common three final words. Its first word is checked as
+one for `Extension28` and `Extension32`, two for `Extension64`, and zero/one/two for `Extension68`.
+Subsequent words must be zero or one. All values remain raw; no flag, version or
+count meaning is assigned. Unknown combinations or words stop transactionally.
+Complete-header backreferences must match both the initial and tail profiles.
+
+Python and Rust consume 176 direct-array and 182 leading-word headers through
+EOF, covering all 358 model-header streams in the pinned public modern corpus.
+This includes two direct-array headers with 28-byte extensions and one with a
+32-byte extension. Other saves and the configuration handoff remain open.
+
+Saved external objects retain `raw_header_byte` for observed values 2, 3 and 5,
+and `raw_prefix_word` for zero or 0x0100. Neither field is assigned an API enum,
+virtual-component state or current owner. The explicit CString/scalar profiles
+retain every saved string instead of folding extra CString frames into raw bytes.
+
+### Select complete streams through the reader
+
+`DocumentReader::model_headers()` and `sw-dump model-headers MODEL` inspect the
+supported layouts without requiring the caller to choose one. Selection requires
+exactly one complete non-null `moHeader_c` object consuming EOF. Six attempts run
+with independent fresh contexts. Unsupported/ambiguous streams remain reported
+with no selected definitions; there is no prefix fallback or version-based guess.
+
+`NativeModelHeaderReport` retains literal source names, original source hash,
+attempt outcomes and the unique successful layout's root, archive slots and typed
+objects. The result is cached independently of metadata and geometry and moves
+through `ReadOutput`. See [the reader contract](reader-inventory.md#complete-model-header-reports)
+and [CLI inspection](cli.md#complete-model-header-inspection).
+
 ### Probe a fresh archive only
 
 ```sh
@@ -211,7 +372,17 @@ This example deliberately supplies an empty archive. Its JSON labels that contex
 and reports either the checked definitions or an exact error. It does not fill
 missing slots. An arbitrary saved stream offset normally needs an inherited map;
 the command is a diagnostic probe, not a whole-file graph decoder. The optional
-last argument selects `array` (a prefix), `surface` or `external`.
+kind selects `array` (a prefix), `model_header` (direct arrays),
+`model_header_word` (leading word), `model_header_full` (complete direct-array
+layout), `model_header_full_word32`, `model_header_full_word64`,
+`model_header_full_word68`, `model_header_full_direct28`,
+`model_header_full_direct32`, `surface`, `external`, `face_three_words` or
+`face_five_words`, `edge_two_words` or `edge_four_words`. The complete
+header/reference kinds accept a final count from 1 through 10,000
+for sequential reads with one shared map. Other kinds accept only one read, so
+an incomplete prefix cannot silently skip to a sibling. `root` retains the first
+successful pointer; `roots` lists all successful reads. A failed later read rolls
+back that object while preserving earlier completed objects.
 
 ### Public-file result
 
@@ -229,8 +400,9 @@ Metadata remains unchanged across all 344 modern baseline entries. Private audit
 and projected payloads live in `local-assets/native-subtree-implementation/`.
 
 Remaining work includes the verified `Config-N` / resolved-feature archive
-handoff, unread parent trailers and the other surface families listed above. The new payload reader supplies the child
-layouts and typed backreferences; it does not reconstruct that missing context.
+handoff, unsupported face/edge header and trailer variants, and other surface
+families. The payload reader supplies supported complete face layouts and typed
+backreferences; it does not reconstruct that missing context.
 
 ## Resolution rules
 

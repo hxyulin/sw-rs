@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
     let first = args
         .next()
-        .ok_or("usage: sw-dump [metadata|geometry|mates|inventory|references] MODEL | --version")?;
+        .ok_or("usage: sw-dump [metadata|geometry|mates|inventory|references|model-headers] MODEL | --version")?;
     if first == "--version" {
         println!("sw-rs {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -14,11 +14,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mates = first == "mates";
     let inventory = first == "inventory";
     let references = first == "references";
-    let path = if geometry || mates || inventory || references || first == "metadata" {
-        args.next().ok_or("missing native document path")?
-    } else {
-        first
-    };
+    let model_headers = first == "model-headers";
+    let path =
+        if geometry || mates || inventory || references || model_headers || first == "metadata" {
+            args.next().ok_or("missing native document path")?
+        } else {
+            first
+        };
     let inspect_stream = if inventory { args.next() } else { None };
     let include_geometry = if references {
         match args.next() {
@@ -37,6 +39,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data = Vec::new();
     file.take((sw_rs::Limits::default().max_file_bytes as u64) + 1)
         .read_to_end(&mut data)?;
+    if model_headers {
+        let reader =
+            sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;
+        serde_json::to_writer(std::io::stdout().lock(), reader.model_headers()?)?;
+        return Ok(());
+    }
     let result = if references {
         let reader =
             sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;

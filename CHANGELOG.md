@@ -4,6 +4,44 @@
 
 ## Unreleased
 
+- Support external-reference byte 5 and prefix word 0x0100, retaining both raw.
+  Add the three-string 17-byte scalar profile and direct-array 28-/32-byte
+  extensions. Complete model-header reports now uniquely decode all 358 streams
+  in the pinned public modern corpus without version-based profile selection.
+
+- Expose cached model-header reports through `DocumentReader::model_headers()`
+  and `sw-dump model-headers`. Select only a unique whole-stream decode, retain
+  failed/ambiguous alternatives and transfer selected definitions without cloning.
+  Keep ordinary metadata/geometry parsing independent of the new inspection.
+
+- Decode complete leading-word model headers with explicit 32-, 64- and 68-byte
+  scalar extensions. Check supported word values and profile combinations;
+  preserve raw data and require matching profiles for root backreferences.
+
+- Decode complete direct-array model headers, including their following saved
+  external reference, checked empty trailing list and optional scalar block.
+  Retain observed external-object leading bytes 2 and 3 without assigning an API
+  document type. Validate complete-header boundaries on original public streams.
+
+- Read native model-header prefixes sequentially through both schema-zero string
+  arrays, saved log/stamp records and the external-object list. Preserve exact
+  source fields and map registrations; keep parent tails and the configuration
+  archive handoff unresolved. Add explicit direct-array and leading-word profiles.
+
+- Decode complete edge references with explicit two-word and four-word scalar
+  trailers. Preserve exact sibling boundaries and typed root backreferences;
+  reject unsupported edge header flags and mismatched profiles.
+
+- Add complete face-reference reads for explicit three-word and five-word trailer
+  profiles, including sequential sibling reads and typed root backreferences.
+  Add a three-string external-object profile with a 12-byte tail to preserve the
+  following FR fields in controlled SW2022 Part samples. Keep profile selection
+  explicit; other reference header/trailer variants remain unresolved.
+
+- Decode schema-one end-face/sketch `3Int`, thin-offset and recursive linear-pattern
+  surface payloads in the sequential reference reader. Retain raw trailing words
+  and typed backreferences without inferring topology ownership.
+
 - Add sequential native reference-subtree profiles with typed object/handle
   backreferences, source spans, raw external-object scalar blocks and rollback on
   failure. Keep face/edge arrays explicitly incomplete until their parent trailers

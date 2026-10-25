@@ -25,6 +25,8 @@ pub struct ReadOutput {
     pub references: Option<crate::ReferenceGraph>,
     /// Independently requested cached surface-reference inspection, without mesh copies.
     pub surface_references: Option<crate::CachedSurfaceData>,
+    /// Requested complete model-header reports, without rebuilding or copying definitions.
+    pub model_headers: Option<crate::NativeModelHeaderReport>,
 }
 
 /// Borrow source bytes and decompress/validate their container exactly once.
@@ -55,6 +57,7 @@ pub struct DocumentReader<'a> {
     features: OnceCell<crate::FeatureCatalog>,
     references: OnceCell<crate::ReferenceGraph>,
     surface_references: OnceCell<crate::CachedSurfaceData>,
+    model_headers: OnceCell<crate::NativeModelHeaderReport>,
 }
 impl<'a> DocumentReader<'a> {
     /// Validate/decompress once, retaining trace records and container errors for inventory.
@@ -76,6 +79,7 @@ impl<'a> DocumentReader<'a> {
             features: OnceCell::new(),
             references: OnceCell::new(),
             surface_references: OnceCell::new(),
+            model_headers: OnceCell::new(),
         })
     }
     /// Borrow original encoded source bytes; no copy or decompression occurs.
@@ -158,6 +162,15 @@ impl<'a> DocumentReader<'a> {
             graph
         }))
     }
+    /// Decode exact Config-N-ModelHeader streams once, independently of metadata/geometry.
+    /// Select only a unique supported layout consuming a complete non-null header and EOF.
+    /// Retain unsupported/ambiguous streams and all attempts; never seed configuration maps.
+    pub fn model_headers(&self) -> Result<&crate::NativeModelHeaderReport, ParseError> {
+        let container = self.container()?;
+        Ok(self
+            .model_headers
+            .get_or_init(|| crate::NativeModelHeaderReport::inspect(container, &self.source_hash)))
+    }
     /// Inspect cached Part surface references once, separately from geometry decoding.
     /// Uses retained carrier bytes and table metadata windows; no mesh buffers are copied.
     /// Ordinary `geometry()` and the viewer never pay for this opt-in scan.
@@ -207,6 +220,7 @@ impl<'a> DocumentReader<'a> {
             features: self.features.into_inner(),
             references: self.references.into_inner(),
             surface_references: self.surface_references.into_inner(),
+            model_headers: self.model_headers.into_inner(),
         })
     }
 }

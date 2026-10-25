@@ -16,6 +16,7 @@ mod geometry;
 mod inventory;
 mod mates;
 mod mesh;
+mod model_headers;
 mod native_reference;
 mod object_archive;
 mod ole;
@@ -47,10 +48,17 @@ pub use mates::{
     ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
     MateReferenceNode,
 };
+pub use model_headers::{
+    NativeModelHeaderAttempt, NativeModelHeaderAttemptOutcome, NativeModelHeaderDecoding,
+    NativeModelHeaderLayout, NativeModelHeaderReport, NativeModelHeaderStatus,
+    NativeModelHeaderStream,
+};
 pub use native_reference::{
     NativeArchivePointer, NativeDocumentReference, NativeDocumentReferenceCandidate,
-    NativeExternalObjectProfile, NativeHandleClassEvidence, NativeReferenceStop,
-    NativeSubtreeObject, NativeSubtreePayload, NativeSubtreeReader,
+    NativeEdgeReferenceProfile, NativeExternalObjectProfile, NativeFaceReferenceProfile,
+    NativeHandleClassEvidence, NativeModelHeaderFields, NativeModelHeaderProfile,
+    NativeModelHeaderTail, NativeModelHeaderTailProfile, NativeReferenceStop, NativeSubtreeObject,
+    NativeSubtreePayload, NativeSubtreeReader,
 };
 pub use object_archive::{ArchiveContext, ArchiveEntry, ArchiveError, ArchiveObjectHeader};
 pub use ole::{OleCompression, OleStreamSource};

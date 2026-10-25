@@ -32,6 +32,9 @@ semantic decoders.
 - `source_bytes()` and `stream(name)` return borrowed byte slices.
 - `metadata()` and `geometry()` initialize cached results on demand. They share
   the same decoded streams. Geometry errors are retained too.
+- `model_headers()` caches complete-header inspection independently of metadata
+  and geometry. It selects only a unique supported layout that consumes the entire
+  exact model-header stream, retaining failed and ambiguous alternatives.
 - `inventory()` caches an owned source summary without invoking metadata,
   geometry, or detailed structural inspection.
 - `inspect_stream(name)` explicitly builds an owned structural report. The
@@ -201,3 +204,29 @@ relationships, body/configuration ownership, units and saved views. Register
 new partial decoders only with source-backed routing and explicit coverage.
 Native mate solving, feature regeneration and Parasolid interpretation remain
 separate capabilities.
+
+
+## Complete model-header reports
+
+`DocumentReader::model_headers()` returns `NativeModelHeaderReport` with schema
+`sw-rs-model-headers-v1` and the original source SHA-256. Each exact
+`Contents/Config-N-ModelHeader` stream has a `decoded`, `unsupported` or `ambiguous`
+status. Numeric indices are parsed when they fit u32, while literal source names
+retain zero padding and oversized indices without merging streams.
+
+Each attempt starts with an empty archive at byte zero. Only a complete non-null
+`moHeader_c` definition followed by EOF is a successful attempt. A unique success
+retains its layout, root, ledger and typed object arena. Multiple successes expose
+no chosen graph. Trailing bytes, null roots and partial prefixes are not selected.
+The winning definitions move into the report without cloning their saved fields.
+
+The report does not initialize metadata, features, geometry or reference graphs.
+Repeated calls return the same cached view. `finish()` moves it to
+`ReadOutput::model_headers`; unrequested reports remain None. Both native modern
+and supported OLE container paths use the same retained stream interface. Complete
+header layouts and limits are documented in [reference parsing](references.md#complete-direct-array-model-headers).
+
+Saved header-local class/object indices stay separate from configuration, mate,
+feature and topology identities. The report keeps whole-file graph and topology
+ownership flags false. Missing streams mean unavailable evidence, rather than no
+saved references.

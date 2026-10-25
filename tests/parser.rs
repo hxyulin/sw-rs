@@ -655,3 +655,41 @@ fn valid_cached_mesh_can_exceed_former_table_and_triangle_caps() {
         triangles as usize
     );
 }
+
+#[test]
+fn complete_model_header_reports_are_cached_opt_in_and_transferred_without_other_decoders() {
+    let mut header = vec![255, 255, 1, 0, 10, 0];
+    header.extend(b"moHeader_c");
+    header.extend([0; 90]); // authored direct-array header with null lists/references
+    let input = file(&[
+        ("Contents/Config-0-ModelHeader", &header),
+        ("Contents/Config-1-ModelHeader", b"unsupported"),
+    ]);
+    let reader = sw_rs::DocumentReader::open(&input, "model.SLDPRT", Limits::default()).unwrap();
+    let report = reader.model_headers().unwrap();
+    assert!(std::ptr::eq(report, reader.model_headers().unwrap()));
+    assert_eq!(report.source_sha256, reader.source_sha256());
+    assert_eq!(
+        report.streams[0].status,
+        sw_rs::NativeModelHeaderStatus::Decoded
+    );
+    assert_eq!(
+        report.streams[1].status,
+        sw_rs::NativeModelHeaderStatus::Unsupported
+    );
+    let output = reader.finish().unwrap();
+    assert!(output.model_headers.is_some());
+    assert!(output.metadata.is_none() && output.geometry.is_none() && output.inventory.is_none());
+    assert!(
+        output.features.is_none()
+            && output.references.is_none()
+            && output.surface_references.is_none()
+    );
+    let ordinary = sw_rs::DocumentReader::open(&input, "model.SLDPRT", Limits::default()).unwrap();
+    ordinary.metadata().unwrap();
+    assert!(ordinary.finish().unwrap().model_headers.is_none());
+    let invalid =
+        sw_rs::DocumentReader::open(b"invalid", "model.SLDPRT", Limits::default()).unwrap();
+    assert!(invalid.model_headers().is_err());
+    assert!(invalid.inventory().container_error.is_some());
+}

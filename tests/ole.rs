@@ -380,3 +380,39 @@ fn shared_stream_sectors_and_repeated_fat_amplification_are_rejected() {
             .contains("physical read budget")
     );
 }
+
+#[test]
+fn model_header_reports_share_the_normalized_raw_and_zlb_ole_stream_path() {
+    let mut header = vec![255, 255, 1, 0, 10, 0];
+    header.extend(b"moHeader_c");
+    header.extend([0; 90]);
+    let packed = zlb(&[&header]);
+    for version in [cfb::Version::V3, cfb::Version::V4] {
+        let bytes = compound(
+            version,
+            &[
+                ("/Contents/Config-0-ModelHeader", &header),
+                ("/Contents/Config-1-ModelHeader__ZLB", &packed),
+            ],
+        );
+        let reader = DocumentReader::open(&bytes, "assembly.SLDASM", Limits::default()).unwrap();
+        let report = reader.model_headers().unwrap();
+        assert_eq!(report.streams.len(), 2);
+        assert_eq!(report.source_sha256, reader.source_sha256());
+        for (index, stream) in report.streams.iter().enumerate() {
+            assert_eq!(stream.configuration_index, Some(index as u32));
+            assert_eq!(stream.status, sw_rs::NativeModelHeaderStatus::Decoded);
+            assert_eq!(
+                stream.source_stream,
+                format!("Contents/Config-{index}-ModelHeader")
+            );
+            let decoding = stream.decoding.as_ref().unwrap();
+            assert_eq!(
+                decoding.objects[&2]
+                    .span
+                    .slice(reader.stream(&stream.source_stream).unwrap().unwrap()),
+                Some(header.as_slice())
+            );
+        }
+    }
+}

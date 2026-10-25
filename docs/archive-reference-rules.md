@@ -301,3 +301,348 @@ checkout remain ignored in `local-assets/archive-investigation/` and
 The next target is the serialization chain preceding `Config-N-MatesList`, then
 its nested feature/reference payloads. We can validate a class-map continuation
 against its reused tags before attempting endpoint or appearance ownership.
+
+### Additional surface payload boundaries
+
+The sequential reader also accepts schema-one `moEndFace3IntSurfIdRep_c`,
+`moFromSktEnt3IntSurfIdRep_c`, `moThinOffsetSurfIdRep_c` and
+`moLPatternSurfIdRep_c`. All start with word(0) and an FR pointer. The two
+`3Int` classes end with three raw u32 words. Thin-offset ends with one word.
+Linear-pattern contains a recursive surface pointer followed by two words.
+These words retain their saved values; neither signedness nor topology meaning
+is inferred.
+
+A survey of unique public sources found 89 explicit end-face `3Int` declarations,
+122 sketch `3Int`, 12 thin-offset and 18 linear-pattern declarations in matching
+mate/resolved-feature carriers. These are declaration candidates, not a native
+object census. Two side-face `3Int` declarations remain unsupported.
+
+In Photo360's `Contents/Config-0-ResolvedFeatures`, a conditional structural walk
+consumes the four-record edge prefix at bytes 8378 through 8940. Its records are
+end-face, end-face `3Int`, and two linear-pattern records containing sketch `3Int`
+children. The second pattern and child reuse short class tags. Rewriting those
+tags into a fresh authored archive allows the Rust reader to consume all four
+records, including both recursive children, and stop before the parent trailer.
+The external object's two handle tags are rewritten too. Saved strings and
+scalar fields remain unchanged. This verifies payload consumption, not original
+map continuity, object identity or a complete edge object.
+
+Separate projections preserve the scalar bytes of 79 end-face `3Int`, 104 sketch
+`3Int` and 12 thin-offset declaration candidates. Each has short FR/external tags
+and a following declaration, null, or short-tag/zero-word boundary candidate.
+The projections replace the FR class tag and external pointer with an explicit
+FR declaration and null pointer. All 195 consume their exact projected interval.
+They do not validate the original pointer targets. Probes and reports remain
+ignored in `local-assets/surface-layout-investigation/`.
+
+The inherited configuration map and unread face/edge parent trailers remain the
+next blockers. The original five mate-face stopping points are unchanged.
+
+### Face-reference trailers and short external tails
+
+Comparing parent endings exposed two three-string external-object layouts.
+Both contain an 18-byte scalar block before the configuration CString. One has
+16 trailing bytes, as in terminalBlocks; the other has 12, as in the controlled
+SW2022 sphere and torus. Selecting the 16-byte profile in those controlled samples
+moves the saved FR word `31` into the external object's tail, shifts the two FR
+words and consumes one word of the parent trailer. With the 12-byte profile, the
+first FR words match the later FR that reuses the same external object. The sketch
+surface's saved trailing word also matches. This establishes a field boundary;
+it does not establish a universal version or empty-handle rule.
+
+The supported complete face layout has header word three (zero-based) equal to
+768. Its scalar trailer has either three zero words or five words of the form
+`[0, 0, raw, 0, 0]`. A separate caller-selected profile is required. The middle word
+is preserved without treating it as a document version. Edge-reference trailers
+are not covered by these profiles.
+
+The survey found 404 explicit face/edge declaration candidates in unique public
+sources' mate/resolved-feature carriers. A conditional local relocation probe
+rewrites pointer tags only as the payload walker consumes them. It hypothesizes
+a base from a repeated local handle-class tag, rejects references outside the
+local segment, and never seeds a production archive with guessed slots. The
+original inherited map remains unverified.
+
+Of those candidates, 145 distinct source intervals admit two sequential complete
+face reads under one profile combination each:
+
+| External-object profile | Face trailer | Adjacent pairs |
+| --- | --- | ---: |
+| `TwoStrings` | `ThreeWords` | 79 |
+| `ThreeStrings` | `FiveWords` | 25 |
+| `ThreeStringsShortTail` | `FiveWords` | 41 |
+
+The probe checks both scalar trailers and the second root's reused class tag at
+the exact first-object end. Rust independently consumes each rewritten pair using
+the complete-face API. These are payload/boundary checks on local relocations,
+not native archive-map recovery or topology ownership. Other trial profiles can
+consume a prefix while leaving the wrong next field, so prefix success alone is
+not counted as a complete object.
+
+In the controlled sphere, the first array ends at byte 8883 and its five-word
+trailer ends at 8903, exactly at the next face object. The second object ends at
+8983. The corresponding torus boundaries are 8593, 8613 and 8693. The earlier
+apparent 16-byte trailers resulted from selecting the longer external-object tail.
+Research scripts, rewritten projections and reports remain ignored in
+`local-assets/reference-trailer-investigation/`.
+
+`NativeSubtreeReader::read_face_reference` marks these supported objects complete
+and permits subsequent complete-face backreferences with the same selected
+profile. The prefix API retains its existing incomplete contract. No document
+reader now walks past unknown native fields: the inherited configuration context,
+unsupported classes and edge trailers still stop a whole-stream decoder.
+
+### Edge-reference scalar trailers
+
+The complete `moEdgeRef_c` profile requires saved header word three (zero-based)
+to equal 512. Its surface-array framing matches the supported prefix API, but its
+scalar trailer is shorter than the face trailer:
+
+| Edge profile | Saved trailer words |
+| --- | --- |
+| `TwoWords` | `[0, 0]` |
+| `FourWords` | `[0, 0, raw, 0]` |
+
+The raw word remains uninterpreted. Profile selection is explicit and does not
+follow a document-version threshold. A shared scalar-tail helper enforces the
+zero positions for both face and edge readers without exchanging their lengths.
+
+Two distinct public source intervals establish adjacent edge boundaries under
+conditional local relocation:
+
+| Source | External / edge profile | First array end | First object end | Second object end |
+| --- | --- | ---: | ---: | ---: |
+| `轴承2.SLDPRT` | `TwoStrings` / `TwoWords` | 9263 | 9271 | 9399 |
+| `DoveWrap_v11 Lidar.SLDPRT` | `ThreeStrings` / `FourWords` | 9643 | 9659 | 9795 |
+
+Both root objects have header word 512. The second begins with the same reused
+root-class tag at the exact end of the first trailer. It reuses local classes and
+objects; both second trailers match their selected profile. Rust independently
+consumes each rewritten pair and retains complete object spans. These probes
+establish payload consumption and sibling boundaries, not native map continuity
+or topology ownership. No missing inherited object values are supplied.
+
+The broader private projection probe can replace an unavailable inherited handle
+class with an explicit declaration for a payload trial. Neither successful pair
+needs that replacement: both use only local tag relocation. Failed trials remain
+failed and do not become source-map entries. Other edge candidates contain header
+words 0, 518, 768, 772 or 774, unknown representation classes, or inherited pointers
+outside the local segment. They are not covered by the complete-edge reader.
+Probes and reports remain ignored in `local-assets/edge-trailer-investigation/`.
+
+`read_edge_reference` marks supported roots complete and permits same-profile
+backreferences. A previous `ReferenceArrayPrefix` stays incomplete. A face pointer,
+a different trailer profile, a truncated/nonzero checked trailer field, or an
+unsupported header rolls back the failed read and preserves earlier objects.
+
+## Sequential model-header prefix and configuration bootstrap
+
+`Contents/Config-N-ModelHeader` begins with a saved `moHeader_c` object. The
+supported prefix contains two `su_CStringArray` objects with schema zero, not one.
+In the direct-array profile, the native map starts as follows:
+
+```text
+slot 1   class moHeader_c, schema 1
+slot 2   model-header root object
+slot 3   class su_CStringArray, schema 0
+slot 4   first string-array object
+slot 5   second string-array object, reused class tag 0x8003
+slot 6   class suObList, schema 1
+slot 7   log-list object
+slot 8   class moLogs_c, schema 1
+slot 9   first log object
+slot 10  class moStamp_c, schema 1
+slot 11  first stamp object
+...
+```
+
+The second string array explains the later log tag `0x8008` and stamp tag
+`0x800a`. No initial map hole or external registration is needed. The leading-word
+profile adds a raw u32 after the root header; it leaves the slot sequence unchanged.
+Later classes and objects register through the same checked `ArchiveContext`.
+
+The log list uses a short count. Each `moLogs_c` contains a short-count collection
+of stamp pointers, a saved u32 and a CString label. Each `moStamp_c` contains ten
+scalar bytes and a CString. Those scalars remain raw. After the log list, two raw
+u32 words precede the external-object-list pointer. The list uses a short count
+and the selected external-object payload profile. Nulls, class reuse and complete
+object backreferences retain their actual serialization behavior.
+
+An independent Python walker and Rust agree on 847 explicit profile trials across
+312 unique original public model-header streams. There are 161 direct-array and
+151 leading-word streams. Comparisons cover every registered slot, non-null
+pointer occurrence, class/schema, object span, string frame, raw scalar and prefix
+end. Source hashes and decompressed-stream CRCs match the pinned inventory. These
+checks use original bytes and fresh contexts, without relocation or guessed slots.
+Multiple external profiles can succeed when there is no external-object payload;
+the audits do not treat that as evidence for a version-selection rule.
+
+The reader retains a `ModelHeaderPrefix` with `complete_payload: false`. Native
+fields after the external-object list remain unread. The typed child definitions
+and map are available for a caller that knows the remaining serialization sequence.
+Unknown layouts, extended collection counts, bad schemas and invalid/missing
+backreferences stop and roll back the entire requested prefix.
+
+The model-header list also sharpens the separate configuration-bootstrap
+hypothesis. For 310 matching resolved-feature streams with a supported first
+common name header, its raw short tag equals `0x8000 | (external-list count + 4)`.
+Two other checked headers have no resolved-feature stream. All 310 comparisons
+agree, but the result does not identify a serialization call, an external slot's
+meaning or its registration order. It is consistent with pre-registering referenced
+objects before reading `Config-N`; it does not prove that mechanism. Production
+code does not turn this count into missing map entries or resolve mate classes
+from it. The configuration handoff still needs independent verification.
+
+Probes, reports and extracted bytes remain ignored in
+`local-assets/config-context-investigation/`. Use the empty-context diagnostic
+probe to reproduce a supported model-header prefix:
+
+```sh
+cargo run --locked --example inspect_native_subtree -- model.SLDASM 'Contents/Config-0-ModelHeader' 0 two_strings model_header
+```
+
+Choose `model_header_word` for the leading-word layout. The external-object
+profile remains explicit. This is a prefix probe, not a complete configuration
+or mate decoder.
+
+### Complete direct-array model-header layout
+
+The checked direct-array prefix continues with one raw u32, another external-object
+pointer, 42 scalar bytes, a null or empty `suObList`, three scalar words, an optional
+80-byte block and three final words. The third scalar word before the optional
+block is a checked zero/one presence value. The 80 bytes remain raw; neither
+bounding-box semantics nor model-frame ownership is assigned. Nonempty trailing
+lists and other presence values remain unsupported.
+
+The following reference exposes a second saved external-object leading byte:
+values 2 and 3 both precede word(0) and the existing checked payload fields. The
+reader retains this byte rather than assigning it a SolidWorks API document type.
+Accepting the observed byte 3 also extends model-header prefix coverage to 349
+original public streams, with 922 explicit profile trials. Of these, 169 use direct
+arrays and 180 use a leading word. The configuration-bootstrap correlation now
+agrees in 347 matching resolved-feature streams; two headers lack that stream.
+The correlation remains excluded from production map construction.
+
+Python and Rust independently consume 166 original direct-array headers through
+EOF with `TwoStrings` external-object framing. All class/object slots, pointer
+occurrences, strings, scalar bytes and source spans agree. The optional block is
+present in 163 streams and absent in three. These walks use original source bytes,
+fresh contexts and pinned SHA-256/CRC checks, without relocation or map seeding.
+
+`NativeSubtreeReader::read_model_header` supports only this established
+`DirectArrays`/`TwoStrings` combination. It marks the root complete and permits
+later same-profile root backreferences. Prefix-only roots remain incomplete.
+`NativeModelHeaderFields` shares the prefix representation between the two APIs;
+JSON prefix fields retain their existing flat shape. `NativeModelHeaderTail`
+records the exact interval and remaining fields. Bytes after the supported object
+are left for the caller, so the API can read a header followed by another known
+object instead of treating EOF as an object-length field.
+
+The leading-word layout still has unparsed remaining fields. No whole-file map,
+current document/occurrence assignment, mate endpoint or appearance ownership is
+inferred from a complete model-header object. Research and reports remain ignored
+in `local-assets/model-header-tail-investigation/`.
+
+```sh
+cargo run --locked --example inspect_native_subtree -- model.SLDASM 'Contents/Config-0-ModelHeader' 0 two_strings model_header_full
+```
+
+### Complete leading-word model-header layouts
+
+The leading-word headers share the established core tail, then add scalar
+extensions of 32, 64 or 68 bytes. `read_model_header_with_tail` selects these
+layouts explicitly. Full leading-word reads require the initial saved u32 to be
+one; the prefix reader still retains other initial values without claiming a
+complete object.
+
+| Initial profile | External-object profile | Extension profile | Original streams |
+| --- | --- | --- | ---: |
+| `LeadingWord` | `ThreeStringsShortTail` | `Extension32` | 39 |
+| `LeadingWord` | `ThreeStringsShortTail` | `Extension64` | 10 |
+| `LeadingWord` | `ThreeStrings` | `Extension68` | 130 |
+
+The extension is eight, sixteen or seventeen little-endian u32 words after the
+common final words. The first word is one in the 32-byte layout, two in the
+64-byte layout, and zero, one or two in the 68-byte layout. Later words are zero
+or one. The decoder checks these observed values and retains all words without
+assigning flag, count, version or owner meanings. Other values are unsupported.
+In the corpus, these layouts occur with saved document versions 15000, 16000 and
+17000 respectively; this observation is not used as a universal version gate.
+
+An independent walker and Rust consume all 179 original streams through EOF with
+matching class/object slots, pointer occurrences, fields and spans. No byte
+relocation, map seeding or declaration scan supplies the walk. Together with the
+166 direct-array headers, 345 local model-header objects are complete under the
+selected profiles. Failed alternative profile trials remain failures and do not
+become native class-map entries.
+
+`NativeModelHeaderTail` retains the extension profile and raw words. Its span
+includes the extension. Later complete-root backreferences must match both the
+initial header profile and extension profile. Truncation, unknown leading words,
+unsupported scalar values and profile mismatches roll back the read. The older
+`read_model_header` API retains its direct-array/no-extension contract.
+
+Four of the previously checked model-header prefixes still lack a complete
+supported layout. The configuration archive handoff and whole-file topology or
+appearance ownership remain unverified. Research scripts, original-stream checks
+and reports remain ignored in `local-assets/leading-header-investigation/`.
+
+```sh
+cargo run --locked --example inspect_native_subtree -- model.SLDPRT 'Contents/Config-0-ModelHeader' 0 three_strings_short_tail model_header_full_word32
+```
+
+The 64-byte layout uses `model_header_full_word64` with `three_strings_short_tail`.
+The 68-byte layout uses `model_header_full_word68` with `three_strings`.
+
+### Remaining public header layouts
+
+The 13 previously unsupported model-header streams reduce to checked saved-field
+variants and two older direct-array layouts:
+
+- Seven assembly streams, including six routed examples, use external-object
+  prefix word 0x0100 instead of zero. The same CString/scalar layout continues
+  through the complete header.
+- Three Part headers use leading byte 5. The byte remains raw; no SolidWorks API
+  document type is assigned.
+- Two direct-array headers contain three saved CStrings, a 17-byte scalar block,
+  the configuration CString and 12 trailing bytes. `ThreeStringsShortBlock`
+  preserves that third CString as a string. Their header extension is seven u32
+  words (28 bytes), starting with one, followed by checked zero/one values.
+- One direct-array header uses `ThreeStringsShortTail` and an eight-word (32-byte)
+  extension, rather than the initial leading-word header layout.
+
+These counts describe the observed failure groups, not a general relationship
+between these values and document kinds.
+`raw_prefix_word` retains the exact u16 alongside `raw_header_byte`. Values outside
+zero/0x0100 and 2/3/5 respectively remain unsupported. No virtual-component,
+occurrence or ownership meaning is inferred.
+
+Treating a third blank CString as four opaque scalar bytes could make different
+field interpretations reach the same boundary. The implemented profiles instead
+retain every checked CString and distinguish the 17- and 18-byte scalar blocks.
+The complete-reader catalog now has six supported combinations. The new tuples
+are `DirectArrays`/`ThreeStringsShortBlock`/`Extension28` and
+`DirectArrays`/`ThreeStringsShortTail`/`Extension32`; existing tuples are unchanged.
+
+Independent fresh-context walks and Rust agree through EOF on all 358 public
+model-header streams: 176 direct-array and 182 leading-word headers. The public
+CLI uniquely selects the same layout for every stream across 341 unique source
+files. Comparisons cover all class/object slots, pointer occurrences, exact source
+spans, strings, scalar bytes and extensions. There are no ambiguous results in
+this corpus. Original SHA-256 identities and decoded CRCs match the pinned
+inventory. No rewritten tags, map seed holes or declaration scans supply these
+walks.
+
+These results establish complete local model-header layouts for the sampled
+streams. The configuration archive handoff, whole-file graph and topology or
+appearance ownership remain separate open requirements. Probes and original-byte
+reports remain ignored in `local-assets/remaining-header-investigation/`.
+
+```sh
+cargo run --locked --example inspect_native_subtree -- model.SLDPRT 'Contents/Config-0-ModelHeader' 0 three_strings_short_block model_header_full_direct28
+```
+
+Use `model_header_full_direct32` with `three_strings_short_tail` for the additional
+direct-array 32-byte extension. `sw-dump model-headers` checks all six supported
+combinations and retains unsupported or ambiguous results instead of choosing a
+partial prefix.
