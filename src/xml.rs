@@ -11,7 +11,11 @@ pub(crate) fn parse(bytes: &[u8]) -> Option<Document<'_>> {
 fn attr(n: Node<'_, '_>, name: &str) -> String {
     n.attribute(name).unwrap_or_default().to_owned()
 }
-pub(crate) fn properties(bytes: &[u8], all: bool) -> BTreeMap<String, String> {
+pub(crate) enum PropertySections {
+    UserDefined,
+    All,
+}
+pub(crate) fn properties(bytes: &[u8], sections: PropertySections) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     let Some(doc) = parse(bytes) else {
         return out;
@@ -21,7 +25,9 @@ pub(crate) fn properties(bytes: &[u8], all: bool) -> BTreeMap<String, String> {
         .children()
         .filter(|n| n.has_tag_name("propertySection"))
     {
-        if !all && section.attribute("name") != Some("UserDefinedProperties") {
+        if matches!(sections, PropertySections::UserDefined)
+            && section.attribute("name") != Some("UserDefinedProperties")
+        {
             continue;
         }
         for prop in section.children().filter(|n| n.has_tag_name("property")) {
@@ -75,10 +81,9 @@ pub(crate) fn root_attribute(bytes: &[u8], name: &str) -> String {
         .map(|d| attr(d.root_element(), name))
         .unwrap_or_default()
 }
-fn numbers<const N: usize>(text: &str, comma: bool) -> Option<[f64; N]> {
+fn numbers<const N: usize>(text: &str) -> Option<[f64; N]> {
     let values: Vec<f64> = text
-        .split(|c: char| c.is_whitespace() || (comma && c == ','))
-        .filter(|s| !s.is_empty())
+        .split_whitespace()
         .map(str::parse)
         .collect::<Result<_, _>>()
         .ok()?;
@@ -183,7 +188,7 @@ pub(crate) fn components(tree: &Tree<'_>, index: u32) -> Vec<Component> {
                 is_suppressed: abbreviated || flag("swSuppressed"),
                 is_hidden: abbreviated || flag("swHidden"),
                 exclude_from_bom: abbreviated || flag("swExcludeFromBOM"),
-                transform: r.attribute("swTransform").and_then(|s| numbers(s, false)),
+                transform: r.attribute("swTransform").and_then(numbers),
             }
         })
         .collect()

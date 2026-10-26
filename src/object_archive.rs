@@ -30,16 +30,54 @@ pub enum ArchiveEntry {
 }
 
 /// Decoded object header; its class-specific payload must be read separately.
-#[derive(Clone, Debug, Serialize)]
+/// Obtain headers through [`ArchiveContext::read_object`]; pointer state is read-only.
+/// JSON retains the `object_index`, `class_index`, `is_new` and `source` fields.
+#[derive(Clone, Debug)]
 pub struct ArchiveObjectHeader {
-    /// Map slot, or None for the null pointer.
-    pub object_index: Option<u32>,
-    /// Runtime-class slot, unknown for null/external objects.
-    pub class_index: Option<u32>,
-    /// True only when a newly registered object's payload follows this header.
-    pub is_new: bool,
+    pointer: ObjectPointer,
     /// Exact tag/declaration span; never an inferred payload boundary.
     pub source: ByteSpan,
+}
+#[derive(Clone, Copy, Debug)]
+enum ObjectPointer {
+    Null,
+    External { object_index: u32 },
+    Reference { object_index: u32, class_index: u32 },
+    New { object_index: u32, class_index: u32 },
+}
+impl ArchiveObjectHeader {
+    /// Map slot of this object, or None for a null pointer.
+    pub fn object_index(&self) -> Option<u32> {
+        match self.pointer {
+            ObjectPointer::Null => None,
+            ObjectPointer::External { object_index }
+            | ObjectPointer::Reference { object_index, .. }
+            | ObjectPointer::New { object_index, .. } => Some(object_index),
+        }
+    }
+    /// Runtime-class slot, unknown for null and externally mapped objects.
+    pub fn class_index(&self) -> Option<u32> {
+        match self.pointer {
+            ObjectPointer::Null | ObjectPointer::External { .. } => None,
+            ObjectPointer::Reference { class_index, .. }
+            | ObjectPointer::New { class_index, .. } => Some(class_index),
+        }
+    }
+    /// Whether a newly registered object's payload follows this header.
+    pub fn is_new(&self) -> bool {
+        matches!(self.pointer, ObjectPointer::New { .. })
+    }
+}
+impl Serialize for ArchiveObjectHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut header = serializer.serialize_struct("ArchiveObjectHeader", 4)?;
+        header.serialize_field("object_index", &self.object_index())?;
+        header.serialize_field("class_index", &self.class_index())?;
+        header.serialize_field("is_new", &self.is_new())?;
+        header.serialize_field("source", &self.source)?;
+        header.end()
+    }
 }
 
 /// Invalid, missing or unsupported archive framing, with the failed header offset.
@@ -70,12 +108,12 @@ impl std::error::Error for ArchiveError {}
 /// let mut cursor = sw_rs::BinaryReader::new(&bytes);
 /// let mut context = sw_rs::ArchiveContext::new();
 /// let root = context.read_object(&mut cursor)?;
-/// assert_eq!(root.object_index, Some(2)); // class occupies slot 1
+/// assert_eq!(root.object_index(), Some(2)); // class occupies slot 1
 /// let other = context.read_object(&mut cursor)?;
-/// assert_eq!(other.object_index, Some(3));
+/// assert_eq!(other.object_index(), Some(3));
 /// let reference = context.read_object(&mut cursor)?;
-/// assert_eq!(reference.object_index, root.object_index);
-/// assert!(!reference.is_new); // no payload follows a backreference
+/// assert_eq!(reference.object_index(), root.object_index());
+/// assert!(!reference.is_new()); // no payload follows a backreference
 /// # Ok::<(), sw_rs::ArchiveError>(())
 /// ```
 #[derive(Debug, Default)]
@@ -116,6 +154,9 @@ impl ArchiveContext {
     /// Mirror an explicit MapObject call for an externally owned object.
     /// Only use when its position in the serialized call sequence is known.
     /// Errors use offset zero because this operation has no source cursor.
+    ///
+    /// # Errors
+    /// Returns an error if another slot would exceed the MFC archive index range.
     pub fn map_external_object(&mut self) -> Result<u32, ArchiveError> {
         self.capacity(1, 0)?;
         Ok(self.push(ArchiveEntry::ExternalObject))
@@ -164,6 +205,10 @@ impl ArchiveContext {
     }
     /// Read a ReadClass/SerializeClass header without allocating an object slot.
     /// Payload/base-class serialization remains the caller's responsibility.
+    ///
+    /// # Errors
+    /// Returns an error for truncated or invalid tags, missing or non-class slots,
+    /// or an exhausted archive index range. The cursor and map remain unchanged.
     pub fn read_class(&mut self, reader: &mut BinaryReader<'_>) -> Result<u32, ArchiveError> {
         let offset = reader.position();
         let error = |message| ArchiveError { offset, message };
@@ -193,6 +238,10 @@ impl ArchiveContext {
     /// Read an object pointer header and register new objects before their payload.
     /// Null/backreferences have no payload; new objects require schema-specific
     /// decoding before reading another header. Failure rolls back both cursor/map.
+    ///
+    /// # Errors
+    /// Returns an error for truncated or invalid tags, missing or mismatched map
+    /// slots, or an exhausted archive index range.
     pub fn read_object(
         &mut self,
         reader: &mut BinaryReader<'_>,
@@ -206,13 +255,16 @@ impl ArchiveContext {
             offset,
             length: trial.position() - offset,
         };
-        let (object_index, class_index, is_new) = match tag {
-            Tag::Null => (None, None, false),
+        let pointer = match tag {
+            Tag::Null => ObjectPointer::Null,
             Tag::Object(index) => match self.entry(index) {
-                Some(ArchiveEntry::Object { class_index, .. }) => {
-                    (Some(index), Some(*class_index), false)
-                }
-                Some(ArchiveEntry::ExternalObject) => (Some(index), None, false),
+                Some(ArchiveEntry::Object { class_index, .. }) => ObjectPointer::Reference {
+                    object_index: index,
+                    class_index: *class_index,
+                },
+                Some(ArchiveEntry::ExternalObject) => ObjectPointer::External {
+                    object_index: index,
+                },
                 _ => return Err(error("object tag refers to missing or class slot")),
             },
             Tag::Class(index) => {
@@ -224,7 +276,10 @@ impl ArchiveContext {
                     class_index: index,
                     source,
                 });
-                (Some(object), Some(index), true)
+                ObjectPointer::New {
+                    object_index: object,
+                    class_index: index,
+                }
             }
             Tag::NewClass { schema, name } => {
                 self.capacity(2, offset)?;
@@ -237,16 +292,14 @@ impl ArchiveContext {
                     class_index: class,
                     source,
                 });
-                (Some(object), Some(class), true)
+                ObjectPointer::New {
+                    object_index: object,
+                    class_index: class,
+                }
             }
         };
         *reader = trial;
-        Ok(ArchiveObjectHeader {
-            object_index,
-            class_index,
-            is_new,
-            source,
-        })
+        Ok(ArchiveObjectHeader { pointer, source })
     }
 }
 

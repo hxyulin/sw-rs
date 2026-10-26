@@ -62,8 +62,8 @@ fn audit(
         expected: &str,
     ) -> Result<sw_rs::ArchiveObjectHeader, Box<dyn std::error::Error>> {
         let header = map.read_object(cursor)?;
-        if !header.is_new
-            || !matches!(header.class_index.and_then(|i|map.entry(i)),Some(ArchiveEntry::Class {name,schema:1,..}) if name==expected)
+        if !header.is_new()
+            || !matches!(header.class_index().and_then(|i|map.entry(i)),Some(ArchiveEntry::Class {name,schema:1,..}) if name==expected)
         {
             return Err("unexpected class/schema or object backreference".into());
         }

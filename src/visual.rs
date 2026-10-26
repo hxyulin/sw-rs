@@ -384,12 +384,11 @@ fn state_key(
                 .filter_map(|prefix| key.value.strip_prefix(prefix))
                 .filter(|name| !name.is_empty())
                 .collect();
-            (matches.len() == 1).then(|| {
-                (
-                    configuration.name.clone(),
-                    (*matches.first().unwrap()).to_owned(),
-                )
-            })
+            let mut matches = matches.into_iter();
+            match (matches.next(), matches.next()) {
+                (Some(display), None) => Some((configuration.name.clone(), display.to_owned())),
+                _ => None,
+            }
         })
         .collect::<Vec<_>>();
     let (configuration, display_state) = match candidates.as_slice() {
@@ -504,7 +503,7 @@ pub(crate) fn parse(
                 .iter()
                 .rev()
                 .find(|c| c.name == "visStateVisualPropertiesAttribute_c");
-            let valid_attribute = attribute.is_some_and(|c| {
+            let attribute = attribute.filter(|c| {
                 matches!(
                     &bytes[c.content.start..c.content.end],
                     [1, 0, 0, 0] | [1, 0, 0, 0, 0, 0]
@@ -513,7 +512,7 @@ pub(crate) fn parse(
             if kind == "part"
                 && supported_root
                 && part_chain
-                && valid_attribute
+                && let Some(attribute) = attribute
                 && let Some(state) = &state
             {
                 out.bindings.push(AppearanceBinding {
@@ -523,7 +522,7 @@ pub(crate) fn parse(
                     display_state: state.display_state.clone(),
                     appearance_index: Some(appearance_index),
                     reference: format!("visual-property@{}", class.content.start),
-                    source: source(stream, attribute.unwrap().content.start),
+                    source: source(stream, attribute.content.start),
                 });
             } else {
                 out.unresolved_bindings.push(UnresolvedVisualBinding {

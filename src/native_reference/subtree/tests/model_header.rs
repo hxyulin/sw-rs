@@ -69,7 +69,7 @@ fn model_header_prefix_uses_real_serialization_order_and_retains_the_unread_tail
                 NativeModelHeaderProfile::DirectArrays,
             )
             .unwrap();
-        assert_eq!(root.header.object_index, Some(2));
+        assert_eq!(root.header.object_index(), Some(2));
         assert_eq!(cursor.position(), prefix_end);
         assert_eq!(reader.archive().entries().len(), 20);
         let root = &reader.objects()[&2];
@@ -92,12 +92,12 @@ fn model_header_prefix_uses_real_serialization_order_and_retains_the_unread_tail
             external_objects,
             ..
         } = header.as_ref();
-        assert_eq!(string_arrays[0].header.class_index, Some(3));
-        assert_eq!(string_arrays[1].header.class_index, Some(3));
-        assert_eq!(string_arrays[1].header.object_index, Some(5));
-        assert_eq!(logs.header.object_index, Some(7));
+        assert_eq!(string_arrays[0].header.class_index(), Some(3));
+        assert_eq!(string_arrays[1].header.class_index(), Some(3));
+        assert_eq!(string_arrays[1].header.object_index(), Some(5));
+        assert_eq!(logs.header.object_index(), Some(7));
         assert_eq!(raw_before_external, &[0x11223344, 0xaabbccdd]);
-        assert_eq!(external_objects.header.object_index, Some(15));
+        assert_eq!(external_objects.header.object_index(), Some(15));
         assert!(
             matches!(reader.archive().entry(3), Some(ArchiveEntry::Class {schema: 0, name, ..}) if name == "su_CStringArray")
         );
@@ -116,9 +116,9 @@ fn model_header_prefix_uses_real_serialization_order_and_retains_the_unread_tail
         else {
             panic!()
         };
-        assert_eq!(stamps[0].header.object_index, Some(11));
-        assert!(!stamps[0].header.is_new);
-        assert_eq!(stamps[1].header.object_index, Some(13));
+        assert_eq!(stamps[0].header.object_index(), Some(11));
+        assert!(!stamps[0].header.is_new());
+        assert_eq!(stamps[1].header.object_index(), Some(13));
         assert_eq!(*raw_word, 227);
         assert_eq!(label.value, "a saved name");
         let NativeSubtreePayload::Stamp { raw_prefix, label } = &reader.objects()[&13].payload
@@ -132,15 +132,15 @@ fn model_header_prefix_uses_real_serialization_order_and_retains_the_unread_tail
             panic!()
         };
         assert_eq!(
-            records[0].header.object_index,
-            records[1].header.object_index
+            records[0].header.object_index(),
+            records[1].header.object_index()
         );
-        assert!(!records[1].header.is_new);
+        assert!(!records[1].header.is_new());
         let saved = serde_json::to_value(reader.objects()).unwrap();
         let later = reader
             .read_external_object(&mut BinaryReader::new(&[17, 0]), "Later")
             .unwrap();
-        assert!(!later.header.is_new);
+        assert!(!later.header.is_new());
         assert_eq!(later.source_stream, "Later");
         assert_eq!(
             reader.objects()[&17].source_stream,
@@ -308,11 +308,11 @@ fn model_header_preserves_nulls_and_complete_string_array_backreferences() {
         external_objects,
         ..
     } = header.as_ref();
-    assert_eq!(string_arrays[0].header.object_index, Some(4));
-    assert_eq!(string_arrays[1].header.object_index, Some(4));
-    assert!(!string_arrays[1].header.is_new);
-    assert_eq!(logs.header.object_index, None);
-    assert_eq!(external_objects.header.object_index, None);
+    assert_eq!(string_arrays[0].header.object_index(), Some(4));
+    assert_eq!(string_arrays[1].header.object_index(), Some(4));
+    assert!(!string_arrays[1].header.is_new());
+    assert_eq!(logs.header.object_index(), None);
+    assert_eq!(external_objects.header.object_index(), None);
 }
 
 #[test]
@@ -419,8 +419,11 @@ fn complete_model_header_checks_optional_blocks_and_supports_root_backreferences
             );
             assert_eq!(tail.span.offset + tail.span.length, end);
             assert_eq!(tail.raw_before_reference, 0x01020304);
-            assert_eq!(tail.following_external_object.header.object_index, Some(17));
-            assert!(!tail.following_external_object.header.is_new);
+            assert_eq!(
+                tail.following_external_object.header.object_index(),
+                Some(17)
+            );
+            assert!(!tail.following_external_object.header.is_new());
             assert_eq!(tail.raw_scalar_block, (0..42_u8).collect::<Vec<_>>());
             assert_eq!(tail.raw_optional_prefix, [123, 456, u32::from(optional)]);
             assert_eq!(tail.raw_optional_block, optional.then(|| vec![0xff; 80]));
@@ -442,8 +445,8 @@ fn complete_model_header_checks_optional_blocks_and_supports_root_backreferences
             let root = reader
                 .read_model_header(&mut cursor, "Later", NativeModelHeaderProfile::DirectArrays)
                 .unwrap();
-            assert_eq!(root.header.object_index, Some(2));
-            assert!(!root.header.is_new);
+            assert_eq!(root.header.object_index(), Some(2));
+            assert!(!root.header.is_new());
             assert_eq!(cursor.position(), bytes.len());
             // A prefix read may reference a complete header, without downgrading it.
             reader
@@ -681,7 +684,7 @@ fn complete_leading_headers_preserve_extensions_and_exact_following_object_bound
                 profile,
             )
             .unwrap();
-        assert!(!reused.header.is_new);
+        assert!(!reused.header.is_new());
         assert_eq!(cursor.position(), bytes.len());
         let other = if profile == NativeModelHeaderTailProfile::Extension32 {
             NativeModelHeaderTailProfile::Extension64

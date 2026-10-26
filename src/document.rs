@@ -153,12 +153,18 @@ fn build_streams(
     } else {
         "part"
     };
-    let custom = xml::properties(get("docProps/custom.xml"), false);
+    let custom = xml::properties(
+        get("docProps/custom.xml"),
+        xml::PropertySections::UserDefined,
+    );
     let mut global = custom.clone();
     for (k, v) in xml::core(get("docProps/core.xml")) {
         global.entry(k).or_insert(v);
     }
-    let info = xml::properties(get("docProps/ISolidWorksInformation.xml"), true);
+    let info = xml::properties(
+        get("docProps/ISolidWorksInformation.xml"),
+        xml::PropertySections::All,
+    );
     let manager = if streams.contains_key("Contents/CMgrHdr2") {
         get("Contents/CMgrHdr2")
     } else {
@@ -210,7 +216,7 @@ fn build_streams(
             let mut properties = custom.clone();
             properties.extend(xml::properties(
                 get(&format!("docProps/Config-{index}-Properties.xml")),
-                false,
+                xml::PropertySections::UserDefined,
             ));
             if name.is_empty() {
                 name = properties.get("Configuration").cloned().unwrap_or_default();

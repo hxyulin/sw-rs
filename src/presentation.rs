@@ -411,9 +411,10 @@ impl PresentationData {
                 _ => return CachedPropertyResolution::Unresolved { layer },
             }
         }
-        match indices.len() {
-            1 => CachedPropertyResolution::Resolved {
-                appearance_index: *indices.first().expect("one index"),
+        let mut indices = indices.into_iter();
+        match (indices.next(), indices.next()) {
+            (Some(appearance_index), None) => CachedPropertyResolution::Resolved {
+                appearance_index,
                 layer,
             },
             _ => CachedPropertyResolution::Ambiguous { layer },

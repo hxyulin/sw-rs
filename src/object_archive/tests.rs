@@ -22,23 +22,23 @@ fn mixed_class_object_slots_preserve_reuse_null_and_cyclic_references() {
     let mut map = ArchiveContext::new();
     let root = map.read_object(&mut reader).unwrap();
     assert_eq!(
-        (root.class_index, root.object_index, root.is_new),
+        (root.class_index(), root.object_index(), root.is_new()),
         (Some(1), Some(2), true)
     );
     assert_eq!(map.read_class(&mut reader).unwrap(), 3);
     let next = map.read_object(&mut reader).unwrap();
     assert_eq!(
-        (next.class_index, next.object_index, next.is_new),
+        (next.class_index(), next.object_index(), next.is_new()),
         (Some(1), Some(4), true)
     );
     let cycle = map.read_object(&mut reader).unwrap();
     assert_eq!(
-        (cycle.class_index, cycle.object_index, cycle.is_new),
+        (cycle.class_index(), cycle.object_index(), cycle.is_new()),
         (Some(1), Some(2), false)
     );
     let null = map.read_object(&mut reader).unwrap();
     assert_eq!(
-        (null.class_index, null.object_index, null.is_new),
+        (null.class_index(), null.object_index(), null.is_new()),
         (None, None, false)
     );
     assert_eq!(map.entries().len(), 4);
@@ -54,9 +54,12 @@ fn configuration_headers_use_class_slot_three_not_declaration_ordinal() {
     map.read_object(&mut reader).unwrap();
     let first = map.read_object(&mut reader).unwrap();
     let second = map.read_object(&mut reader).unwrap();
-    assert_eq!((first.class_index, first.object_index), (Some(3), Some(4)));
     assert_eq!(
-        (second.class_index, second.object_index),
+        (first.class_index(), first.object_index()),
+        (Some(3), Some(4))
+    );
+    assert_eq!(
+        (second.class_index(), second.object_index()),
         (Some(3), Some(5))
     );
     assert!(
@@ -78,20 +81,20 @@ fn wide_indexes_and_external_objects_use_the_same_map() {
     let mut reader = BinaryReader::new(&bytes);
     let first = map.read_object(&mut reader).unwrap();
     assert_eq!(
-        (first.class_index, first.object_index),
+        (first.class_index(), first.object_index()),
         (Some(0x7fff), Some(0x8000))
     );
     let next = map.read_object(&mut reader).unwrap();
     assert_eq!(
-        (next.class_index, next.object_index),
+        (next.class_index(), next.object_index()),
         (Some(0x7fff), Some(0x8001))
     );
     let reference = map.read_object(&mut reader).unwrap();
-    assert_eq!(reference.object_index, Some(0x8000));
-    assert!(!reference.is_new);
+    assert_eq!(reference.object_index(), Some(0x8000));
+    assert!(!reference.is_new());
     let external = map.read_object(&mut reader).unwrap();
-    assert_eq!(external.object_index, Some(1));
-    assert_eq!(external.class_index, None);
+    assert_eq!(external.object_index(), Some(1));
+    assert_eq!(external.class_index(), None);
 }
 #[test]
 fn failures_leave_cursor_and_map_unchanged_without_resynchronizing() {
@@ -146,4 +149,23 @@ fn context_reset_and_explicit_class_headers_do_not_create_object_slots() {
     let mut fresh = ArchiveContext::new();
     let mut reader = BinaryReader::new(&reuse);
     assert!(fresh.read_class(&mut reader).is_err());
+}
+
+#[test]
+fn checked_header_states_preserve_serialized_fields_and_order() {
+    let mut map = ArchiveContext::new();
+    map.map_external_object().unwrap();
+    let mut bytes = class("Node", 1);
+    bytes.extend([3, 0, 0, 0, 1, 0]);
+    let mut reader = BinaryReader::new(&bytes);
+    for expected in [
+        r#"{"object_index":3,"class_index":2,"is_new":true,"source":{"offset":0,"length":10}}"#,
+        r#"{"object_index":3,"class_index":2,"is_new":false,"source":{"offset":10,"length":2}}"#,
+        r#"{"object_index":null,"class_index":null,"is_new":false,"source":{"offset":12,"length":2}}"#,
+        r#"{"object_index":1,"class_index":null,"is_new":false,"source":{"offset":14,"length":2}}"#,
+    ] {
+        let header = map.read_object(&mut reader).unwrap();
+        assert_eq!(serde_json::to_string(&header).unwrap(), expected);
+    }
+    assert!(reader.remaining().is_empty());
 }

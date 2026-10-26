@@ -31,7 +31,7 @@ fn selects_only_the_unique_layout_that_consumes_a_complete_header_and_eof() {
         assert_eq!(result.status, NativeModelHeaderStatus::Decoded);
         let decoding = result.decoding.unwrap();
         assert_eq!(decoding.layout, layout);
-        assert_eq!(decoding.root.header.object_index, Some(2));
+        assert_eq!(decoding.root.header.object_index(), Some(2));
         assert_eq!(decoding.archive.len(), 2);
         assert_eq!(decoding.objects.len(), 1);
         assert!(decoding.objects[&2].complete_payload);

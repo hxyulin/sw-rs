@@ -545,13 +545,13 @@ impl NativeSubtreeReader {
         }
         self.pointers += 1;
         let header = self.archive.read_object(cursor)?;
-        let Some(index) = header.object_index else {
+        let Some(index) = header.object_index() else {
             return Ok(NativeArchivePointer {
                 source_stream: source.into(),
                 header,
             });
         };
-        let class_name = match header.class_index.and_then(|i| self.archive.entry(i)) {
+        let class_name = match header.class_index().and_then(|i| self.archive.entry(i)) {
             Some(ArchiveEntry::Class { name, schema, .. })
                 if *schema == role.schema() && role.accepts(name) =>
             {
@@ -564,7 +564,7 @@ impl NativeSubtreeReader {
                 ));
             }
         };
-        if !header.is_new {
+        if !header.is_new() {
             if !self
                 .objects
                 .get(&index)
@@ -749,13 +749,11 @@ impl NativeSubtreeReader {
                 let at = cursor.position();
                 let raw_header_byte = cursor.take(1).map(|bytes| bytes[0]);
                 let raw_prefix_word = cursor.u16();
-                if !matches!(raw_header_byte, Some(2 | 3 | 5))
-                    || !matches!(raw_prefix_word, Some(0 | 0x0100))
-                {
+                let (Some(raw_header_byte @ (2 | 3 | 5)), Some(raw_prefix_word @ (0 | 0x0100))) =
+                    (raw_header_byte, raw_prefix_word)
+                else {
                     return Err(error(at, "unsupported external-object scalar prefix"));
-                }
-                let raw_header_byte = raw_header_byte.expect("checked supported scalar byte");
-                let raw_prefix_word = raw_prefix_word.expect("checked supported prefix word");
+                };
                 let raw_header_word = words::<1>(cursor)?[0];
                 let count = match self.profile {
                     NativeExternalObjectProfile::TwoStrings => 2,

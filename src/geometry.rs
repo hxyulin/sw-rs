@@ -81,10 +81,11 @@ pub fn geometry_with_limits(
         ));
     }
     let mut container = Container::parse(bytes, limits)?;
-    let name = carrier_name(&container)?;
+    let (name, data) = display_carrier(container.streams.iter_mut())?;
+    let name = name.clone();
     // The consuming convenience API can release unrelated decoded streams before
     // mesh allocation. Shared readers retain them intentionally for further access.
-    let data = std::mem::take(container.streams.get_mut(&name).expect("selected carrier"));
+    let data = std::mem::take(data);
     let doc = document::build(container, filename);
     from_display(&data, name, &doc, crate::inventory::hash(bytes))
 }
@@ -100,26 +101,23 @@ pub(crate) fn from_decoded(
         ));
     }
 
-    let name = carrier_name(container)?;
-    from_display(&container.streams[&name], name.clone(), doc, source_hash)
+    let (name, data) = display_carrier(container.streams.iter())?;
+    from_display(data, name.clone(), doc, source_hash)
 }
-fn carrier_name(container: &Container) -> Result<String, ParseError> {
-    let carriers: Vec<_> = container
-        .streams
-        .keys()
-        .filter(|name| name.rsplit('/').next() == Some("DisplayLists"))
-        .cloned()
-        .collect();
-    if carriers.is_empty() {
-        return Err(ParseError("Part has no DisplayLists carrier".into()));
-    }
-    if carriers.len() != 1 {
+fn display_carrier<'a, T>(
+    streams: impl Iterator<Item = (&'a String, T)>,
+) -> Result<(&'a String, T), ParseError> {
+    let mut carriers = streams.filter(|(name, _)| name.rsplit('/').next() == Some("DisplayLists"));
+    let first = carriers
+        .next()
+        .ok_or_else(|| ParseError("Part has no DisplayLists carrier".into()))?;
+    let count = 1 + carriers.count();
+    if count != 1 {
         return Err(ParseError(format!(
-            "ambiguous Part DisplayLists carriers: found {}",
-            carriers.len()
+            "ambiguous Part DisplayLists carriers: found {count}"
         )));
     }
-    Ok(carriers[0].clone())
+    Ok(first)
 }
 fn from_display(
     data: &[u8],

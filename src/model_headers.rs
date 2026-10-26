@@ -189,7 +189,7 @@ fn inspect_stream(
             Ok(root) => {
                 let valid_root = root
                     .header
-                    .object_index
+                    .object_index()
                     .and_then(|slot| reader.objects().get(&slot))
                     .is_some_and(|object| {
                         object.complete_payload

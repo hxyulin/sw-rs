@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- Make `ArchiveObjectHeader` pointer state read-only. Replace direct access to
+  `object_index`, `class_index` and `is_new` with methods of the same names.
+  Headers come from `ArchiveContext::read_object`; their JSON fields stay unchanged.
+
 - Add an optional native RXUI workbench using the default system theme, with a
   file picker, document search, virtual occurrence tree, property inspector and
   depth-tested wgpu viewport. Support background parsing, saved configurations,

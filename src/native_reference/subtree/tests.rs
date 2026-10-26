@@ -116,7 +116,7 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
             .read_reference_array_prefix(&mut cursor, "Features")
             .unwrap();
         assert_eq!(cursor.position(), edge.len());
-        assert_eq!(root.header.object_index, Some(2));
+        assert_eq!(root.header.object_index(), Some(2));
         assert_eq!(reader.archive().entries().len(), 20);
         assert!(!reader.objects()[&2].complete_payload);
         assert_eq!(
@@ -129,14 +129,14 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
             panic!()
         };
         assert_eq!(records.len(), 4);
-        assert_eq!(records[3].header.object_index, None);
+        assert_eq!(records[3].header.object_index(), None);
         let NativeSubtreePayload::Surface {
             nested, raw_tail, ..
         } = &reader.objects()[&16].payload
         else {
             panic!()
         };
-        assert_eq!(nested.as_ref().unwrap().header.object_index, Some(19));
+        assert_eq!(nested.as_ref().unwrap().header.object_index(), Some(19));
         assert_eq!(raw_tail, &[123]);
         let NativeSubtreePayload::FeatureReference {
             external_object, ..
@@ -144,8 +144,8 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
         else {
             panic!()
         };
-        assert_eq!(external_object.header.object_index, Some(8));
-        assert!(!external_object.header.is_new);
+        assert_eq!(external_object.header.object_index(), Some(8));
+        assert!(!external_object.header.is_new());
         let before = serde_json::to_value(&reader.objects()[&8]).unwrap();
         let face = face(profile);
         let mut cursor = BinaryReader::new(&face);
@@ -153,7 +153,7 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
             .read_reference_array_prefix(&mut cursor, "Mates")
             .unwrap();
         assert_eq!(cursor.position(), face.len());
-        assert_eq!(root.header.object_index, Some(22));
+        assert_eq!(root.header.object_index(), Some(22));
         assert_eq!(reader.archive().entries().len(), 26);
         assert_eq!(serde_json::to_value(&reader.objects()[&8]).unwrap(), before);
         let NativeSubtreePayload::ReferenceArrayPrefix { records, .. } =
@@ -161,8 +161,8 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
         else {
             panic!()
         };
-        assert_eq!(records[0].header.object_index, Some(4));
-        assert!(!records[0].header.is_new);
+        assert_eq!(records[0].header.object_index(), Some(4));
+        assert!(!records[0].header.is_new());
         assert_eq!(records[0].source_stream, "Mates");
         assert_eq!(reader.objects()[&4].source_stream, "Features");
         let NativeSubtreePayload::ExternalObject {
@@ -174,9 +174,9 @@ fn array_prefixes_reuse_classes_objects_and_handles_at_authored_serialization_po
         else {
             panic!()
         };
-        assert_eq!(handles[0].header.object_index, Some(10));
-        assert_eq!(handles[1].header.object_index, Some(11));
-        assert!(handles.iter().all(|p| !p.header.is_new));
+        assert_eq!(handles[0].header.object_index(), Some(10));
+        assert_eq!(handles[1].header.object_index(), Some(11));
+        assert!(handles.iter().all(|p| !p.header.is_new()));
         assert_eq!(
             raw_before_configuration.len(),
             match profile {
@@ -354,8 +354,8 @@ fn wide_class_and_object_tags_use_the_supplied_archive_without_guessing_slots() 
     let mut reader = NativeSubtreeReader::new(archive, profile);
     let mut cursor = BinaryReader::new(&bytes);
     let first = reader.read_external_object(&mut cursor, "first").unwrap();
-    assert_eq!(first.header.class_index, Some(32767));
-    assert_eq!(first.header.object_index, Some(32768));
+    assert_eq!(first.header.class_index(), Some(32767));
+    assert_eq!(first.header.object_index(), Some(32768));
     assert_eq!(cursor.position(), bytes.len());
     let mut next = Vec::new();
     tag(&mut next, 0x7fff);
@@ -370,16 +370,16 @@ fn wide_class_and_object_tags_use_the_supplied_archive_without_guessing_slots() 
     let root = reader
         .read_external_object(&mut BinaryReader::new(&next), "second")
         .unwrap();
-    assert_eq!(root.header.object_index, Some(32771));
-    assert!(root.header.is_new);
+    assert_eq!(root.header.object_index(), Some(32771));
+    assert!(root.header.is_new());
     let mut backref = Vec::new();
     tag(&mut backref, 0x7fff);
     words(&mut backref, &[32768]);
     let root = reader
         .read_external_object(&mut BinaryReader::new(&backref), "third")
         .unwrap();
-    assert_eq!(root.header.object_index, Some(32768));
-    assert!(!root.header.is_new);
+    assert_eq!(root.header.object_index(), Some(32768));
+    assert!(!root.header.is_new());
     assert_eq!(reader.objects().len(), 4);
 }
 
@@ -457,7 +457,7 @@ fn enclosing_decoders_share_the_map_and_record_handles_before_later_reuse() {
     let handle = reader
         .read_string_handle(&mut cursor, "Configuration")
         .unwrap();
-    assert_eq!(handle.header.object_index, Some(4));
+    assert_eq!(handle.header.object_index(), Some(4));
     assert_eq!(cursor.position(), configuration.len());
     // An authored, explicit external-object mapping in the enclosing call sequence.
     assert_eq!(reader.archive_mut().map_external_object().unwrap(), 5);
@@ -469,14 +469,14 @@ fn enclosing_decoders_share_the_map_and_record_handles_before_later_reuse() {
     let root = reader
         .read_external_object(&mut BinaryReader::new(&external), "Later")
         .unwrap();
-    assert_eq!(root.header.object_index, Some(7));
+    assert_eq!(root.header.object_index(), Some(7));
     let NativeSubtreePayload::ExternalObject { handles, .. } = &reader.objects()[&7].payload else {
         panic!()
     };
     assert!(
         handles
             .iter()
-            .all(|handle| handle.header.object_index == Some(4) && !handle.header.is_new)
+            .all(|handle| handle.header.object_index() == Some(4) && !handle.header.is_new())
     );
     assert_eq!(reader.objects()[&4].source_stream, "Configuration");
     assert_eq!(reader.objects().len(), 2);
@@ -541,10 +541,10 @@ fn extended_surface_fields_and_recursive_pattern_have_exact_boundaries() {
         else {
             panic!()
         };
-        assert_eq!(feature_reference.header.object_index, Some(6));
+        assert_eq!(feature_reference.header.object_index(), Some(6));
         assert_eq!(raw_tail, &expected);
         assert_eq!(
-            nested.as_ref().map(|p| p.header.object_index),
+            nested.as_ref().map(|p| p.header.object_index()),
             if slot == 12 { Some(Some(13)) } else { None }
         );
     }
@@ -552,8 +552,8 @@ fn extended_surface_fields_and_recursive_pattern_have_exact_boundaries() {
     else {
         panic!()
     };
-    assert_eq!(records[4].header.object_index, Some(12));
-    assert!(!records[4].header.is_new);
+    assert_eq!(records[4].header.object_index(), Some(12));
+    assert!(!records[4].header.is_new());
     // Each leaf's definition ends exactly at the following class header.
     for (slot, following) in [
         (4, "moFromSktEnt3IntSurfIdRep_c"),
@@ -684,8 +684,8 @@ fn three_string_short_tail_keeps_feature_words_and_following_array_boundary() {
         panic!()
     };
     assert_eq!(raw_words, &[31, 0x6ab0b9b9]);
-    assert_eq!(external_object.header.object_index, Some(8));
-    assert!(!external_object.header.is_new);
+    assert_eq!(external_object.header.object_index(), Some(8));
+    assert!(!external_object.header.is_new());
     // Array roots still exclude the enclosing fields consumed explicitly above.
     assert!(!reader.objects()[&2].complete_payload);
     assert!(!reader.objects()[&12].complete_payload);
@@ -779,8 +779,8 @@ fn complete_faces_preserve_sequential_map_and_allow_complete_root_backreferences
         let backref = reader
             .read_face_reference(&mut cursor, "Later", tail)
             .unwrap();
-        assert_eq!(backref.header.object_index, Some(2));
-        assert!(!backref.header.is_new);
+        assert_eq!(backref.header.object_index(), Some(2));
+        assert!(!backref.header.is_new());
         assert_eq!(cursor.position(), bytes.len());
         assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
         let wrong_profile = match tail {
@@ -924,8 +924,8 @@ fn complete_edges_preserve_sibling_boundaries_and_completed_root_backreferences(
         };
         assert_eq!(*profile, tail);
         assert_eq!(raw_header[3], 512);
-        assert_eq!(records[0].header.object_index, Some(4));
-        assert!(!records[0].header.is_new);
+        assert_eq!(records[0].header.object_index(), Some(4));
+        assert!(!records[0].header.is_new());
         assert_eq!(
             raw_tail,
             if tail == NativeEdgeReferenceProfile::TwoWords {
@@ -938,8 +938,8 @@ fn complete_edges_preserve_sibling_boundaries_and_completed_root_backreferences(
         let backref = reader
             .read_edge_reference(&mut cursor, "Mates", tail)
             .unwrap();
-        assert_eq!(backref.header.object_index, Some(2));
-        assert!(!backref.header.is_new);
+        assert_eq!(backref.header.object_index(), Some(2));
+        assert!(!backref.header.is_new());
         assert_eq!(cursor.position(), bytes.len());
         assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
         let wrong = if tail == NativeEdgeReferenceProfile::TwoWords {
