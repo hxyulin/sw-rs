@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+- Add an optional native RXUI workbench using the default system theme, with a
+  file picker, document search, virtual occurrence tree, property inspector and
+  depth-tested wgpu viewport. Support background parsing, saved configurations,
+  hidden occurrences, standard views, orbit, pan and zoom without a browser.
+
+- Move the viewer to the published RXUI 0.1 and rxui-draw crates, replacing
+  pinned Git dependencies. Update ZIP to 9.1 and refresh both Cargo lockfiles.
+  The viewer now requires Rust 1.98.1 or newer.
+
 - Support external-reference byte 5 and prefix word 0x0100, retaining both raw.
   Add the three-string 17-byte scalar profile and direct-array 28-/32-byte
   extensions. Complete model-header reports now uniquely decode all 358 streams

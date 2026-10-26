@@ -49,11 +49,17 @@ assembly composition is not silently hidden inside the core geometry function.
 
 ## Viewer application
 
-The separate `viewer/` package pins RXUI/Astrelis and has its own lockfile.
+The separate `viewer/` package uses published RXUI 0.1 and rxui-draw releases
+with its own lockfile.
 `project.rs` resolves uploaded documents, follows saved rename mappings and
 embedded ownership, traverses occurrences and collects missing/unsupported nodes.
 `appearance.rs` turns explicit saved evidence into approximate rendering presets.
 `web.rs` exposes the worker-facing scene/model boundary.
+
+The optional `sw-viewer` binary hosts `native.rs` with RXUI's default system
+theme. It uses the same `Project` traversal on background workers. Its custom
+viewport renders a depth-tested wgpu texture, then draws it through RXUI; camera
+changes reuse GPU geometry. This native UI can be developed without the browser.
 
 In `viewer/web/`, the worker owns synchronous Rust parsing and caches. `main.js`
 coordinates imports, chooser/search/tree/source-inspector DOM overlays and RXUI

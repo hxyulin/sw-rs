@@ -85,20 +85,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output = std::path::Path::new(&args[2]);
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
+        let name = entry.name()?.into_owned();
         if ![".sldprt", ".sldasm"]
             .iter()
-            .any(|ext| entry.name().to_ascii_lowercase().ends_with(ext))
+            .any(|ext| name.to_ascii_lowercase().ends_with(ext))
         {
             continue;
         }
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes)?;
-        inspect(
-            entry.name(),
-            &bytes,
-            output,
-            args.iter().any(|s| s == "--dump"),
-        );
+        inspect(&name, &bytes, output, args.iter().any(|s| s == "--dump"));
     }
     Ok(())
 }

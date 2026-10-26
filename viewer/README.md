@@ -2,7 +2,19 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # SW Explorer
 
-A local RXUI/WebAssembly viewer for SolidWorks files and ZIP/TAR/TAR.GZ projects.
+A local RXUI viewer for SolidWorks files and ZIP/TAR/TAR.GZ projects, with
+native and browser hosts.
+
+Run the native workbench with the default system theme:
+
+```sh
+cargo run --manifest-path viewer/Cargo.toml --features native --bin sw-viewer
+# Optionally append: -- /path/to/model.SLDPRT
+```
+
+It has a native file picker, document search, occurrence tree, model viewport and
+property inspector. Drag to orbit, Shift-drag or right-drag to pan, and scroll to
+zoom. Native development needs no browser, Node or WebAssembly build.
 
 [Open the app](https://hxyulin.github.io/sw-rs/) · [Viewer guide](../docs/viewer.md) · [Build and test](../docs/development.md)
 

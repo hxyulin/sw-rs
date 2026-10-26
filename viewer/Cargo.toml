@@ -6,19 +6,33 @@ resolver = "3"
 name = "sw-viewer"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98.1"
 license = "MIT AND Apache-2.0 AND OFL-1.1"
 publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
+[features]
+native = ["dep:rxui"]
+[[bin]]
+name = "sw-viewer"
+path = "src/main.rs"
+required-features = ["native"]
 [dependencies]
 sw-rs = { path = "..", features = ["archive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-rxui = { git = "https://github.com/hxyulin/rxui", rev = "14ec844a76dacf88231d0260bbe0f0713fa7f195", default-features = false, features = ["rendering"] }
+rxui = { version = "0.1", default-features = false, features = ["rendering"] }
+# rxui-draw 0.1 retains uploads in a Send callback. This host uses non-atomic
+# WASM; wgpu only enables these Send/Sync implementations without atomics.
+wgpu = { version = "30.0.1", default-features = false, features = ["fragile-send-sync-non-atomic-wasm"] }
 wasm-bindgen = "0.2.129"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rxui = { version = "0.1", optional = true, default-features = false, features = ["native", "native-dialogs"] }
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+pollster = "1"
 [profile.release]
 opt-level = 2
 [lints.rust]

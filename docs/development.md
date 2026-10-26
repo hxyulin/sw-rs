@@ -4,13 +4,29 @@
 
 ## Prerequisites
 
-Use Rust stable with rustfmt, Clippy and `wasm32-unknown-unknown`; Python 3 for
+Use Rust stable (1.98.1 or newer for the viewer) with rustfmt, Clippy and
+`wasm32-unknown-unknown`; Python 3 for
 synthetic fixtures/local serving; Node 22+ and npm for docs/browser tests.
 Prefer `mbx` for compiling commands when available; replace it with `cargo`
 otherwise. Keep the root and viewer Cargo lockfiles. They are separate packages.
 Install `wasm-bindgen-cli` matching the lockfile of the package being built.
 
+The viewer uses published RXUI 0.1 crates. Its browser target enables wgpu's
+`fragile-send-sync-non-atomic-wasm` feature for rxui-draw's upload-completion
+callback. This build uses non-atomic WASM; an atomic/threaded build needs a
+drawing backend that supports it.
+
 ## Checks
+
+For native UI development, run the app directly. Its optional native host uses
+RXUI's system theme and an embedded wgpu viewport:
+
+```sh
+cargo run --manifest-path viewer/Cargo.toml --features native --bin sw-viewer -- /path/to/model.SLDPRT
+cargo test --manifest-path viewer/Cargo.toml --features native --locked
+# GPU layout/rendering and interaction check, on a machine with a native adapter:
+cargo test --manifest-path viewer/Cargo.toml --features native --bin sw-viewer --locked -- --ignored
+```
 
 ```sh
 cargo fmt --check

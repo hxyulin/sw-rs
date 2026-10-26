@@ -1,6 +1,32 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
-# SW Explorer — RXUI web viewer
+# SW Explorer
+
+## Native workbench
+
+```sh
+cargo run --manifest-path viewer/Cargo.toml --features native --bin sw-viewer
+# Open a file directly:
+cargo run --manifest-path viewer/Cargo.toml --features native --bin sw-viewer -- /path/to/model.SLDPRT
+```
+
+The native host uses RXUI's default system theme, typography, controls, text input
+and virtual occurrence tree. Documents sit on the left, a depth-tested wgpu model
+viewport in the center, and saved properties and diagnostics on the right.
+Opening and parsing run on background workers. The file picker accepts individual
+native documents and ZIP/TAR/TAR.GZ projects. Documents and configurations can be
+changed without reopening the project. Tree selection shows occurrence details;
+it does not yet highlight geometry.
+
+Drag to orbit, Shift-drag or right-drag to pan, and scroll to zoom. Front, Top,
+Right, Isometric and Fit control the camera. Show hidden includes saved hidden
+occurrences. Material colors uses saved preset swatches with simple lighting;
+Diagnostic colors uses the path palette. This native viewport does not yet have
+the browser's procedural material shaders, wireframe or source-inspection dialog.
+The native workbench needs Rust 1.98.1 or newer and a graphics adapter, with no
+Node, browser or WebAssembly build. The browser host remains available below.
+
+## Browser host
 
 Live app: **https://hxyulin.github.io/sw-rs/**
 
@@ -8,7 +34,8 @@ Source: https://github.com/hxyulin/sw-rs
 
 A local-first browser viewer for native SolidWorks documents in ZIP, TAR and
 TAR.GZ/TGZ archives, or an individual SLDPRT/SLDASM/SLDDRW file. RXUI draws the
-browser and inspector through WebGPU. An app-owned WebGL 2 viewport renders
+browser and inspector through WebGPU using the published RXUI 0.1 and rxui-draw
+crates. An app-owned WebGL 2 viewport renders
 Rust-decoded meshes; there is no Bevy, winit, server-side parser or CAD SDK.
 
 Uploaded bytes stay in a module worker in this browser. The static server serves
@@ -19,7 +46,7 @@ Float32Array buffers, rather than JSON coordinate arrays.
 
 ## Build and run
 
-Prerequisites: stable Rust with `wasm32-unknown-unknown`, Python 3, and a
+Prerequisites: Rust 1.98.1 or newer with `wasm32-unknown-unknown`, Python 3, and a
 `wasm-bindgen` CLI matching the version in `Cargo.lock` (currently 0.2.129).
 Compilation uses mbx when available, otherwise Cargo. No npm build is required.
 

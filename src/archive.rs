@@ -143,7 +143,10 @@ impl FileSet {
                 if member.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
                     return Err(error("archive links are unsupported"));
                 }
-                let name = member.name().to_owned();
+                let name = member
+                    .name()
+                    .map_err(|e| error(format!("invalid ZIP member name: {e}")))?
+                    .into_owned();
                 let size = member.size();
                 let dir = member.is_dir();
                 loader.add(&name, size, dir, &mut member)?;

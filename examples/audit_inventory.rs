@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        let name = entry.name().to_owned();
+        let name = entry.name()?.into_owned();
         let lower = name.to_ascii_lowercase();
         if ![".sldprt", ".sldasm", ".slddrw"]
             .iter()

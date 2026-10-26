@@ -4,7 +4,7 @@
 use crate::project::{Project, Scene};
 use rxui::{
     Modifiers, PointerEvent, UiPainter,
-    astrelis::{FrameError, GraphicsContext, RenderTarget, SurfaceOptions, wgpu},
+    drawing::{FrameError, GraphicsContext, RenderTarget, SurfaceOptions, wgpu},
     prelude::*,
 };
 use std::time::Duration;
@@ -132,7 +132,7 @@ impl WebApp {
         )
         .await
         .map_err(error)?;
-        let mut painter = UiPainter::new(&graphics);
+        let mut painter = UiPainter::with_graphics(&graphics);
         painter
             .fonts_mut()
             .load_font(include_bytes!("../assets/SourceSans3-Regular.otf"))
