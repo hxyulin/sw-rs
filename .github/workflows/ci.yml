@@ -2,6 +2,9 @@
 # Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 name: Rust
 on: [push, pull_request]
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -13,11 +16,28 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+      - name: Restore Rust build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-rust-check-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-rust-check-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-
+            ${{ runner.os }}-rust-check-v1-
+      - name: Restore WASM bindings tool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: ${{ runner.os }}-wasm-bindgen-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm-bindgen-v1-
       - run: cargo fmt --check
       - run: cargo test --all-features --locked
       - run: cargo clippy --all-targets --all-features --locked -- -D warnings
       - run: cargo build --lib --target wasm32-unknown-unknown --features wasm --locked
-      - run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
+      - run: sh scripts/install-wasm-bindgen.sh
       - run: wasm-bindgen --target nodejs --out-dir pkg/node target/wasm32-unknown-unknown/debug/sw_rs.wasm
       - run: node scripts/wasm-smoke.cjs
   viewer:
@@ -36,11 +56,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - name: Restore Rust build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            viewer/target
+          key: ${{ runner.os }}-rust-viewer-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-rust-viewer-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-
+            ${{ runner.os }}-rust-viewer-v1-
+      - name: Restore WASM bindings tool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: ${{ runner.os }}-wasm-bindgen-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm-bindgen-v1-
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo clippy --lib --target wasm32-unknown-unknown --locked -- -D warnings
-      - run: cargo install wasm-bindgen-cli --version "$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)" --locked
+      - run: sh ../scripts/install-wasm-bindgen.sh
       - run: sh build.sh
       - run: npm ci
       - run: google-chrome --version
@@ -61,6 +100,17 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Restore Rust build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-rust-docs-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-rust-docs-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-
+            ${{ runner.os }}-rust-docs-v1-
       - run: npm ci
       - run: npm run docs:build
       - name: Build Rust API reference

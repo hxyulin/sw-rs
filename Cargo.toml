@@ -31,3 +31,8 @@ wasm-bindgen = { version = "0.2", optional = true }
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"
+
+# Faster execution for large synthetic fixtures; retain test assertions and checks.
+[profile.test-fast]
+inherits = "test"
+opt-level = 2

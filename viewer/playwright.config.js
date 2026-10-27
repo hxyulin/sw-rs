@@ -5,10 +5,16 @@ export default defineConfig({
   testDir: "./tests",
   projects: [
     { name: "chromium", use: { deviceScaleFactor: 1 } },
-    { name: "chromium-hidpi", use: { deviceScaleFactor: 2 } },
+    {
+      name: "chromium-hidpi",
+      // Repeat scale-sensitive rendering and interaction checks at 2x.
+      grep: process.env.SW_VIEWER_FULL_MATRIX === "1" ? undefined : /@hidpi/,
+      use: { deviceScaleFactor: 2 },
+    },
   ],
   timeout: 60000,
-  workers: 1,
+  // Limit software-GPU contention while overlapping page startup.
+  workers: 2,
   maxFailures: process.env.CI ? 1 : 0,
   use: {
     channel: process.env.SW_VIEWER_BROWSER_CHANNEL || undefined,

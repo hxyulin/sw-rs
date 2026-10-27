@@ -7,8 +7,8 @@
 Use Rust stable (1.98.1 or newer for the viewer) with rustfmt, Clippy and
 `wasm32-unknown-unknown`; Python 3 for
 synthetic fixtures/local serving; Node 22+ and npm for docs/browser tests.
-Prefer `mbx` for compiling commands when available; replace it with `cargo`
-otherwise. Keep the root and viewer Cargo lockfiles. They are separate packages.
+The commands below use `cargo`. Where `mbx` is installed, run Cargo commands
+through `mbx` instead. Keep the root and viewer Cargo lockfiles. They are separate packages.
 Install `wasm-bindgen-cli` matching the lockfile of the package being built.
 
 The viewer uses published RXUI 0.1 crates. Its browser target enables wgpu's
@@ -31,11 +31,11 @@ cargo test --manifest-path viewer/Cargo.toml --features native --bin sw-viewer -
 ```sh
 cargo fmt --check
 cargo fmt --manifest-path viewer/Cargo.toml --check
-mbx test --all-features --locked
-mbx clippy --all-targets --all-features --locked -- -D warnings
-mbx test --manifest-path viewer/Cargo.toml --locked
-mbx clippy --manifest-path viewer/Cargo.toml --all-targets --locked -- -D warnings
-mbx clippy --manifest-path viewer/Cargo.toml --lib --target wasm32-unknown-unknown --locked -- -D warnings
+cargo test --all-features --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --manifest-path viewer/Cargo.toml --locked
+cargo clippy --manifest-path viewer/Cargo.toml --all-targets --locked -- -D warnings
+cargo clippy --manifest-path viewer/Cargo.toml --lib --target wasm32-unknown-unknown --locked -- -D warnings
 ```
 
 For the core WASM boundary, build and run the Node smoke test as described in
@@ -49,10 +49,83 @@ npx playwright install chromium
 npm test
 ```
 
-The documented Playwright workflow runs real viewer tests in Chromium at 1x and
-2x display scales, using software graphics. `SW_VIEWER_BROWSER_CHANNEL=chrome`
-selects installed Chrome, as in CI. `SW_VIEWER_ARCHIVE=/absolute/private.zip`
-enables optional private-CAD tests; no CAD is bundled or uploaded.
+### Run a subset
+
+The core integration suite uses one binary with subsystem modules: `archive`,
+`binary`, `geometry`, `inventory`, `material`, `ole` and `parser`. Cargo filters
+match these module paths as well as unit-test module paths:
+
+```sh
+cargo test --all-features --locked --test integration parser::
+cargo test --all-features --locked material::
+cargo test --all-features --locked --lib native_reference::subtree::
+cargo test --manifest-path viewer/Cargo.toml --locked project::traversal_tests::
+cargo test --all-features --locked -- --list
+```
+
+Use `--test integration` to select public API tests, `--lib` for unit tests, or
+`--doc` for documentation examples. Archive tests require `--features archive`
+or `--all-features`. The former individual `--test parser`, `--test ole`, etc.
+targets are now modules in `--test integration`.
+
+Both packages offer an optimized test profile. It inherits the test profile,
+keeps debug assertions and overflow checks, and uses optimization level 2:
+
+```sh
+cargo test --profile test-fast --all-features --locked
+cargo test --profile test-fast --manifest-path viewer/Cargo.toml --locked
+```
+
+The default remains unoptimized for shorter edit/build cycles. The optimized
+profile has its own build artifacts and an initial compilation cost. Use it
+for repeated runs of large synthetic fixtures.
+
+Browser tests are grouped into `appearance`, `camera`, `imports`, `inventory`,
+`navigation` and `private` spec files and describe blocks:
+
+```sh
+npm --prefix viewer test -- imports --project chromium
+npm --prefix viewer test -- --grep 'navigation'
+npm --prefix viewer test -- --project chromium-hidpi
+npm --prefix viewer test -- --list
+SW_VIEWER_FULL_MATRIX=1 npm --prefix viewer test
+```
+
+The default matrix runs every case at 1x display scale and the `@hidpi` rendering
+and interaction cases at 2x, using software graphics. This covers camera views,
+canvas clicks, the file chooser, keyboard focus, resize, Unicode search,
+occurrence-tree interaction and appearance switching at both scales. Archive
+formats and metadata checks run at 1x. `SW_VIEWER_FULL_MATRIX=1` restores every
+case at both scales. The default uses two browser workers. Override it with
+`npm --prefix viewer test -- --workers=1` on constrained machines. Four workers
+were slower in local measurements.
+
+`SW_VIEWER_BROWSER_CHANNEL=chrome` selects installed Chrome, as in CI.
+`SW_VIEWER_ARCHIVE=/absolute/private.zip` enables the optional private-CAD test;
+no CAD is bundled or uploaded. Add `SW_VIEWER_FULL_MATRIX=1` to run it at both
+scales.
+
+## Test runtime
+
+Local measurements on 2026-10-27 used the existing release WASM build and warm
+Rust build artifacts. Browser numbers include runner startup and teardown.
+These are individual runs except where noted, not CI performance guarantees.
+
+| Suite | Configuration | Time |
+| --- | --- | --- |
+| Browser, 66 cases | Original full matrix, one worker | 65.8 s |
+| Browser, 42 cases | Selected 2x coverage, one worker | 37.0 s |
+| Browser, 42 cases | Selected 2x coverage, two workers (two runs) | 21.1–22.2 s |
+| Browser, 66 cases | Full matrix, two workers | 31.8 s |
+| Browser, 42 cases | Selected 2x coverage, four workers | 42.3 s |
+| Core integration, 65 tests | Default profile, execution only | 1.89 s |
+| Core integration, 65 tests | `test-fast`, execution only | 0.10 s |
+| Viewer model, 18 tests | Default profile, execution only | 0.81 s |
+| Viewer model, 18 tests | `test-fast`, execution only | 0.05 s |
+
+The first `test-fast` builds took 13.8 s for the core and 10.9 s for the viewer
+with mixed cache hits. Keep that compilation cost in mind when choosing a
+profile for one run.
 
 ## Documentation site
 
@@ -95,6 +168,17 @@ The Rust workflow independently checks the core, viewer and documentation on
 pushes and pull requests. Both package formatting checks are explicit. Docs CI
 builds rustdoc and VitePress; the viewer job compiles WASM and runs browser tests.
 Documentation failures block publishing just as viewer failures do.
+
+CI caches Cargo registry sources and build outputs separately for each job.
+Build cache keys include the lockfiles and commit, with restore prefixes for
+previous commits and dependency sets. This refreshes the cache after source
+changes while allowing Cargo to rebuild anything invalidated by a compiler or
+lockfile change. npm caches package downloads for both browser and docs jobs.
+
+The core, viewer and Pages jobs share a cached `wasm-bindgen` executable.
+`scripts/install-wasm-bindgen.sh` checks its version against the current
+package's lockfile and installs it only when missing or mismatched. Superseded
+Rust workflow runs are cancelled for the same ref. Pages deployments stay queued.
 
 The Pages workflow builds the app/book/API into one artifact, checks links,
 runs viewer and documentation browser tests and deploys through GitHub Actions. It preserves the

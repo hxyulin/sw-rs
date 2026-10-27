@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+- Group public API tests into filterable subsystem modules and browser tests into
+  feature suites. Run the complete browser suite at 1x and selected rendering and
+  interaction checks at 2x; `SW_VIEWER_FULL_MATRIX=1` restores the full matrix.
+  Add an opt-in `test-fast` Cargo profile to both packages.
+- Run browser tests with two workers and separate screenshot paths. Cache CI
+  Cargo builds, npm downloads and the version-checked WASM bindings tool; cancel
+  superseded Rust workflow runs.
+
 - Make `ArchiveObjectHeader` pointer state read-only. Replace direct access to
   `object_index`, `class_index` and `is_new` with methods of the same names.
   Headers come from `ArchiveContext::read_object`; their JSON fields stay unchanged.

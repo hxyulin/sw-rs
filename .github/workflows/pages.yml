@@ -27,22 +27,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            viewer/package-lock.json
       - uses: actions/configure-pages@v5
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/wasm-bindgen
             viewer/target
             target
-          key: ${{ runner.os }}-viewer-pages-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}
+          key: ${{ runner.os }}-viewer-pages-v2-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-viewer-pages-v2-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}-
+            ${{ runner.os }}-viewer-pages-v2-
+      - name: Restore WASM bindings tool
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: ${{ runner.os }}-wasm-bindgen-v1-${{ hashFiles('Cargo.lock', 'viewer/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm-bindgen-v1-
       - name: Install matching WASM bindings tool
-        run: |
-          bindings_version=$(sed -n '/name = "wasm-bindgen"/{n;s/version = "\(.*\)"/\1/p;}' Cargo.lock)
-          if [ "$(wasm-bindgen --version 2>/dev/null || true)" != "wasm-bindgen $bindings_version" ]; then
-            cargo install wasm-bindgen-cli --version "$bindings_version" --locked --force
-          fi
+        run: sh ../scripts/install-wasm-bindgen.sh
       - name: Test parser-backed viewer model
         run: cargo test --locked
       - name: Build static viewer
