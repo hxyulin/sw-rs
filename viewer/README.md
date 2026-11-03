@@ -29,7 +29,8 @@ Open <http://127.0.0.1:8097/>. Uploads stay in the browser. The
 materials, coordinate controls, source inspection and known limitations.
 
 The browser can render supplied PNG, JPEG, BMP and WebP textures for supported
-cache-table or unambiguous document appearances. Put the image files in the same archive as the
-CAD. Placement uses a labelled approximate Part-local projection; SolidWorks UVs
+cache-table or unambiguous document appearances. Saved mode also applies decoded
+cache or uniquely scoped document RGB without requiring a physical material
+assignment. Put the image files in the same archive as the CAD. Placement uses a labelled approximate Part-local projection; SolidWorks UVs
 and face-level texture assignments remain unsupported. Missing or ambiguous images
 keep the existing shading. Desktop bitmap rendering is not implemented.

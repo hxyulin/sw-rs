@@ -121,9 +121,9 @@ Named reference frames are not applied silently to model coordinates.
 
 The inspector exposes saved properties, raw cached mass tokens and diagnostics.
 All coordinates preserve the source assembly frame, with metre/millimetre
-conversion matching the audited display carrier. **Material colors** uses
-approximate viewer presets based on explicit saved material assignments; **Diagnostic colors** uses the path palette. These presets do not recover
-original CAD appearances. The inspector reports explicit saved material
+conversion matching the audited display carrier. **Material colors** uses supported
+saved visual colors and approximate material presets; **Diagnostic colors** uses
+the path palette. Shading remains approximate. The inspector reports explicit saved material
 assignments for the opened configuration and preserves raw density tokens with
 unverified units labelled; material names do not establish recovered appearance.
 
@@ -132,13 +132,22 @@ brushing; carbon fiber uses a filtered woven-bundle pattern. Other assigned
 materials use their saved RGB swatch, when available, with a generic surface
 preset. Patterns use dominant-plane projection of placed world coordinates in
 metres, so they stay fixed while orbiting; original UVs, machining direction and
-fiber orientation are not recovered. Unassigned Parts keep diagnostic colors.
+fiber orientation are not recovered. Parts without a supported saved visual color
+or a physical-material preset keep diagnostic colors.
 Presets and draw ranges are carried separately from geometry, and repeated
 occurrences with the same saved preset share its record. No SolidWorks shader
 library, external texture download or proprietary material asset is required.
 
-**Appearance style** defaults to **Saved material appearance**, using saved shader
-identities, swatches and valid diffuse/specularity/emission coefficients. Known
+**Appearance style** defaults to **Saved material appearance**. Supported exact
+cache-table RGB takes precedence over a uniquely scoped document RGB, then the
+physical material's saved shader or preset. Saved visual colors work without a
+physical material assignment and use a generic opaque surface. Conflicting,
+unresolved and sentinel cache records block document-color fallback. Multiple
+display states are not guessed. This does not recover native face/body/occurrence
+ownership, optical response or transparent rendering.
+
+The physical material fallback uses saved shader identities, swatches and valid
+diffuse/specularity/emission coefficients. Known
 styles include satin aluminum, polished/matte metals, plastic, glass-fiber and
 carbon-fiber patterns. PhotoWorks shader names/paths take precedence over generic
 realtime hints. **Material family presets** instead uses the physical material

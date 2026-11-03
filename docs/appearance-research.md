@@ -199,3 +199,88 @@ experiments are present in the local collection; their native object relationshi
 are not promoted to decoded ownership by these texture comparisons. The face-split
 fixture, independent display-state appearances, portable reference resolution and
 visual rendering remain unverified.
+
+## EGA renderer fallback audit, 2026-11-03
+
+The browser bitmap implementation was committed at `a0b8de6` before this audit.
+The initial main assembly selection renders 3,380,059 triangles in 615 Part
+occurrences, using 171 distinct external Part/configuration pairs. The audit's
+occurrence-weighted valid source-triangle counts sum to the exact rendered total.
+Hidden, suppressed, missing and unsupported occurrences are excluded from these
+ratios. The report stays ignored at `local-assets/ega-appearance-audit.json`.
+
+At the audited commit, the renderer built ordinary material batches through
+`appearance::for_configuration`, which requires a resolved physical-material
+assignment. Outside the bitmap path it did not select the parser's cache or
+document visual RGB records. A Part without a physical assignment therefore received
+a path-palette color even when a scoped visual color is already decoded.
+
+| Audited physical-material selection | Rendered occurrences | Triangles |
+| --- | ---: | ---: |
+| Resolved configuration assignment | 226 | 467,912 |
+| Material tree parsed, no assignment for selected configuration | 363 | 2,240,090 |
+| No material-tree stream | 26 | 672,057 |
+
+All 14 distinct source Parts in the last group were checked independently: their
+`swXmlContents/MATERIALTREE` stream is absent. Of the 66 source Parts without a
+configuration assignment, 53 have no material definitions; 13 retain definitions
+but only blank configuration/reference records. A raw XML inspection confirms an
+empty `<configuration>` record in a representative definition-bearing Part.
+No fallback occurrence in this selection has a nonempty physical reference that
+fails to resolve. Unassigned definitions must not become physical assignments.
+
+| Decoded visual evidence on diagnostic-color triangles | Triangles |
+| --- | ---: |
+| Unique highest-layer cache RGB | 751,966 |
+| Unique scoped document RGB, with no cache property | 2,040,997 |
+| No usable scoped RGB | 119,184 |
+
+Thus 2,792,963 of the 2,912,147 diagnostic-color triangles (95.9%) already have
+source-backed RGB evidence that ordinary shading did not consume. This was a
+renderer selection gap, not evidence that those Parts need a physical material
+invented or a texture downloaded. Many source colors are white or gray. These
+counts establish usable saved defaults/cache colors, not complete effective
+SolidWorks appearance ownership or verified original shading.
+
+Saved-appearance mode now selects a supported cache color for its exact table,
+otherwise a uniquely scoped document default, before falling back to the existing
+physical-material preset and diagnostic palette. Ambiguous, unresolved and
+sentinel cache records block document-color fallback. Cache colors and bitmap
+selection share one selector, and batch merging includes the saved color.
+Material-family mode continues to use only physical assignments. Shader response,
+unsupported appearance scopes and the remaining 119,184 triangles need separate
+handling.
+
+The updated scene contains 3,260,875 triangles with selected saved RGB, and 119,184
+triangles still using diagnostic colors. All remaining triangles belong to four
+occurrences of one Part. That Part has a decoded blue-gray definition, one named
+configuration/display-state key, two unscoped state keys, and no proven document
+appearance binding. Applying its lone color would guess ownership. The raw
+records remain available for further class-graph decoding.
+
+### Installed material definitions
+
+Read-only inspection of the installed graphics library found 631 `.p2m` files,
+plus image and scene resources. Three sampled `.p2m` files are small text parameter
+lists: the generic color shader, satin-finish aluminum, and black low-gloss
+plastic. They expose shader identifiers, colors, roughness, reflectivity, diffuse
+and specular factors, transparency and optional bump references. The generic
+color definition has no bitmap reference. The sampled aluminum and plastic files
+have empty bump references. These shaders therefore do not require bitmap pixels
+for a basic surface approximation.
+
+These definitions can inform a future explicit shader adapter or user-supplied
+library import. They do not recover native entity ownership, missing display-state
+links, UVs or renderer equivalence. No installed material files or images are
+bundled with the project. Captured files, inventory and model-specific evidence
+stay under ignored `local-assets/`.
+
+Reproduce with the exact assembly path from the caller's private archive:
+
+```sh
+cargo run --release --locked --manifest-path viewer/Cargo.toml --example audit_appearances -- ARCHIVE ASSEMBLY_PATH > REPORT.json
+```
+
+The report includes per-document names and references; keep it private. The tool
+counts only rendered external Parts, preserves repeated occurrences and reports
+embedded occurrences separately rather than inferring their source documents.

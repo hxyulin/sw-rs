@@ -160,6 +160,9 @@ with zipfile.ZipFile(OUT/'configuration-hierarchy.zip', 'w', zipfile.ZIP_DEFLATE
     archive.writestr('Base.SLDPRT', files['Base.SLDPRT'])
 
 (OUT/'native-appearance.SLDPRT').write_bytes(part([.18,.10,.02],material=True,visual=True))
+(OUT/'native-color-only.SLDPRT').write_bytes(part([.18,.10,.02],visual=True))
+(OUT/'document-color-only.SLDPRT').write_bytes(part([.18,.10,.02],extra_streams=[('ThirdPtyStore/VisualStates',native_visual_state())]))
+
 
 # Authored mate evidence: repeated names/occurrences, reused class and four-way width.
 def mate_record(class_name, name, identifier, references):

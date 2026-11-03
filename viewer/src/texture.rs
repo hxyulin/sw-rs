@@ -2,7 +2,7 @@
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 //! Supplied bitmap selection and approximate Part-local dominant-plane projection.
 use sw_rs::{
-    PresentationData, PresentationScope,
+    PresentationData,
     archive::{FileSet, Resolution},
 };
 
@@ -40,37 +40,6 @@ impl Projection {
     }
 }
 
-pub(crate) fn document_projection(
-    presentation: &PresentationData,
-    configuration: &str,
-    owner: &str,
-    files: &FileSet,
-) -> Result<Option<Projection>, String> {
-    let states: std::collections::BTreeSet<_> = presentation
-        .display_states
-        .iter()
-        .filter_map(|s| match (&s.configuration, &s.display_state) {
-            (PresentationScope::Named { name }, PresentationScope::Named { name: state })
-                if name == configuration =>
-            {
-                Some(state.as_str())
-            }
-            _ => None,
-        })
-        .collect();
-    // No active-state guess when multiple or unknown scopes are saved.
-    if states.len() != 1 {
-        return Ok(None);
-    }
-    let Some(native) = presentation
-        .document_appearance_for_state(configuration, states.first().copied().unwrap_or_default())
-        .and_then(|a| a.native.as_ref())
-    else {
-        return Ok(None);
-    };
-    native_projection(native, owner, files)
-}
-
 pub(crate) fn mesh_projection(
     presentation: &PresentationData,
     mesh: &sw_rs::Tessellation,
@@ -78,24 +47,11 @@ pub(crate) fn mesh_projection(
     owner: &str,
     files: &FileSet,
 ) -> Result<Option<Projection>, String> {
-    match presentation.cached_property(&mesh.source_stream, mesh.source_offset) {
-        sw_rs::CachedPropertyResolution::NotDecoded => {
-            document_projection(presentation, configuration, owner, files)
-        }
-        sw_rs::CachedPropertyResolution::Resolved {
-            appearance_index, ..
-        } => {
-            let Some(native) = presentation
-                .appearances
-                .get(appearance_index)
-                .and_then(|a| a.native.as_ref())
-            else {
-                return Ok(None);
-            };
-            native_projection(native, owner, files)
-        }
-        _ => Ok(None),
-    }
+    let Some(native) = crate::saved_appearance::mesh_native(presentation, mesh, configuration)
+    else {
+        return Ok(None);
+    };
+    native_projection(native, owner, files)
 }
 
 fn native_projection(

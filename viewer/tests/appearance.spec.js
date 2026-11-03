@@ -37,7 +37,7 @@ test.describe("appearance", () => {
     expect(scene.materials[0].saved_surface.metallic).toBe(0);
   });
 
-  test("native appearance catalog retains state scopes and cache properties without overriding renderer presets", async ({ page }) => {
+  test("native appearance colors override saved shading while retaining physical presets", async ({ page }) => {
     await page.addInitScript(() => {
       const NativeWorker = window.Worker;
       window.Worker = class extends NativeWorker {
@@ -72,7 +72,36 @@ test.describe("appearance", () => {
     expect(catalog.visual_diagnostics.some(d => d.code === "partial_visual_graph")).toBe(true);
     expect(scene.materials[0].family).toBe("aluminum");
     expect(scene.materials[0].saved_surface.name).toBe("black low gloss plastic");
+    expect(scene.batches[0].saved_color).toEqual([1,0,0]);
+    const pixels = () => page.locator("#scene").evaluate(canvas => canvas.toDataURL());
+    const saved = await pixels();
+    const style = page.getByRole("combobox", { name: "Appearance style", exact: true });
+    await style.selectOption("family");
+    expect(await pixels()).not.toBe(saved);
+    await style.selectOption("saved");
+    expect(await pixels()).toBe(saved);
   });
+  test("saved visual colors render without a physical assignment", { tag: "@hidpi" }, async ({ page }) => {
+    await ready(page);
+    const pixels = () => page.locator("#scene").evaluate(canvas => canvas.toDataURL());
+    for (const name of ["native-color-only.SLDPRT", "document-color-only.SLDPRT"]) {
+      await page.locator("#file").setInputFiles(path.join(fixtures,name));
+      await expect.poll(() => page.evaluate(() => window.viewer.busy)).toBe(false);
+      await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(12);
+      const saved = await pixels();
+      const style = page.getByRole("combobox", { name: "Appearance style", exact: true });
+      await style.selectOption("family");
+      const family = await pixels();
+      expect(family).not.toBe(saved);
+      await page.getByRole("button", { name: "Material colors", exact: true }).click();
+      expect(await pixels()).toBe(family);
+      await style.selectOption("saved");
+      expect(await pixels()).toBe(family);
+      await page.getByRole("button", { name: "Diagnostic colors", exact: true }).click();
+      expect(await pixels()).toBe(saved);
+    }
+  });
+
   test.beforeEach(async ({ page }) => {
     page.on("console", (message) => {
       if (message.type() === "error") console.error(message.text());

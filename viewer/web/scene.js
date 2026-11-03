@@ -415,7 +415,8 @@ export class SceneView {
       for (const batch of this.batches) {
         const index = batch.material_index;
         const material = Number.isSafeInteger(index) && index >= 0 ? this.materials[index] : null;
-        this.applyMaterial(material);
+        const savedColor = this.appearanceStyle === "saved" ? batch.saved_color : null;
+        this.applyMaterial(savedColor ? { base_color: savedColor, roughness: 0.6, metallic: 0, specularity: 0.5 } : material);
         const texture = this.appearanceStyle === "saved" && Number.isSafeInteger(batch.texture_index)
           ? this.textureImages[batch.texture_index] : null;
         gl.uniform1i(this.bitmapEnabled, texture ? 1 : 0);

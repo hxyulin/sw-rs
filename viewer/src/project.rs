@@ -12,15 +12,17 @@ use sw_rs::{
 const IDENTITY: [f64; 16] = [
     1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
 ];
-/// A contiguous range of triangle vertices sharing one saved material preset.
+/// A contiguous range of triangle vertices sharing a physical preset and supported saved appearance.
 #[derive(Debug, serde::Serialize)]
 pub struct MaterialBatch {
     /// Offset in the interleaved scene buffer, measured in vertices.
     pub first_vertex: usize,
     /// Number of vertices; always a multiple of three.
     pub vertex_count: usize,
-    /// Index into `Scene::materials`; absent means diagnostic colors only.
+    /// Index into `Scene::materials`; independent of saved visual colors.
     pub material_index: Option<usize>,
+    /// Supported saved RGB, using sRGB as a viewer convention.
+    pub saved_color: Option<[f32; 3]>,
     /// Supplied bitmap index; absent means no bitmap is applied.
     pub texture_index: Option<usize>,
 }
@@ -523,6 +525,9 @@ impl Project {
         });
         scene.hierarchy[node]["material_index"] = material_index.into();
         for mesh in &g.model.tessellations {
+            let saved_color = crate::saved_appearance::mesh_native(&g.presentation, mesh, name)
+                .and_then(|native| native.color_rgb)
+                .map(|rgb| rgb.map(|v| f32::from(v) / 255.));
             let projection = match crate::texture::mesh_projection(
                 &g.presentation,
                 mesh,
@@ -599,6 +604,7 @@ impl Project {
             if vertex_count > 0 {
                 if let Some(previous) = scene.batches.last_mut().filter(|b| {
                     b.material_index == material_index
+                        && b.saved_color == saved_color
                         && b.texture_index == texture_index
                         && b.first_vertex + b.vertex_count == first_vertex
                 }) {
@@ -608,6 +614,7 @@ impl Project {
                         first_vertex,
                         vertex_count,
                         material_index,
+                        saved_color,
                         texture_index,
                     });
                 }
@@ -811,6 +818,140 @@ mod traversal_tests {
         );
         p
     }
+    #[test]
+    fn saved_colors_follow_exact_cache_bindings_and_block_uncertain_document_fallbacks() {
+        use sw_rs::{
+            AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin,
+            AppearanceTarget, NativeAppearance, NativeString, PresentationScope,
+            PresentationSource, SavedDisplayState,
+        };
+        let mut project = fixture(vec![]);
+        let geometry = project
+            .geometry
+            .get_mut("part.SLDPRT")
+            .expect("fixture geometry")
+            .as_mut()
+            .expect("valid geometry");
+        let p = &mut geometry.presentation;
+        let source = PresentationSource {
+            stream: "synthetic".into(),
+            path: "property".into(),
+        };
+        let named = |name: &str| PresentationScope::Named { name: name.into() };
+        p.display_states.push(SavedDisplayState {
+            key: "<Default>_Only".into(),
+            configuration: named("Default"),
+            display_state: named("Only"),
+            source: source.clone(),
+        });
+        for color_rgb in [Some([0, 0, 255]), Some([255, 0, 0]), None] {
+            p.appearances.push(AppearanceDefinition {
+                origin: AppearanceOrigin::SavedAppearance,
+                swatch_rgb: None,
+                saved: None,
+                native: Some(NativeAppearance {
+                    packed_color: 0,
+                    color_rgb,
+                    flags: 0,
+                    secondary_color: 0,
+                    texture_reference: NativeString {
+                        value: String::new(),
+                        offset: 0,
+                    },
+                    material_name: NativeString {
+                        value: String::new(),
+                        offset: 0,
+                    },
+                    optical_values: None,
+                    optical_bits: Default::default(),
+                    prefix_end: 0,
+                    extension: None,
+                }),
+                source: source.clone(),
+            });
+        }
+        let binding = |layer, target, appearance_index| AppearanceBinding {
+            layer,
+            target,
+            appearance_index,
+            configuration: named("Default"),
+            display_state: named("Only"),
+            reference: String::new(),
+            source: source.clone(),
+        };
+        p.appearance_bindings.push(binding(
+            AppearanceLayer::Document,
+            AppearanceTarget::Document,
+            Some(0),
+        ));
+        let mesh = &geometry.model.tessellations[0];
+        let color = |p: &sw_rs::PresentationData, config| {
+            crate::saved_appearance::mesh_native(p, mesh, config).and_then(|a| a.color_rgb)
+        };
+        assert_eq!(
+            color(p, "Default"),
+            Some([0, 0, 255]),
+            "scoped document default without a physical material"
+        );
+        assert_eq!(color(p, "Other"), None, "configuration names are exact");
+        let cache_target = AppearanceTarget::Tessellation {
+            source_stream: "synthetic".into(),
+            source_offset: 0,
+        };
+        p.appearance_bindings.push(binding(
+            AppearanceLayer::CachedBody,
+            cache_target.clone(),
+            Some(0),
+        ));
+        p.appearance_bindings.push(binding(
+            AppearanceLayer::CachedFace,
+            cache_target.clone(),
+            Some(1),
+        ));
+        assert_eq!(
+            color(p, "Default"),
+            Some([255, 0, 0]),
+            "face cache outranks body and document colors"
+        );
+        p.appearance_bindings[2].appearance_index = Some(2);
+        assert_eq!(
+            color(p, "Default"),
+            None,
+            "a sentinel must not inherit a document color"
+        );
+        p.appearance_bindings[2].appearance_index = None;
+        assert_eq!(
+            color(p, "Default"),
+            None,
+            "an unresolved cache blocks document fallback"
+        );
+        p.appearance_bindings[2].appearance_index = Some(1);
+        p.appearance_bindings
+            .push(binding(AppearanceLayer::CachedFace, cache_target, Some(0)));
+        assert_eq!(
+            color(p, "Default"),
+            None,
+            "conflicting cache links block fallback"
+        );
+        p.appearance_bindings.truncate(1);
+        p.display_states.push(SavedDisplayState {
+            key: "<Default>_Other".into(),
+            configuration: named("Default"),
+            display_state: named("Other"),
+            source,
+        });
+        assert_eq!(
+            color(p, "Default"),
+            None,
+            "multiple display states must not be guessed"
+        );
+        let scene = project.scene("part.SLDPRT", 0, false);
+        assert!(
+            scene.materials.is_empty(),
+            "visual definitions do not create physical assignments"
+        );
+    }
+
     #[test]
     fn unavailable_configuration_never_falls_back_and_drawings_keep_metadata() {
         let mut p = fixture(vec![]);
