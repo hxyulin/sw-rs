@@ -548,3 +548,94 @@ fn provisional_mapping_keeps_offsets_sentinels_and_uninterpreted_values() {
     assert!(!data.coverage.texture_mappings_decoded);
     assert!(!data.coverage.appearance_bindings_decoded);
 }
+
+// Authored layout from controlled 2025 texture saves; no source CAD/path bytes.
+fn controlled_texture_extension(reference_flags: u16, selectors: [u32; 6]) -> Vec<u8> {
+    let mut standard = vec![];
+    extension_bytes(&mut standard);
+    let mut out = 1_u32.to_le_bytes().to_vec();
+    let mut values = [0_f64; 13];
+    values[..2].copy_from_slice(&[25., 18.867923736572266]);
+    values[12] = 330.;
+    out.extend(values.into_iter().flat_map(f64::to_le_bytes));
+    string(&mut out, "authored-grid.bmp");
+    out.extend(reference_flags.to_le_bytes());
+    out.extend(0_u32.to_le_bytes());
+    out.extend([0.02_f64, 0.0265].into_iter().flat_map(f64::to_le_bytes));
+    out.extend(selectors.into_iter().flat_map(u32::to_le_bytes));
+    string(&mut out, "");
+    out.extend([1_u32, 1, 33, 0].into_iter().flat_map(u32::to_le_bytes));
+    string(&mut out, "texture");
+    let mut cursor = Reader::at(&standard, 24).unwrap();
+    cursor.string().unwrap();
+    cursor.words::<4>().unwrap();
+    cursor.string().unwrap();
+    let mut tail = cursor.remaining().to_vec();
+    tail[0] = 3;
+    for (index, value) in [0.011_f32, 0.013, 0.017].into_iter().enumerate() {
+        let offset = 5 + (6 + index) * 4;
+        tail[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    out.extend(tail);
+    out
+}
+
+#[test]
+fn controlled_texture_profile_decodes_without_losing_reference_flags() {
+    let bytes = controlled_texture_extension(1, [0, 1, 0, 1, 0, 1]);
+    let mut reader = Reader::new(&bytes);
+    let parsed = extension(&mut reader).expect("controlled texture layout");
+    let block = parsed.legacy_texture_block.as_ref().unwrap();
+    assert_eq!(block.reference_flags, 1);
+    assert_eq!(block.selectors, [0, 1, 0, 1, 0, 1]);
+    assert_eq!(block.values[12], 330.);
+    assert_eq!(reader.position(), bytes.len());
+    assert!(parsed.texture_mapping_hypothesis().is_none());
+    for end in 0..bytes.len() {
+        assert!(
+            extension(&mut Reader::new(&bytes[..end])).is_none(),
+            "truncated at {end}"
+        );
+    }
+    // The two observed profiles are coupled, not independent accepted flag sets.
+    for (flag, selectors) in [
+        (0, [0, 1, 0, 1, 0, 1]),
+        (1, [0, 1, 1, 0, 1, 1]),
+        (2, [0, 1, 0, 1, 0, 1]),
+    ] {
+        assert!(
+            extension(&mut Reader::new(&controlled_texture_extension(
+                flag, selectors
+            )))
+            .is_none()
+        );
+    }
+}
+
+#[test]
+fn bitmap_parameters_keep_saved_units_and_reject_unverified_shader_profiles() {
+    let bytes = controlled_texture_extension(1, [0, 1, 0, 1, 0, 1]);
+    let mut parsed = extension(&mut Reader::new(&bytes)).unwrap();
+    let parameters = parsed.bitmap_texture_parameters().unwrap();
+    assert_eq!(
+        parameters.reciprocal_scale_per_metre,
+        [25., 18.867923736572266]
+    );
+    assert_eq!(parameters.stored_rotation_degrees, 330.);
+    assert_eq!(parameters.center_metres, [0.011, 0.013, 0.017]);
+    // A plausible later float group must not revive the contradicted hypothesis.
+    parsed.mapping_values = [0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 90., 1., -1., -1.];
+    assert!(parsed.texture_mapping_hypothesis().is_none());
+    parsed.shader_parameters.selectors[2] = 35;
+    parsed.shader_parameters.discriminator = 6;
+    assert!(parsed.bitmap_texture_parameters().is_some());
+    parsed.shader_parameters.discriminator = 3;
+    parsed.shader_parameters.selectors[2] = 34;
+    assert!(parsed.bitmap_texture_parameters().is_none());
+    parsed.shader_parameters.selectors[2] = 33;
+    parsed.shader_identifier.value = "other shader".into();
+    assert!(parsed.bitmap_texture_parameters().is_none());
+    parsed.shader_identifier.value = "texture".into();
+    parsed.shader_parameters.values[6] = f32::NAN;
+    assert!(parsed.bitmap_texture_parameters().is_none());
+}

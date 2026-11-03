@@ -164,3 +164,19 @@ a verified archive context; the five original face stops remain unresolved.
 5. Once those contracts are established, build a separate constraint adapter.
    Keep parsing independent of solving. Validate residuals against saved poses
    before considering kinematic joints or a general assembly solver.
+
+## Controlled-save check, 2026-11-03
+
+Eight authored assembly saves from SolidWorks 2025 SP5.0 (API revision 33.5.0)
+were inspected with `sw-dump mates` in this session. The unmated baseline and
+unchanged reopen/save control each report zero records and a saved count of zero.
+The six single-mate variants each report one record, matching the saved count,
+the expected explicit class family and two textual reference candidates:
+coincident, concentric, two distances and two angles. Reopened API evidence gives
+distances of 10/20 mm and angles of 30/60 degrees. The parser still does not read
+those numeric values or resolve the selected entities. Reference strings and a
+known numeric API value alone do not establish a native dimension-object layout.
+
+Per-file reports remain ignored under `local-assets/controlled-saves-2026-11-03/`.
+These checks confirm the existing header inventory on controlled examples; they
+do not promote endpoint, parameter or solver coverage.

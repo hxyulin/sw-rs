@@ -77,9 +77,9 @@ pub use surface::{
     SavedSurfaceReference, SurfaceIdentityResolution, SurfaceReferenceStatus,
 };
 pub use visual::{
-    NativeAppearance, NativeAppearanceExtension, NativeShaderParameters, NativeString,
-    NativeTextureBlock, NativeTextureMappingHypothesis, SavedDisplayState, UnresolvedVisualBinding,
-    VisualData, VisualDiagnostic,
+    NativeAppearance, NativeAppearanceExtension, NativeBitmapTextureParameters,
+    NativeShaderParameters, NativeString, NativeTextureBlock, NativeTextureMappingHypothesis,
+    SavedDisplayState, UnresolvedVisualBinding, VisualData, VisualDiagnostic,
 };
 pub use zlb::{ZlbChunk, ZlbStream, decode_zlb};
 

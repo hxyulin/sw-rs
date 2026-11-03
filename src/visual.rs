@@ -44,13 +44,17 @@ pub struct NativeAppearance {
     pub extension: Option<NativeAppearanceExtension>,
 }
 
-/// Raw legacy texture-block fields; projection and physical units remain unverified.
+/// Saved legacy texture-block fields. Supported profiles preserve all selectors;
+/// only the controlled bitmap profile has a limited parameter interpretation.
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeTextureBlock {
     /// Thirteen saved finite double values, retained in source order.
     pub values: [f64; 13],
     /// Exact reference framed inside this block, including blank values.
     pub reference: NativeString,
+    /// Saved word following the reference: zero in the prior profile, one in
+    /// controlled 2025 texture saves. No boolean meaning is assigned.
+    pub reference_flags: u16,
     /// Two additional finite doubles, without guessed scale/offset semantics.
     pub additional_values: [f64; 2],
     /// Six trailing selector words, retained without invented flag names.
@@ -58,7 +62,8 @@ pub struct NativeTextureBlock {
 }
 
 /// Source-backed fields in supported visual-property extensions.
-/// Mapping numbers remain raw: their axes, units and projection semantics are unverified.
+/// Raw mapping fields remain available alongside limited bitmap parameters.
+/// Complete projection semantics and entity ownership remain unverified.
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeAppearanceExtension {
     /// Conditional legacy texture block; distinct from the later mapping fields.
@@ -137,11 +142,66 @@ pub struct NativeTextureMappingHypothesis {
     pub verification_required: [&'static str; 3],
 }
 
+/// Source parameters verified against controlled 2025 bitmap-texture saves.
+/// These do not establish projection mode, UVs or effective entity ownership.
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeBitmapTextureParameters {
+    /// Saved reciprocal scales in inverse metres. In the tested mapping-type-4
+    /// saves these equal 1/Width and 1/Height. Other modes can couple API dimensions
+    /// to projection geometry; these are not universal API width/height values.
+    pub reciprocal_scale_per_metre: [f64; 2],
+    /// Saved rotation in degrees, not the API getter's radians. The controlled
+    /// 30-degree setter saves 330 here; the 0.47-degree setter saves about 359.53.
+    /// No handedness or universal angle normalization is assumed.
+    pub stored_rotation_degrees: f64,
+    /// Saved texture center in metres from shader values 6..9. Independent
+    /// translation and document-unit saves establish these fields for this profile;
+    /// an assembly-occurrence coordinate frame is not established.
+    pub center_metres: [f32; 3],
+}
+
 impl NativeAppearanceExtension {
+    /// Decode source parameters only for the controlled bitmap-texture profile.
+    /// Other shader/selector profiles return None. Raw fields remain available,
+    /// and this does not mark complete texture projection as decoded.
+    pub fn bitmap_texture_parameters(&self) -> Option<NativeBitmapTextureParameters> {
+        let block = self.legacy_texture_block.as_ref()?;
+        let shader = &self.shader_parameters;
+        if block.reference_flags != 1
+            || block.selectors != [0, 1, 0, 1, 0, 1]
+            || !matches!(shader.selectors, [1, 1, 33 | 35, 0])
+            || self.shader_identifier.value != "texture"
+            || !matches!(shader.discriminator, 3 | 6)
+        {
+            return None;
+        }
+        let reciprocal_scale_per_metre = [block.values[0], block.values[1]];
+        let stored_rotation_degrees = block.values[12];
+        let center_metres = [shader.values[6], shader.values[7], shader.values[8]];
+        if !reciprocal_scale_per_metre.iter().all(|v| v.is_finite())
+            || !stored_rotation_degrees.is_finite()
+            || !center_metres.iter().all(|v| v.is_finite())
+        {
+            return None;
+        }
+        Some(NativeBitmapTextureParameters {
+            reciprocal_scale_per_metre,
+            stored_rotation_degrees,
+            center_metres,
+        })
+    }
+
     /// Offer a provisional grouping only for finite, approximately orthonormal
     /// first/second vectors. This checks plausibility, not semantic correctness.
+    /// Texture-bearing extensions return None: controlled saves contradict this
+    /// grouping for that profile. Other profiles remain unverified hypotheses.
     /// Raw fields and `texture_mappings_decoded` remain authoritative/unchanged.
     pub fn texture_mapping_hypothesis(&self) -> Option<NativeTextureMappingHypothesis> {
+        // Controlled texture saves put their center and reciprocal dimensions in
+        // earlier blocks. The later fourteen floats cannot describe that mapping.
+        if self.legacy_texture_block.is_some() {
+            return None;
+        }
         let values = self.mapping_values;
         if !values.iter().all(|v| v.is_finite()) {
             return None;
@@ -256,17 +316,22 @@ fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
         1 => {
             let values = reader.doubles::<13>()?;
             let reference = reader.string()?;
-            if reader.take(2)? != [0, 0] || reader.u32()? != 0 {
+            let reference_flags = reader.u16()?;
+            if reader.u32()? != 0 {
                 return None;
             }
             let additional_values = reader.doubles::<2>()?;
             let selectors = reader.words::<6>()?;
-            if selectors != [0, 1, 1, 0, 1, 1] {
+            if !matches!(
+                (reference_flags, selectors),
+                (0, [0, 1, 1, 0, 1, 1]) | (1, [0, 1, 0, 1, 0, 1])
+            ) {
                 return None;
             }
             Some(NativeTextureBlock {
                 values,
                 reference,
+                reference_flags,
                 additional_values,
                 selectors,
             })

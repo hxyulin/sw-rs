@@ -95,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Some(serde_json::json!({
                         "appearance_index": index, "source": appearance.source,
                         "raw": extension, "hypothesis": extension.texture_mapping_hypothesis(),
+                        "bitmap_texture_parameters": extension.bitmap_texture_parameters(),
                     }))
                 })
                 .collect::<Vec<_>>()

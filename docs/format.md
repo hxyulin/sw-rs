@@ -70,6 +70,9 @@ Legacy binary property sets, full native object payload boundaries, feature hist
 and Parasolid topology, current body/face ownership, complete display-state and
 occurrence appearance overrides, verified texture projection, mate parameters
 and endpoints, custom coordinate systems and drawing rendering remain open.
-Controlled one-change SolidWorks saves are especially useful for appearance
-ownership and texture mapping; corpus-only hypotheses are labeled accordingly.
+Controlled one-change SolidWorks saves now establish limited bitmap-texture
+parameters and an additional extension layout; see the
+[controlled-save follow-up](appearance-research.md#controlled-bitmap-texture-saves-2026-11-03).
+Appearance ownership and complete projection remain open; corpus-only hypotheses
+are labeled accordingly.
 See the [coverage snapshot](parsing-coverage.md) for separate measured layers.

@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # Provisional native appearance interpretation
 
-This records the 2026-10-24 investigation without requiring a SolidWorks
-installation. Binary fields stay available as saved. Hypotheses are opt-in and
+This records the 2026-10-24 corpus investigation and the 2026-11-03 controlled-save
+follow-up below. Binary fields stay available as saved. Hypotheses are opt-in and
 carry `status: "provisional"`; they do not set decoding-coverage flags.
 
 ## Other implementations and public APIs
@@ -57,7 +57,7 @@ All 470 supported extensions have the same candidate vector/origin grouping:
 `0.008382`, `0.0254`, `0.00635`, `0.010922`, and `1`. Values such as `0.0254` and
 `0.00635` are consistent with metre representations of inch-based defaults, but
 this does not establish units. **No nondefault direction or origin was found in
-these supported records**, so their order, signs, or even their semantic identity
+these historical supported records**, so their order, signs, or even their semantic identity
 cannot be independently confirmed from this sample.
 
 The available map sources are STEP exports. A line-oriented scan for explicit
@@ -120,3 +120,82 @@ appearance definitions or prove that the saved file still owns the referenced fa
 Current rendering presets continue to work while these hypotheses remain
 available to future renderer adapters. No proprietary shader code or texture
 pixels are supplied by this work.
+
+## Controlled bitmap-texture saves, 2026-11-03
+
+A locally authored SolidWorks 2025 SP5.0 corpus (API revision 33.5.0) supplies
+34 textured Parts, split evenly between a block and cylinder. Each shape includes
+an unchanged reopen/save control, a material-reapplication control, setter-only
+negative controls and independent reapplication variants. Reopened API snapshots
+provide ground truth; filenames alone do not establish that an edit persisted.
+The complete local collection contains 80 native documents and 139 payload files.
+All 139 payload hashes and the enclosing ZIP hash were checked this session.
+Original CAD, appearance resources, paths and per-file evidence remain ignored
+under `local-assets/controlled-saves-2026-11-03/`.
+
+### Additional supported framing
+
+The previous reader recovered an appearance prefix from every textured Part but
+rejected all 34 extensions. The legacy block following the texture reference has
+a two-byte word and a zero u32. Support now retains that word as `reference_flags`
+and accepts only these observed word/selector pairs:
+
+| Reference word | Six trailing selectors |
+| --- | --- |
+| 0 | 0, 1, 1, 0, 1, 1 (previous profile) |
+| 1 | 0, 1, 0, 1, 0, 1 (controlled bitmap profile) |
+
+Mixed pairs and other values remain unsupported. This adds field framing, not a
+new claim of complete visual-object decoding. The full collection now yields 38
+extensions, including all 34 texture Parts, compared with three before this change.
+
+### Parameters established by the controlled saves
+
+`NativeAppearanceExtension::bitmap_texture_parameters()` exposes a limited
+source interpretation for the reference-word-one profile with shader `texture`,
+selector words `[1,1,33,0]` or `[1,1,35,0]`, and discriminator 3 or 6.
+Other profiles return None. Every field also remains available in its raw group.
+
+| Source field | Controlled observation | Exposed meaning |
+| --- | --- | --- |
+| Legacy doubles 0 and 1 | Width-only and height-only edits change 25 to approximately 14.084507 and 33.333332 to 18.867924 respectively | Reciprocal scales per metre |
+| Legacy double 12 | Setters 30 and 0.47 save approximately 330 and 359.53; reopened getters return radians | Stored degrees, without a universal handedness conversion |
+| Shader floats 6..9 | Center setter (0.011, 0.013, 0.017) changes this group in both shapes | Texture center in metres; assembly occurrence frame remains open |
+
+For 32 mapping-type-4 snapshots, reciprocals of the saved scales agree with the
+reopened API Width and Height. The two mapping-type-2 saves retain those same
+stored scales while API dimensions change with projection geometry. The API
+mapping enum is therefore not inferred from these scales or the shader mode.
+The accessor deliberately exposes reciprocal scales, not universal repeat sizes.
+All 34 center and circular rotation comparisons match the reopened evidence.
+These are measured source parameters, not generated UVs or verified rendering.
+
+The earlier fourteen-float hypothesis is contradicted for texture-bearing
+extensions: the center edit leaves its candidate origin unchanged, and dimension
+edits leave its candidate sizes at negative sentinels. The independent orthogonal
+direction edit also produces a first group that fails the proposed basis test.
+`texture_mapping_hypothesis()` now returns None whenever a legacy texture block is
+present. Its output for other profiles remains provisional. This investigation
+does not establish U/V ordering or projection semantics for those profiles.
+
+The separate unit-only fixture was previously reopened with unchanged API mapping
+values. It supports the use of system units but does not establish the native
+coordinate frame of nested occurrence textures. Complete texture coverage stays
+false, and no renderer or native face assignments change.
+
+### Reproduce the comparison
+
+```sh
+cargo run --locked --features archive --example inspect_appearances -- CORPUS.zip --hypotheses > REPORT.jsonl
+python3 scripts/audit-controlled-textures.py CORPUS.zip REPORT.jsonl
+```
+
+The script validates all payload hashes, joins the texture report to reopened API
+snapshots, and checks parameter agreement. It prints counts without exposing
+paths or CAD data. Authored synthetic tests cover the additional framing,
+truncation at every byte, unsupported combinations and semantic profile gates.
+Mates, display-state visibility, nested overrides and persistent-reference change
+experiments are present in the local collection; their native object relationships
+are not promoted to decoded ownership by these texture comparisons. The face-split
+fixture, independent display-state appearances, portable reference resolution and
+visual rendering remain unverified.
