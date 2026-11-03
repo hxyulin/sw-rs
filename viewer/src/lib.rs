@@ -5,6 +5,7 @@ pub mod appearance;
 #[cfg(any(target_arch = "wasm32", test))]
 mod material_info;
 pub mod project;
+pub mod texture;
 #[cfg(target_arch = "wasm32")]
 mod web;
 #[cfg(target_arch = "wasm32")]

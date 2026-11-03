@@ -55,7 +55,7 @@ def legacy_part(display):
     directory = (entry('Root Entry',5,child=1)+entry('Contents',1,child=2)+
                  entry('DisplayLists__ZLB',2,start=2,length=len(stream))+entry('',0))
     return bytes(header+directory+u32(*fat)+stream+bytes(sectors*512-len(stream)))
-def part(size, material=False, visual=False, extra_streams=(), legacy=False):
+def part(size, material=False, visual=False, extra_streams=(), legacy=False, cache_properties=b''):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
@@ -69,6 +69,7 @@ def part(size, material=False, visual=False, extra_streams=(), legacy=False):
     if visual:
         display += (b'\x33\x80'+visual_property([255,0,0],'Cached face')+
                     visual_class('uoBodyPropInfo_c')+b'\x33\x80'+visual_property([0,0,255],'Cached body'))
+    display += cache_properties
     streams = [('swXmlContents/COMPINSTANCETREE',info),('Contents/DisplayLists',display)]
     if visual: streams.append(('ThirdPtyStore/VisualStates',native_visual_state()))
     if material:
@@ -182,3 +183,36 @@ inspection_binary = visual_class('UnknownClass')+mfc_string('<img src=x onerror=
 (OUT/'inventory.SLDPRT').write_bytes(part([.18,.10,.02],extra_streams=[('swXmlContents/Features',inspection_xml),('swXmlContents/Unicode',b'\xff\xfe'+'<root>纹理😀</root>'.encode('utf-16le')),('Mystery/Unknown',inspection_binary),('Mystery/Many',b''.join(mfc_string(f'entry{i}') for i in range(180)))]))
 (OUT/'legacy.SLDPRT').write_bytes(b'\xd0\xcf\x11\xe0'+bytes(64))
 (OUT/'legacy-valid.SLDPRT').write_bytes(part([.18,.10,.02],legacy=True))
+
+# Authored bitmap appearance plus image. The projection remains a viewer convention.
+def bitmap_property():
+    block = u32(1)+struct.pack('<13d',25,100/3,*([0]*11))
+    block += visual_string('C:\\Fixture\\images\\grid.png')+struct.pack('<HI2d',1,0,.02,.015)+u32(0,1,0,1,0,1)
+    block += visual_string('')+u32(1,1,33,0)+visual_string('texture')
+    block += bytes([3])+u32(0xFFFFFF)+struct.pack('<10f',1,0,0,0,1,0,0,0,0,1)+u32(4)
+    block += struct.pack('<5f',0,0,1,1,.5)+u32(0,0,0)+visual_string('texture.p2m')+u32(0)+struct.pack('<2f',.4,1)+visual_string('')
+    block += struct.pack('<2f3I14f',.001,.005,0,0,0,0,1,0,0,0,1,0,0,0,1,90,1,-1,-1)+visual_string('')
+    return visual_property([255,255,255],'Bitmap default')+block
+
+def bitmap_state():
+    original=visual_property([34,68,102],'Saved native default')
+    return native_visual_state()[:-len(original)]+bitmap_property()
+
+def grid_png():
+    def chunk(name, data):return struct.pack('>I',len(data))+name+data+struct.pack('>I',zlib.crc32(name+data))
+    colors=[bytes([255,20,20]),bytes([20,255,20]),bytes([20,20,255]),bytes([255,255,255])]
+    rows=b''.join(b'\0'+b''.join(colors[(y//8)*2+x//8] for x in range(16)) for y in range(16))
+    return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>2I5B',16,16,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b'')
+bitmap_part=part([.04,.03,.02],extra_streams=[('ThirdPtyStore/VisualStates',bitmap_state())])
+for name,images in [('bitmap', [('images/grid.png',grid_png())]),('bitmap-missing',[]),
+                    ('bitmap-ambiguous',[('one/grid.png',grid_png()),('two/grid.png',grid_png())]),
+                    ('bitmap-corrupt',[('images/grid.png',b'not an image')])]:
+    with zipfile.ZipFile(OUT/(name+'.zip'),'w',zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('Block.SLDPRT',bitmap_part)
+        for path,data in images:archive.writestr(path,data)
+
+for name,properties in [('bitmap-cache',bitmap_property()),('bitmap-override',visual_property([255,0,0],'Cached override'))]:
+    with zipfile.ZipFile(OUT/(name+'.zip'),'w',zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('Block.SLDPRT',part([.04,.03,.02],cache_properties=b'\x33\x80'+properties,
+            extra_streams=[('ThirdPtyStore/VisualStates',bitmap_state())]))
+        archive.writestr('images/grid.png',grid_png())

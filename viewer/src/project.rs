@@ -21,11 +21,17 @@ pub struct MaterialBatch {
     pub vertex_count: usize,
     /// Index into `Scene::materials`; absent means diagnostic colors only.
     pub material_index: Option<usize>,
+    /// Supplied bitmap index; absent means no bitmap is applied.
+    pub texture_index: Option<usize>,
 }
 #[derive(Default)]
 pub struct Scene {
     /// Interleaved world positions (metres), face normals, diagnostic RGB.
     pub vertices: Vec<f32>,
+    /// Approximate Part-local UVs, two floats per scene vertex when needed.
+    pub texture_uvs: Vec<f32>,
+    /// Supplied images used by bitmap batches.
+    pub textures: Vec<crate::texture::BitmapTexture>,
     pub occurrences: usize,
     /// Unavailable referenced occurrences omitted while available siblings render.
     pub missing_references: usize,
@@ -505,9 +511,56 @@ impl Project {
             [0.73, 0.58, 0.72],
         ];
         let color = palette[hash as usize % palette.len()];
-        let first_vertex = scene.vertices.len() / 9;
         scene.occurrences += 1;
+        let material_index = appearance.map(|appearance| {
+            if let Some(index) = scene.materials.iter().position(|m| m == &appearance) {
+                index
+            } else {
+                let index = scene.materials.len();
+                scene.materials.push(appearance);
+                index
+            }
+        });
+        scene.hierarchy[node]["material_index"] = material_index.into();
         for mesh in &g.model.tessellations {
+            let projection = match crate::texture::mesh_projection(
+                &g.presentation,
+                mesh,
+                name,
+                path,
+                &self.files,
+            ) {
+                Ok(projection) => projection,
+                Err(message) => {
+                    if !scene.diagnostics.contains(&message) {
+                        scene.diagnostics.push(message);
+                    }
+                    None
+                }
+            };
+            let texture_index = projection.as_ref().map(|projection| {
+                if let Some(index) = scene.textures.iter().position(|t| t == &projection.image) {
+                    index
+                } else {
+                    let index = scene.textures.len();
+                    scene.textures.push(projection.image.clone());
+                    index
+                }
+            });
+            if projection.is_some()
+                && !scene
+                    .diagnostics
+                    .iter()
+                    .any(|d| d == "Bitmap placement uses approximate Part-local projection.")
+            {
+                scene
+                    .diagnostics
+                    .push("Bitmap placement uses approximate Part-local projection.".into());
+            }
+            let first_vertex = scene.vertices.len() / 9;
+            if projection.is_some() && scene.texture_uvs.is_empty() {
+                scene.texture_uvs.resize(first_vertex * 2, 0.);
+            }
             for triangle in &mesh.triangles {
                 let p = triangle.map(|i| point(pose, mesh.vertices[i as usize]));
                 let a = std::array::from_fn::<_, 3, _>(|i| p[1][i] - p[0][i]);
@@ -521,36 +574,43 @@ impl Project {
                 if length < 1e-20 || p.iter().flatten().any(|x| !x.is_finite()) {
                     continue;
                 }
-                for v in p {
+                let local = triangle.map(|i| mesh.vertices[i as usize]);
+                let a = std::array::from_fn::<_, 3, _>(|i| local[1][i] - local[0][i]);
+                let b = std::array::from_fn::<_, 3, _>(|i| local[2][i] - local[0][i]);
+                let local_normal = [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0],
+                ];
+                for (v, local) in p.into_iter().zip(local) {
+                    if projection.is_some() || !scene.texture_uvs.is_empty() {
+                        scene.texture_uvs.extend(
+                            projection.as_ref().map_or([0.; 2], |projection| {
+                                projection.uv(local.map(|v| v / 1000.), local_normal)
+                            }),
+                        );
+                    }
                     scene.vertices.extend(v.map(|x| x as f32));
                     scene.vertices.extend(n.map(|x| (x / length) as f32));
                     scene.vertices.extend(color);
                 }
             }
-        }
-        let vertex_count = scene.vertices.len() / 9 - first_vertex;
-        if vertex_count > 0 {
-            let material_index = appearance.map(|appearance| {
-                if let Some(index) = scene.materials.iter().position(|m| m == &appearance) {
-                    index
+            let vertex_count = scene.vertices.len() / 9 - first_vertex;
+            if vertex_count > 0 {
+                if let Some(previous) = scene.batches.last_mut().filter(|b| {
+                    b.material_index == material_index
+                        && b.texture_index == texture_index
+                        && b.first_vertex + b.vertex_count == first_vertex
+                }) {
+                    previous.vertex_count += vertex_count;
                 } else {
-                    let index = scene.materials.len();
-                    scene.materials.push(appearance);
-                    index
+                    scene.batches.push(MaterialBatch {
+                        first_vertex,
+                        vertex_count,
+                        material_index,
+                        texture_index,
+                    });
                 }
-            });
-            scene.hierarchy[node]["material_index"] = material_index.into();
-            if let Some(previous) = scene.batches.last_mut().filter(|b| {
-                b.material_index == material_index
-                    && b.first_vertex + b.vertex_count == first_vertex
-            }) {
-                previous.vertex_count += vertex_count;
-            } else {
-                scene.batches.push(MaterialBatch {
-                    first_vertex,
-                    vertex_count,
-                    material_index,
-                });
             }
         }
     }
@@ -925,7 +985,7 @@ mod traversal_tests {
     fn explicit_export_chains_resolve_without_fuzzy_filename_guesses() {
         let files = FileSet {
             documents: [("new.SLDPRT".into(), Vec::new().into())].into(),
-            ignored_files: 0,
+            ..FileSet::default()
         };
         let mut pairs = vec![
             sw_rs::ReferenceReplacement {

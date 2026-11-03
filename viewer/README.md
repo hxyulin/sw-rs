@@ -27,3 +27,9 @@ python3 -m http.server 8097 --bind 127.0.0.1 --directory viewer/web
 Open <http://127.0.0.1:8097/>. Uploads stay in the browser. The
 [full guide](../docs/viewer.md) covers assembly selection, hierarchy, search,
 materials, coordinate controls, source inspection and known limitations.
+
+The browser can render supplied PNG, JPEG, BMP and WebP textures for supported
+cache-table or unambiguous document appearances. Put the image files in the same archive as the
+CAD. Placement uses a labelled approximate Part-local projection; SolidWorks UVs
+and face-level texture assignments remain unsupported. Missing or ambiguous images
+keep the existing shading. Desktop bitmap rendering is not implemented.

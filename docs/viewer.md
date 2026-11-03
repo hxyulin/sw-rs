@@ -145,10 +145,27 @@ realtime hints. **Material family presets** instead uses the physical material
 classification; a carbon-fiber material can have a saved plastic appearance.
 Changing styles preserves the scene/configuration and needs no mesh decoding.
 
-The inspector shows saved shader and texture reference names. Original `.p2m`,
-JPEG and DDS shader resources are not loaded, and procedural textures are
-approximations. Original UVs, transparent rendering, full shader parameters and
-face/body/display-state overrides remain unsupported. Raw optical tokens are
+The browser also renders supplied PNG, JPEG, BMP and WebP images for the supported
+bitmap profile selected by an exact cache-table binding or an unambiguous
+document-level appearance and display state. Include the image alongside the CAD documents in the uploaded
+archive. Saved Windows references resolve against virtual archive paths; missing
+or ambiguous image references keep the existing shading and report an issue.
+No host filesystem or external URL is opened. Corrupt or over-16-megapixel images
+fall back to shading. Desktop bitmap rendering is not implemented.
+
+Bitmap placement uses approximate dominant-plane projection in Part coordinates,
+with decoded scale, center and stored rotation. Exact supported cache-table
+bitmap bindings take precedence over a document default. Placement follows the
+Part through assembly transforms. It is explicitly labelled as approximate; native projection
+directions and UVs are not recovered. Other cached face/body properties and unresolved cache links block
+this document-level fallback. Multiple display states are not guessed. The
+projection-coupled bitmap profile remains unsupported. **Material family presets**
+and **Diagnostic colors** disable bitmap sampling.
+
+The inspector shows saved shader and texture reference names. Original `.p2m`
+shader programs and DDS resources are not loaded. Transparent rendering, full
+shader parameters and native face/body/display-state appearance overrides remain
+unsupported. Raw optical tokens are
 retained in parser output even when the viewport does not implement them.
 Unknown transforms, missing references,
 ambiguous paths/configurations, cycles and unsupported meshes are reported.

@@ -52,12 +52,14 @@ impl Default for ArchiveLimits {
         }
     }
 }
-/// Native documents retained from an uploaded archive, addressed by virtual paths.
+/// Native documents and supplied bitmap images retained by virtual archive path.
 #[derive(Debug, Default)]
 pub struct FileSet {
     /// Normalized relative archive paths and original CAD bytes.
     pub documents: BTreeMap<String, Arc<[u8]>>,
-    /// Number of non-native regular members skipped without retaining their bytes.
+    /// Supplied PNG, JPEG, BMP and WebP images; no host paths are opened.
+    pub textures: BTreeMap<String, Arc<[u8]>>,
+    /// Number of unsupported regular members skipped without retaining their bytes.
     pub ignored_files: usize,
 }
 fn error(s: impl Into<String>) -> ParseError {
@@ -181,61 +183,68 @@ impl FileSet {
     /// Resolve owner-relative paths first, then the longest unique suffix of a
     /// saved Windows path. Ambiguous basenames remain explicit.
     pub fn resolve(&self, owner: &str, reference: &str) -> Resolution {
-        let reference = reference.replace('\\', "/");
-        let parts: Vec<_> = reference
-            .split('/')
-            .filter(|p| !p.is_empty() && *p != ".")
-            .collect();
-        if parts.is_empty() {
+        resolve_in(&self.documents, owner, reference)
+    }
+    /// Resolve a supplied bitmap using the same strict ambiguity rules as CAD.
+    pub fn resolve_texture(&self, owner: &str, reference: &str) -> Resolution {
+        resolve_in(&self.textures, owner, reference)
+    }
+}
+fn resolve_in(files: &BTreeMap<String, Arc<[u8]>>, owner: &str, reference: &str) -> Resolution {
+    let reference = reference.replace('\\', "/");
+    let parts: Vec<_> = reference
+        .split('/')
+        .filter(|p| !p.is_empty() && *p != ".")
+        .collect();
+    if parts.is_empty() {
+        return Resolution::Missing;
+    }
+    if !reference.starts_with('/') && !reference.contains(':') {
+        let mut relative: Vec<_> = owner.split('/').collect();
+        relative.pop();
+        let mut escaped = false;
+        for part in &parts {
+            if *part == ".." {
+                if relative.pop().is_none() {
+                    escaped = true;
+                    break;
+                }
+            } else {
+                relative.push(part);
+            }
+        }
+        if escaped {
             return Resolution::Missing;
         }
-        if !reference.starts_with('/') && !reference.contains(':') {
-            let mut relative: Vec<_> = owner.split('/').collect();
-            relative.pop();
-            let mut escaped = false;
-            for part in &parts {
-                if *part == ".." {
-                    if relative.pop().is_none() {
-                        escaped = true;
-                        break;
-                    }
-                } else {
-                    relative.push(part);
-                }
-            }
-            if escaped {
-                return Resolution::Missing;
-            }
-            let path = relative.join("/").to_lowercase();
-            if let Some(found) = self.documents.keys().find(|p| p.to_lowercase() == path) {
-                return Resolution::Found(found.clone());
-            }
+        let path = relative.join("/").to_lowercase();
+        if let Some(found) = files.keys().find(|p| p.to_lowercase() == path) {
+            return Resolution::Found(found.clone());
         }
-        let mut best = 0;
-        let mut candidates = Vec::new();
-        for path in self.documents.keys() {
-            let score = path
-                .split('/')
-                .rev()
-                .zip(parts.iter().rev())
-                .take_while(|(a, b)| a.to_lowercase() == b.to_lowercase())
-                .count();
-            if score == 0 {
-                continue;
-            }
-            if score > best {
-                best = score;
-                candidates.clear();
-            }
-            if score == best {
-                candidates.push(path.clone());
-            }
+    }
+    let mut best = 0;
+    let mut candidates = Vec::new();
+    for path in files.keys() {
+        let score = path
+            .split('/')
+            .rev()
+            .zip(parts.iter().rev())
+            .take_while(|(a, b)| a.to_lowercase() == b.to_lowercase())
+            .count();
+        if score == 0 {
+            continue;
         }
-        match candidates.len() {
-            0 => Resolution::Missing,
-            1 => Resolution::Found(candidates.remove(0)),
-            _ => Resolution::Ambiguous(candidates),
+        if score > best {
+            best = score;
+            candidates.clear();
         }
+        if score == best {
+            candidates.push(path.clone());
+        }
+    }
+    match candidates.len() {
+        0 => Resolution::Missing,
+        1 => Resolution::Found(candidates.remove(0)),
+        _ => Resolution::Ambiguous(candidates),
     }
 }
 struct Loader {
@@ -289,6 +298,11 @@ impl Loader {
         }
         if native(&name) {
             self.set.documents.insert(name, bytes.into());
+        } else if [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
+            .iter()
+            .any(|extension| name.to_ascii_lowercase().ends_with(extension))
+        {
+            self.set.textures.insert(name, bytes.into());
         } else {
             self.set.ignored_files += 1;
         }

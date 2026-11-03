@@ -344,7 +344,7 @@ function startWorker() {
         renderHierarchy(data.scene, occurrenceTree, selectDocument);
         hierarchyPanel.hidden = !data.scene.hierarchy?.length;
         progress("Uploading mesh to the viewport…");
-        scene.setMesh(data.vertices, data.scene.materials || [], data.scene.batches || []);
+        scene.setMesh(data.vertices, data.scene.materials || [], data.scene.batches || [], data.textureUVs, data.textureImages, data.scene.textures);
         finishProgress();
         empty.hidden = data.vertices.length > 0;
         empty.textContent = data.vertices.length
@@ -354,6 +354,8 @@ function startWorker() {
             : "No supported display mesh. See document diagnostics.";
         status.textContent = currentFile + " · " + data.scene.status;
         status.dataset.state = "ready";
+      } else {
+        for (const image of data.textureImages || []) image?.close();
       }
     } else {
       if (!loaded) {

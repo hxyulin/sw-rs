@@ -225,3 +225,35 @@ fn local_import_can_exceed_the_old_member_byte_cap() {
     let bad = zip(&[("../bad.SLDPRT", b"CAD")]);
     assert!(FileSet::from_archive(&bad, "bad.zip", ArchiveLimits::unlimited()).is_err());
 }
+
+#[test]
+fn bitmap_members_are_retained_and_resolved_separately_from_cad() {
+    let bytes = zip(&[
+        ("cad/part.SLDPRT", b"native".as_slice()),
+        ("cad/grid.PNG", b"image"),
+        ("other/grid.png", b"other"),
+        ("readme.txt", b"ignored"),
+    ]);
+    let set = FileSet::from_archive(&bytes, "model.zip", ArchiveLimits::default()).unwrap();
+    assert_eq!(set.documents.len(), 1);
+    assert_eq!(set.textures.len(), 2);
+    assert_eq!(set.textures["cad/grid.PNG"].as_ref(), b"image");
+    assert_eq!(set.ignored_files, 1);
+    assert_eq!(
+        set.resolve_texture("cad/part.SLDPRT", "grid.png"),
+        Resolution::Found("cad/grid.PNG".into())
+    );
+    assert_eq!(
+        set.resolve_texture("part.SLDPRT", "C:\\old\\cad\\grid.png"),
+        Resolution::Found("cad/grid.PNG".into())
+    );
+    assert!(matches!(
+        set.resolve_texture("part.SLDPRT", "C:\\old\\grid.png"),
+        Resolution::Ambiguous(_)
+    ));
+    assert_eq!(
+        set.resolve_texture("", "../../grid.png"),
+        Resolution::Missing
+    );
+    assert_eq!(set.resolve("", "grid.png"), Resolution::Missing);
+}

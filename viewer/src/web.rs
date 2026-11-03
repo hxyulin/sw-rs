@@ -575,7 +575,19 @@ impl ArchiveProject {
         } else {
             "Metadata only · no supported mesh".into()
         };
-        serde_json::json!({"metadata":self.scene.metadata,"hierarchy":self.scene.hierarchy,"presentations":self.scene.presentations,"materials":self.scene.materials,"batches":self.scene.batches,"configurations":self.scene.configurations,"selectedConfiguration":config,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
+        serde_json::json!({"metadata":self.scene.metadata,"hierarchy":self.scene.hierarchy,"presentations":self.scene.presentations,"materials":self.scene.materials,"textures":self.scene.textures,"batches":self.scene.batches,"configurations":self.scene.configurations,"selectedConfiguration":config,"info":info,"diagnostics":self.scene.diagnostics,"status":status,"triangles":triangles,"occurrences":self.scene.occurrences,"missing_references":self.scene.missing_references}).to_string()
+    }
+    /// Copy an already imported image by its exact virtual path.
+    pub fn texture_bytes(&self, path: &str) -> Option<Vec<u8>> {
+        self.project
+            .files
+            .textures
+            .get(path)
+            .map(|bytes| bytes.to_vec())
+    }
+    /// Transfer approximate UVs alongside the scene vertices.
+    pub fn take_texture_uvs(&mut self) -> Vec<f32> {
+        std::mem::take(&mut self.scene.texture_uvs)
     }
     pub fn take_vertices(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.scene.vertices)

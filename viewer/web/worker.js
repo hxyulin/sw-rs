@@ -33,8 +33,24 @@ self.onmessage = async ({ data }) => {
         project.scene(data.path, data.config, data.hidden, data.configurationName),
       );
       const vertices = project.take_vertices();
-      postMessage({ type: "scene", key: data.key, scene, vertices }, [
-        vertices.buffer,
+      const textureUVs = project.take_texture_uvs();
+      const sources = (scene.textures || []).map(t => project.texture_bytes(t.path));
+      const textureImages = await Promise.all(sources.map(async (bytes, index) => {
+        try {
+          if (!bytes) throw Error("image bytes unavailable");
+          const image = await createImageBitmap(new Blob([bytes]), { imageOrientation: "flipY" });
+          if (image.width * image.height > 16777216) {
+            image.close();
+            throw Error("image exceeds 16 megapixels");
+          }
+          return image;
+        } catch (error) {
+          scene.diagnostics.push(`Bitmap unavailable: ${scene.textures[index].path}: ${error}`);
+          return null;
+        }
+      }));
+      postMessage({ type: "scene", key: data.key, scene, vertices, textureUVs, textureImages }, [
+        vertices.buffer, textureUVs.buffer, ...textureImages.filter(Boolean),
       ]);
     }
   } catch (error) {

@@ -34,9 +34,9 @@ export class SceneView {
         gl.VERTEX_SHADER,
         `#version 300 es
       precision highp float;
-      layout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(location=2) in vec3 color;
-      uniform mat4 camera; out vec3 n; out vec3 c; out vec3 worldPosition;
-      void main(){gl_Position=camera*vec4(position,1.);n=normal;c=color;worldPosition=position;}`,
+      layout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(location=2) in vec3 color; layout(location=3) in vec2 textureUV;
+      uniform mat4 camera; out vec3 n; out vec3 c; out vec3 worldPosition; out vec2 bitmapUV;
+      void main(){gl_Position=camera*vec4(position,1.);n=normal;c=color;worldPosition=position;bitmapUV=textureUV;}`,
       ),
     );
     gl.attachShader(
@@ -45,8 +45,8 @@ export class SceneView {
         gl.FRAGMENT_SHADER,
         `#version 300 es
       precision highp float;
-      in vec3 n; in vec3 c; in vec3 worldPosition; out vec4 outputColor;
-      uniform int surfaceMode;
+      in vec3 n; in vec3 c; in vec3 worldPosition; in vec2 bitmapUV; out vec4 outputColor;
+      uniform int surfaceMode; uniform bool bitmapEnabled; uniform sampler2D bitmap;
       uniform vec3 baseColor; uniform float roughness; uniform float metallic;
       uniform vec3 eyePosition;
       uniform vec3 sceneUp;
@@ -102,6 +102,7 @@ export class SceneView {
         }
         vec2 uv=surfaceUV(worldPosition,normal);
         vec3 base=pow(clamp(baseColor,0.,1.),vec3(2.2));
+        if(bitmapEnabled) base*=pow(texture(bitmap,bitmapUV).rgb,vec3(2.2));
         float r=clamp(roughness,0.08,1.);
         vec3 view=normalize(eyePosition-worldPosition);
         if(surfaceMode==2 || surfaceMode==4){
@@ -144,6 +145,11 @@ export class SceneView {
       throw Error(gl.getProgramInfoLog(program));
     this.matrix = gl.getUniformLocation(program, "camera");
     this.surfaceMode = gl.getUniformLocation(program, "surfaceMode");
+    this.bitmapEnabled = gl.getUniformLocation(program, "bitmapEnabled");
+    this.bitmapSampler = gl.getUniformLocation(program, "bitmap");
+    this.textureImages = [];
+    this.textureDefinitions = [];
+    this.uvBuffer = gl.createBuffer();
     this.baseColor = gl.getUniformLocation(program, "baseColor");
     this.roughness = gl.getUniformLocation(program, "roughness");
     this.metallic = gl.getUniformLocation(program, "metallic");
@@ -231,7 +237,28 @@ export class SceneView {
     this._materialsEnabled = Boolean(value);
     if (this.gl && this.data) this.draw();
   }
-  setMesh(data, materials = [], batches = []) {
+  setMesh(data, materials = [], batches = [], textureUVs, images = [], definitions = []) {
+    const gl = this.gl;
+    for (const texture of this.textureImages) if (texture) gl.deleteTexture(texture);
+    this.textureDefinitions = definitions || [];
+    this.textureImages = (images || []).map(image => {
+      if (!image) return null;
+      try {
+        if (image.width > gl.getParameter(gl.MAX_TEXTURE_SIZE) || image.height > gl.getParameter(gl.MAX_TEXTURE_SIZE)) return null;
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        return texture;
+      } finally { image.close(); }
+    });
+    this.hasTextureUVs = textureUVs?.length > 0 && textureUVs.length === data.length / 9 * 2;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.hasTextureUVs ? textureUVs : 0, gl.STATIC_DRAW);
     this.data = data;
     this.materials = Array.isArray(materials) ? materials : [];
     // Preserve every triangle exactly once, even if a caller omits unassigned
@@ -363,12 +390,22 @@ export class SceneView {
     gl.uniform3fv(this.eyePosition, eye);
     gl.uniform3fv(this.sceneUp, this.upAxis === "y" ? [0, 1, 0] : [0, 0, 1]);
     gl.uniform1i(this.surfaceMode, 0);
+    gl.uniform1i(this.bitmapEnabled, 0);
+    gl.uniform1i(this.bitmapSampler, 0);
     gl.enable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     for (let i = 0; i < 3; i++) {
       gl.enableVertexAttribArray(i);
       gl.vertexAttribPointer(i, 3, gl.FLOAT, false, 36, i * 12);
+    }
+    if (this.hasTextureUVs) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
+      gl.enableVertexAttribArray(3);
+      gl.vertexAttribPointer(3, 2, gl.FLOAT, false, 8, 0);
+    } else {
+      gl.disableVertexAttribArray(3);
+      gl.vertexAttrib2f(3, 0, 0);
     }
     if (this.wire) {
       this.prepareWireframe();
@@ -379,6 +416,18 @@ export class SceneView {
         const index = batch.material_index;
         const material = Number.isSafeInteger(index) && index >= 0 ? this.materials[index] : null;
         this.applyMaterial(material);
+        const texture = this.appearanceStyle === "saved" && Number.isSafeInteger(batch.texture_index)
+          ? this.textureImages[batch.texture_index] : null;
+        gl.uniform1i(this.bitmapEnabled, texture ? 1 : 0);
+        if (texture) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.uniform1i(this.surfaceMode, 1);
+          gl.uniform3fv(this.baseColor, this.textureDefinitions[batch.texture_index]?.base_color || [1, 1, 1]);
+          gl.uniform1f(this.roughness, 0.6);
+          gl.uniform1f(this.metallic, 0);
+          gl.uniform3f(this.opticalCoefficients, 1, 0.5, 0);
+        }
         gl.drawArrays(gl.TRIANGLES, batch.first_vertex, batch.vertex_count);
       }
     } else {
