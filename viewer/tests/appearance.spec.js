@@ -236,3 +236,46 @@ test("shared body styles inherit only unique non-null color references", async (
     else target.forEach((v,i) => expect(color[i]).toBeCloseTo(v));
   }
 });
+
+
+test("native optical settings distinguish equal RGB and reject conflicting inherited surfaces", { tag: "@hidpi" }, async ({ page }) => {
+  await page.addInitScript(() => {
+    const W = window.Worker;
+    window.Worker = class extends W { constructor(...args) { super(...args); this.addEventListener("message", ({data}) => { if (data.type === "scene") window.opticalScene = data.scene; }); } };
+  });
+  await ready(page);
+  const load = async (name,triangles=12) => {
+    await page.evaluate(() => { window.opticalScene = null; });
+    await page.locator("#file").setInputFiles(path.join(fixtures,name+".SLDPRT"));
+    await expect.poll(() => page.evaluate(() => window.opticalScene?.triangles)).toBe(triangles);
+    await expect.poll(() => page.evaluate(() => window.viewer.busy)).toBe(false);
+  };
+  const pixels = () => page.locator("#scene").evaluate(c => c.toDataURL());
+  await load("native-optical-plastic");
+  const plastic = await page.evaluate(() => window.opticalScene.batches[0]);
+  expect(plastic.saved_surface.roughness).toBeCloseTo(.7);
+  expect(plastic.saved_surface.reflectivity).toBeCloseTo(.05);
+  expect(plastic.saved_surface.metallic).toBe(0);
+  const plasticPixels = await pixels();
+  await load("native-optical-metal");
+  const metal = await page.evaluate(() => window.opticalScene.batches[0]);
+  expect(metal.saved_color).toEqual(plastic.saved_color);
+  expect(metal.saved_surface.roughness).toBeCloseTo(.4);
+  expect(metal.saved_surface.reflectivity).toBeCloseTo(.5);
+  expect(metal.saved_surface.metallic).toBe(1);
+  expect(await pixels()).not.toBe(plasticPixels);
+  for (const name of ["invalid", "unknown"]) {
+    await load("native-optical-"+name);
+    expect(await page.evaluate(() => window.opticalScene.batches[0].saved_surface)).toBeNull();
+    expect(await page.evaluate(() => window.opticalScene.batches[0].saved_color)).toEqual(plastic.saved_color);
+  }
+  await load("shared-body-style",24);
+  expect(await page.evaluate(() => window.opticalScene.batches.every(b => b.saved_surface?.name === "defaultplastic"))).toBe(true);
+  await load("native-optical-conflict",36);
+  const batches = await page.evaluate(() => window.opticalScene.batches);
+  expect(batches).toHaveLength(3);
+  expect(batches[0].saved_surface.name).toBe("blacklowglossplastic");
+  expect(batches[1].saved_surface.name).toBe("satinfinishaluminum");
+  expect(batches[2].saved_color).toEqual(plastic.saved_color);
+  expect(batches[2].saved_surface).toBeNull();
+});

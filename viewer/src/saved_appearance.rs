@@ -49,7 +49,10 @@ pub(crate) fn mesh_native<'a>(
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum CacheAppearance {
     Property(u32),
-    Color([u8; 3]),
+    Inherited {
+        color: [u8; 3],
+        surface: Option<u32>,
+    },
 }
 pub(crate) type NativeCacheAppearances =
     std::collections::BTreeMap<(String, usize), Option<CacheAppearance>>;
@@ -193,6 +196,10 @@ pub(crate) fn archive_appearances(
         .any(|c| !c.states.iter().any(|s| s.key_id == key_id));
     let mut body_signatures =
         std::collections::BTreeMap::<SurfacePath, std::collections::BTreeSet<[u8; 3]>>::new();
+    let mut signature_properties =
+        std::collections::BTreeMap::<SurfacePath, std::collections::BTreeSet<u32>>::new();
+    let mut group_properties =
+        std::collections::BTreeMap::<u32, std::collections::BTreeSet<u32>>::new();
     let mut current_ids = std::collections::BTreeSet::new();
     let mut group_colors =
         std::collections::BTreeMap::<u32, std::collections::BTreeSet<[u8; 3]>>::new();
@@ -211,11 +218,14 @@ pub(crate) fn archive_appearances(
             continue;
         };
         current_ids.insert(id);
-        let Some(color) = property(owner).and_then(|p| graph.properties[&p].render_color_rgb())
-        else {
+        let Some(property_id) = property(owner) else {
+            continue;
+        };
+        let Some(color) = graph.properties[&property_id].render_color_rgb() else {
             continue;
         };
         group_colors.entry(id).or_default().insert(color);
+        group_properties.entry(id).or_default().insert(property_id);
         let reference = owner
             .reference_object
             .and_then(|i| graph.reference_objects.get(&i));
@@ -228,6 +238,10 @@ pub(crate) fn archive_appearances(
                     .object_index()
                     .and_then(|i| native_surface_path(graph, i, 0))
                 {
+                    signature_properties
+                        .entry(path.clone())
+                        .or_default()
+                        .insert(property_id);
                     body_signatures.entry(path).or_default().insert(color);
                 }
             }
@@ -241,6 +255,14 @@ pub(crate) fn archive_appearances(
             continue;
         };
         for reference in &table.surface_references.references {
+            if let Some(ids) = cache_surface_path(&reference.source.value, 0)
+                .and_then(|p| signature_properties.get(&p))
+            {
+                group_properties
+                    .entry(id)
+                    .or_default()
+                    .extend(ids.iter().copied());
+            }
             if let Some(colors) =
                 cache_surface_path(&reference.source.value, 0).and_then(|p| body_signatures.get(&p))
             {
@@ -253,10 +275,18 @@ pub(crate) fn archive_appearances(
     }
     let mut style_colors =
         std::collections::BTreeMap::<(&str, u16), std::collections::BTreeSet<[u8; 3]>>::new();
+    let mut style_properties =
+        std::collections::BTreeMap::<(&str, u16), std::collections::BTreeSet<u32>>::new();
     for table in &surfaces.records {
         if let (Some(id), Some(style)) = (table.saved_body_id, table.saved_body_style)
             && let Some(colors) = group_colors.get(&id).filter(|c| c.len() == 1)
         {
+            if let Some(ids) = group_properties.get(&id) {
+                style_properties
+                    .entry((&table.source_stream, style))
+                    .or_default()
+                    .extend(ids.iter().copied());
+            }
             style_colors
                 .entry((&table.source_stream, style))
                 .or_default()
@@ -367,7 +397,28 @@ pub(crate) fn archive_appearances(
                     if colors.len() != 1 {
                         return None;
                     }
-                    return Some(CacheAppearance::Color(*colors.first()?));
+                    let ids = table.saved_body_style.and_then(|style| {
+                        style_properties
+                            .get(&(table.source_stream.as_str(), style))
+                            .or_else(|| group_properties.get(&body_id))
+                    });
+                    // A shared style may carry optical settings only when every
+                    // anchor agrees. Bitmap ownership remains independent.
+                    let surface = ids.and_then(|ids| {
+                        let first = *ids.first()?;
+                        let expected =
+                            crate::appearance::native_surface(&graph.properties[&first])?;
+                        ids.iter()
+                            .all(|id| {
+                                crate::appearance::native_surface(&graph.properties[id]).as_ref()
+                                    == Some(&expected)
+                            })
+                            .then_some(first)
+                    });
+                    return Some(CacheAppearance::Inherited {
+                        color: *colors.first()?,
+                        surface,
+                    });
                 }
                 if table.saved_body_style.is_some() {
                     return None;
@@ -418,7 +469,7 @@ pub(crate) fn archive_appearances(
     result
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum SurfacePath {
     Leaf(String, sw_rs::SavedSurfaceIdentity),
     Indirect(u32, Box<SurfacePath>),

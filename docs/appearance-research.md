@@ -451,5 +451,21 @@ The checked display-cache body prefix also retains its non-null reference cell.
 Within one carrier, resolved body references can anchor a color for this shared
 style reference. The viewer uses that relation for copied bodies that have no
 new explicit visual-state property. A null cell does not inherit a historical
-color. Conflicting anchors remain unresolved. This relation supplies color only;
-it does not infer bitmap ownership, UVs or a full render material from RGB.
+color. Conflicting anchors remain unresolved. This relation can also carry supported optical settings when every anchor agrees
+on the complete viewer surface response. Equal RGB alone does not establish an
+optical match. It does not infer bitmap ownership or UVs.
+
+
+### Native optical response in the browser
+
+For the checked discriminator 2/3 plastic, default-color, satin-aluminum and carbon
+profiles, shader `finish_values[0]` agrees with reopened material roughness and
+`parameters[0]` agrees with reflectivity. These are observations from current
+native files, not a general interpretation of all shader selectors. The browser
+adapter checks the exact shader identifier and valid coefficient ranges. It uses
+these values in an explicitly approximate GGX response, with legacy optical
+multipliers. The source parser continues to preserve the raw fields independently.
+Selected appearance response travels with the cache draw batch instead of being
+replaced by a common plastic response. Shared-style anchors must agree on the
+whole supported optical response; a color match cannot merge unlike shaders.
+No image-space equivalence to the SolidWorks environment is claimed.

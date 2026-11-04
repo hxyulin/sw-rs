@@ -23,6 +23,8 @@ pub struct MaterialBatch {
     pub material_index: Option<usize>,
     /// Supported saved RGB, using sRGB as a viewer convention.
     pub saved_color: Option<[f32; 3]>,
+    /// Approximate response of the selected native appearance; separate from physical presets.
+    pub saved_surface: Option<crate::appearance::NativeSurface>,
     /// Supplied bitmap index; absent means no bitmap is applied.
     pub texture_index: Option<usize>,
 }
@@ -564,13 +566,34 @@ impl Project {
                 None => crate::saved_appearance::mesh_native(&g.presentation, mesh, name),
             };
             let saved_color = match archive_property {
-                Some(Some(crate::saved_appearance::CacheAppearance::Color(rgb))) => Some(*rgb),
+                Some(Some(crate::saved_appearance::CacheAppearance::Inherited {
+                    color: rgb,
+                    ..
+                })) => Some(*rgb),
                 _ => native.and_then(|n| n.render_color_rgb()),
             }
             .map(|rgb| rgb.map(|v| f32::from(v) / 255.));
             if archive_property.is_some_and(|c| c.is_some()) && !scene.diagnostics.iter().any(|d| d == "Native visual colors use saved state links and cache source IDs; current topology is not verified.") {
                 scene.diagnostics.push("Native visual colors use saved state links and cache source IDs; current topology is not verified.".into());
             }
+            let saved_surface = native
+                .and_then(crate::appearance::native_surface)
+                .or_else(|| {
+                    let Some(Some(crate::saved_appearance::CacheAppearance::Inherited {
+                        surface: Some(id),
+                        ..
+                    })) = archive_property
+                    else {
+                        return None;
+                    };
+                    self.metadata[path]
+                        .visuals
+                        .archive
+                        .as_ref()?
+                        .properties
+                        .get(id)
+                        .and_then(crate::appearance::native_surface)
+                });
             let projection = match native
                 .map(|native| crate::texture::native_projection(native, path, &self.files))
                 .transpose()
@@ -645,6 +668,7 @@ impl Project {
                 if let Some(previous) = scene.batches.last_mut().filter(|b| {
                     b.material_index == material_index
                         && b.saved_color == saved_color
+                        && b.saved_surface == saved_surface
                         && b.texture_index == texture_index
                         && b.first_vertex + b.vertex_count == first_vertex
                 }) {
@@ -655,6 +679,7 @@ impl Project {
                         vertex_count,
                         material_index,
                         saved_color,
+                        saved_surface,
                         texture_index,
                     });
                 }

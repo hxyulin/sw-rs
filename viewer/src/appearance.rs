@@ -60,6 +60,69 @@ pub struct SavedSurface {
     pub texture_references: Vec<String>,
 }
 
+/// Approximate opaque response of one selected native visual property.
+/// Roughness and reflectivity use observed saved values that agree with reopened
+/// SolidWorks material queries. Their GGX interpretation remains a viewer convention.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct NativeSurface {
+    /// Exact saved realtime shader identifier.
+    pub name: String,
+    /// Saved render primary color, interpreted as sRGB by the viewer.
+    pub base_color: [f32; 3],
+    /// Saved surface roughness, used directly as GGX roughness.
+    pub roughness: f32,
+    /// Metal response selected only for the supported explicit aluminum shader.
+    pub metallic: f32,
+    /// Saved reflectivity, approximated as normal-incidence reflectance.
+    pub reflectivity: f32,
+    /// Legacy diffuse coefficient used as an approximate lighting multiplier.
+    pub diffuse: f32,
+    /// Legacy specular coefficient used as an approximate lighting multiplier.
+    pub specularity: f32,
+    /// Legacy emission coefficient used as an approximate lighting multiplier.
+    pub emission: f32,
+}
+
+pub(crate) fn native_surface(native: &sw_rs::NativeAppearance) -> Option<NativeSurface> {
+    let extension = native.extension.as_ref()?;
+    let shader = &extension.shader_parameters;
+    if !matches!(shader.discriminator, 2 | 3) {
+        return None;
+    }
+    let name = extension.shader_identifier.value.as_str();
+    let metallic = match name {
+        "satinfinishaluminum" => 1.,
+        "defaultplastic"
+        | "blacklowglossplastic"
+        | "lightgreyhighglossplastic"
+        | "carbonfiberepoxy" => 0.,
+        _ => return None,
+    };
+    let valid = |v: f32| v.is_finite() && (0.0..=1.0).contains(&v);
+    let roughness = shader.finish_values[0];
+    let reflectivity = shader.parameters[0];
+    let optical = native.optical_values?;
+    if !valid(roughness)
+        || !valid(reflectivity)
+        || ![optical[1], optical[2], optical[5]]
+            .into_iter()
+            .all(|v| v.is_finite() && (0.0..=1.0).contains(&v))
+        || optical[4] != 0.
+    {
+        return None;
+    }
+    Some(NativeSurface {
+        name: name.into(),
+        base_color: native.render_color_rgb()?.map(|v| f32::from(v) / 255.),
+        roughness,
+        metallic,
+        reflectivity,
+        diffuse: optical[1] as f32,
+        specularity: optical[2] as f32,
+        emission: optical[5] as f32,
+    })
+}
+
 fn saved_surface(definition: &sw_rs::SavedMaterial) -> Option<SavedSurface> {
     let saved = definition.appearance.as_ref()?;
     // Saved PhotoWorks paths/names are more specific than generic realtime cg

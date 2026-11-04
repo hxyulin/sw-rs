@@ -225,12 +225,12 @@ for name,properties in [('bitmap-cache',bitmap_property()),('bitmap-carbon-cache
 
 # Complete authored visual archive: counted state IDs, reused property objects,
 # and a derived feature whose base component consumes its own archive slot.
-def archive_property(rgb):
+def archive_property(rgb, shader="defaultplastic", roughness=1., reflectivity=0.):
     packed = rgb[0] | rgb[1]<<8 | rgb[2]<<16
     value = visual_property(rgb, '')+u32(0,1,0,1,1,1)+visual_string('')
-    value += u32(1,1,29,0)+visual_string('defaultplastic')+bytes([3])+u32(packed)
-    value += struct.pack('<10f',*([0]*10))+u32(1)+struct.pack('<5f',*([0]*5))+bytes(12)
-    value += visual_string('<SystemTexture>\\graphics\\materials\\color.p2m')+u32(0xffffff)+struct.pack('<2f',1,1)+visual_string('')
+    value += u32(1,1,29,0)+visual_string(shader)+bytes([3])+u32(packed)
+    value += struct.pack('<10f',*([0]*10))+u32(1)+struct.pack('<5f',reflectivity,0,0,0,0)+bytes(12)
+    value += visual_string('<SystemTexture>\\graphics\\materials\\color.p2m')+u32(0xffffff)+struct.pack('<2f',roughness,1)+visual_string('')
     value += struct.pack('<2f',.001,.005)+u32(0,0,0)+struct.pack('<14f',*([0]*14))+visual_string('')
     value += u32(0)+visual_string('')*3+bytes(92)+visual_string('')+bytes(8)+visual_string('')+bytes(8)+visual_string('')+bytes(24)
     return value
@@ -308,3 +308,30 @@ for name,style,conflict in [('shared-body-style',42,False),('null-body-style',0,
     groups.append(body_style_footer(200,style,'moSimpleSurfIdRep_c,7,2,'))
     (OUT/(name+'.SLDPRT')).write_bytes(part([.18,.10,.02],cache_groups=groups,
         extra_streams=[('ThirdPtyStore/VisualStates',native_body_styles(conflict))]))
+
+# Equal RGB does not imply equal surface response or license merging batches.
+plastic=archive_property([0,49,255],'blacklowglossplastic',.7,.05)
+metal=archive_property([0,49,255],'satinfinishaluminum',.4,.5)
+for name,replacement in [('plastic',plastic),('metal',metal)]:
+    state=native_body_styles().replace(archive_property([0,49,255]),replacement)
+    (OUT/('native-optical-'+name+'.SLDPRT')).write_bytes(part([.18,.10,.02],
+        cache_groups=[body_style_footer(100,42,'moSimpleSurfIdRep_c,7,2,')],
+        extra_streams=[('ThirdPtyStore/VisualStates',state)]))
+state=native_body_styles(True).replace(archive_property([0,49,255]),plastic).replace(archive_property([255,0,0]),metal)
+(OUT/'native-optical-conflict.SLDPRT').write_bytes(part([.18,.10,.02],
+    cache_groups=[body_style_footer(100,42,'moSimpleSurfIdRep_c,7,2,'),
+                  body_style_footer(101,42,'moSimpleSurfIdRep_c,8,4,'),
+                  body_style_footer(200,42,'moSimpleSurfIdRep_c,7,2,')],
+    extra_streams=[('ThirdPtyStore/VisualStates',state)]))
+
+for name,shader,roughness in [('invalid','blacklowglossplastic',-1),('unknown','unknownshader',.7)]:
+    state=native_body_styles().replace(archive_property([0,49,255]),archive_property([0,49,255],shader,roughness,.05))
+    (OUT/('native-optical-'+name+'.SLDPRT')).write_bytes(part([.18,.10,.02],
+        cache_groups=[body_style_footer(100,42,'moSimpleSurfIdRep_c,7,2,')],
+        extra_streams=[('ThirdPtyStore/VisualStates',state)]))
+
+# A supplied bitmap remains usable when its primary-color token is unresolved.
+with zipfile.ZipFile(OUT/'bitmap-opaque-color.zip','w',zipfile.ZIP_DEFLATED) as archive:
+    state=bitmap_state().replace(bytes([3])+u32(0xffffff),bytes([3])+u32(0xffffffff))
+    archive.writestr('Block.SLDPRT',part([.04,.03,.02],extra_streams=[('ThirdPtyStore/VisualStates',state)]))
+    archive.writestr('images/grid.png',grid_png())

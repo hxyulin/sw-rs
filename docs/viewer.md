@@ -151,7 +151,8 @@ select state IDs and their owner/property links. Feature colors require a unique
 same-document source match. Face colors use the selected face's complete reference
 path. Checked saved body groups and carrier-local shared style references support
 body colors, including copied bodies without a new visual-state property. Shared
-style links supply color only. Null links cannot inherit a historical color, and
+style links supply optical settings only when every supported anchor agrees. They
+do not infer bitmap ownership or UVs. Null links cannot inherit a historical color, and
 conflicting links remain unresolved. This reconstructs the saved display cache;
 current B-Rep ownership and face timestamps remain unverified. Partial archive
 walks never resume at scanned markers or establish complete ownership.
@@ -309,3 +310,18 @@ candidates and use Previous/Next records for large reports. Unsupported native
 containers retain an opaque inventory. The worker retains one inspected source
 and one stream report until closing the dialog; inspection does not request a
 scene or change placement. See [the inventory/reader contract](reader-inventory.md).
+
+
+Supported native saved appearances now carry their own draw-batch surface response.
+The adapter recognizes the exact `defaultplastic`, `blacklowglossplastic`,
+`lightgreyhighglossplastic`, `satinfinishaluminum` and `carbonfiberepoxy` identifiers
+for discriminator 2/3. Saved finish roughness and reflectivity agree with reopened
+material queries on the checked profiles. The viewer uses them as approximate GGX
+roughness and normal-incidence reflectance; this is not the SolidWorks shader.
+Legacy diffuse, specular and emission values supply approximate multipliers.
+Only the explicit aluminum shader selects a metal response. Unsupported shaders,
+invalid coefficients and transparent profiles keep the color-only fallback.
+Equal colors with different optical settings remain separate draw batches.
+Bitmap sampling retains the selected surface response instead of resetting it.
+Lighting, tone mapping, shadows, edge display and native bump response still differ
+from SolidWorks, so base-color agreement does not establish visual equivalence.

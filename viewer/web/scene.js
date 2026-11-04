@@ -47,7 +47,7 @@ export class SceneView {
       precision highp float;
       in vec3 n; in vec3 c; in vec3 worldPosition; in vec2 bitmapUV; out vec4 outputColor;
       uniform int surfaceMode; uniform bool bitmapEnabled; uniform sampler2D bitmap;
-      uniform vec3 baseColor; uniform float roughness; uniform float metallic;
+      uniform vec3 baseColor; uniform float roughness; uniform float metallic; uniform float reflectivity;
       uniform vec3 eyePosition;
       uniform vec3 sceneUp;
       uniform vec3 opticalCoefficients; // diffuse, specularity, emission
@@ -78,6 +78,11 @@ export class SceneView {
         vec2 footprint=fwidth(p);
         return (2.*value-1.)*exp(-2.*dot(footprint,footprint));
       }
+      vec3 surfaceF0(vec3 base,float metal){
+        // Native reflectivity scales a dielectric or tinted metal response.
+        // Missing source values retain the existing material-family convention.
+        return reflectivity<0.?mix(vec3(0.04),base,metal):mix(vec3(reflectivity),base*reflectivity,metal);
+      }
       vec3 keyLight(vec3 normal,vec3 view,vec3 light,vec3 base,float r,float metal){
         vec3 halfVector=normalize(view+light);
         float nl=max(dot(normal,light),0.);
@@ -89,7 +94,7 @@ export class SceneView {
         float distribution=a2/(PI*denominator*denominator+0.0001);
         float k=(r+1.)*(r+1.)/8.;
         float geometry=nv/(nv*(1.-k)+k)*nl/(nl*(1.-k)+k);
-        vec3 f0=mix(vec3(0.04),base,metal);
+        vec3 f0=surfaceF0(base,metal);
         vec3 fresnel=f0+(1.-f0)*pow(1.-vh,5.);
         vec3 specular=distribution*geometry*fresnel/max(4.*nv*nl,0.001);
         return ((1.-fresnel)*(1.-metal)*base/PI*opticalCoefficients.x+specular*opticalCoefficients.y)*nl;
@@ -127,10 +132,10 @@ export class SceneView {
           base*=1.+0.08*grain;
           r=clamp(r+0.06*grain,0.15,0.9);
         }
-        vec3 f0=mix(vec3(0.04),base,metallic);
+        vec3 f0=surfaceF0(base,metallic);
         float grazing=pow(1.-max(dot(normal,view),0.),4.);
         vec3 ambient=base*(0.21+0.12*max(dot(normal,sceneUp),0.))*(1.-0.7*metallic)*opticalCoefficients.x;
-        ambient+=mix(f0,vec3(0.55),grazing)*(0.18+0.16*max(dot(normal,sceneUp),0.));
+        ambient+=mix(f0,vec3(0.55),grazing)*(0.18+0.16*max(dot(normal,sceneUp),0.))*opticalCoefficients.y;
         vec3 lit=ambient+3.*keyLight(normal,view,normalize(environmentLight(vec3(0.4,-0.5,0.8))),base,r,metallic);
         lit+=1.2*keyLight(normal,view,normalize(environmentLight(vec3(-0.6,0.3,0.5))),base,min(r+0.2,1.),metallic);
         lit+=base*opticalCoefficients.z;
@@ -153,6 +158,7 @@ export class SceneView {
     this.baseColor = gl.getUniformLocation(program, "baseColor");
     this.roughness = gl.getUniformLocation(program, "roughness");
     this.metallic = gl.getUniformLocation(program, "metallic");
+    this.reflectivity = gl.getUniformLocation(program, "reflectivity");
     this.eyePosition = gl.getUniformLocation(program, "eyePosition");
     this.sceneUp = gl.getUniformLocation(program, "sceneUp");
     this.opticalCoefficients = gl.getUniformLocation(program, "opticalCoefficients");
@@ -416,18 +422,20 @@ export class SceneView {
         const index = batch.material_index;
         const material = Number.isSafeInteger(index) && index >= 0 ? this.materials[index] : null;
         const savedColor = this.appearanceStyle === "saved" ? batch.saved_color : null;
-        this.applyMaterial(savedColor ? { base_color: savedColor, roughness: 0.6, metallic: 0, specularity: 0.5 } : material);
+        this.applyMaterial(savedColor ? (batch.saved_surface || { base_color: savedColor, roughness: 0.6, metallic: 0, specularity: 0.5 }) : material);
         const texture = this.appearanceStyle === "saved" && Number.isSafeInteger(batch.texture_index)
           ? this.textureImages[batch.texture_index] : null;
         gl.uniform1i(this.bitmapEnabled, texture ? 1 : 0);
         if (texture) {
+          // A bitmap can remain usable when the saved color is an opaque token.
+          // Initialize its generic response instead of retaining the previous draw.
+          if (!savedColor) this.applyMaterial({ base_color: [1, 1, 1], roughness: 0.6, metallic: 0, specularity: 0.5 });
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture);
           gl.uniform1i(this.surfaceMode, 1);
           gl.uniform3fv(this.baseColor, this.textureDefinitions[batch.texture_index]?.base_color || [1, 1, 1]);
-          gl.uniform1f(this.roughness, 0.6);
-          gl.uniform1f(this.metallic, 0);
-          gl.uniform3f(this.opticalCoefficients, 1, 0.5, 0);
+          // The bitmap changes base color, not the selected surface response.
+          // applyMaterial already supplied its roughness and optical coefficients.
         }
         gl.drawArrays(gl.TRIANGLES, batch.first_vertex, batch.vertex_count);
       }
@@ -450,6 +458,7 @@ export class SceneView {
     gl.uniform1f(this.roughness, Number.isFinite(material.roughness) ? Math.max(0.08, Math.min(1, material.roughness)) : 0.6);
     gl.uniform1f(this.metallic, Number.isFinite(material.metallic) ? Math.max(0, Math.min(1, material.metallic)) : 0);
     const coefficient = (value, fallback) => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
+    gl.uniform1f(this.reflectivity, coefficient(material.reflectivity, -1));
     gl.uniform3f(this.opticalCoefficients, coefficient(material.diffuse, 1), coefficient(material.specularity, 1), coefficient(material.emission, 0));
   }
 }
