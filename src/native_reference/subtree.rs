@@ -31,6 +31,9 @@ pub enum NativeExternalObjectProfile {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeFaceReferenceProfile {
+    /// VisualStates owner reference: two checked zero words; header word three
+    /// is zero or 768 in the explicitly supported visual profile.
+    VisualStatesTwoWords,
     /// Three zero words following the surface array.
     ThreeWords,
     /// Two zero words, one saved raw word, then two zero words.
@@ -242,11 +245,11 @@ pub enum NativeSubtreePayload {
         /// All pointer occurrences in order, retaining nulls and duplicates.
         records: Vec<NativeArchivePointer>,
     },
-    /// Complete supported moFaceRef_c payload, including its checked scalar trailer.
+    /// Complete supported moFaceRef_c payload, including its selected header/trailer profile.
     FaceReference {
         /// Explicit trailer profile, without inferring a version threshold.
         profile: NativeFaceReferenceProfile,
-        /// Five saved header words; this layout requires word three to equal 768.
+        /// Five saved header words; the visual profile also supports word three equal to zero.
         raw_header: [u32; 5],
         /// Surface pointer occurrences, retaining nulls and duplicates.
         records: Vec<NativeArchivePointer>,
@@ -473,7 +476,7 @@ impl NativeSubtreeReader {
     ) -> Result<NativeArchivePointer, ArchiveError> {
         self.read(cursor, source_stream, Role::Array)
     }
-    /// Read a complete supported face reference with header word three equal to 768.
+    /// Read a complete supported face reference with its explicit header/trailer profile.
     /// Select the trailer from established enclosing-layout evidence. Neither profile
     /// applies to edge references or establishes configuration/topology ownership.
     pub fn read_face_reference(
@@ -800,12 +803,20 @@ impl NativeSubtreeReader {
                     return Err(error(at, "unsupported reference-array header"));
                 }
                 let required_header = match role {
+                    Role::Face(NativeFaceReferenceProfile::VisualStatesTwoWords) => None,
                     Role::Face(_) => Some(768),
                     Role::Edge(_) => Some(512),
                     _ => None,
                 };
                 if required_header.is_some_and(|word| raw_header[3] != word) {
                     return Err(error(at + 12, "unsupported complete reference header"));
+                }
+                if matches!(
+                    role,
+                    Role::Face(NativeFaceReferenceProfile::VisualStatesTwoWords)
+                ) && !matches!(raw_header[3], 0 | 768)
+                {
+                    return Err(error(at + 12, "unsupported visual face-reference header"));
                 }
                 let at = cursor.position();
                 if cursor.take(16) != Some(COMPONENT_MARKER.as_slice()) || cursor.u16() != Some(0) {
@@ -823,6 +834,7 @@ impl NativeSubtreeReader {
                 )?;
                 if let Role::Face(profile) = role {
                     let (count, raw_middle) = match profile {
+                        NativeFaceReferenceProfile::VisualStatesTwoWords => (2, false),
                         NativeFaceReferenceProfile::ThreeWords => (3, false),
                         NativeFaceReferenceProfile::FiveWords => (5, true),
                     };

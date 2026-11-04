@@ -107,10 +107,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "optical_values_candidate":optical,"shader_identifier_candidate":shader.value,"material_name_candidate":material.value,
             "source_header_candidate":source_header,"already_decoded_definition":declared,"ownership":"unresolved_candidate"}));
     }
+    // This assesses only the recovered feature-prefix path. Cache-local and
+    // uniquely scoped document appearances have their own supported selectors.
+    let owner_links_decoded = doc.visuals.archive.as_ref().is_some_and(|g| g.complete);
+    let features: Vec<_> = candidates.iter().filter_map(|c| {
+        let header = c.get("source_header_candidate")?.as_object()?;
+        Some(serde_json::json!({
+            "appearance_offset":c["offset"], "rgb":c["rgb_candidate"],
+            "raw_header_words":header["raw_words"],
+            "unique_feature_xml_id":header["xml_id_candidates"].as_array().is_some_and(|a| a.len() == 1),
+            "cache_source_id_match_count":header["cache_source_id_candidates"].as_array().map_or(0, Vec::len),
+            "effective_surface_assignment":if owner_links_decoded { "saved_owner_state_links_decoded" } else { "not_decoded" }
+        }))
+    }).collect();
+    let assessment = serde_json::json!({
+        "path":"recovered_feature_appearances",
+        "status":if owner_links_decoded { "saved_owner_state_links_decoded" } else if features.is_empty() { "not_applicable" } else { "not_decoded" },
+        "features":features,
+        "sequential_archive_complete":owner_links_decoded,
+        "remaining_limits":["Current B-Rep topology ownership", "Face-owner surface selection", "Native shader fidelity"],
+        "scope":"Sequential owner/state links and viewer cache-source projections do not establish current B-Rep ownership",
+        "existing_supported_paths":"Exact cache properties and uniquely scoped document appearances are unaffected"
+    });
     println!(
         "{}",
         serde_json::json!({"schema":"sw-rs-visual-candidates-v1","source_sha256":reader.source_sha256(),
-        "decoded_visuals":doc.visuals,"candidate_properties":candidates,"inspection":inspection,
+        "recovered_feature_support":assessment,"decoded_visuals":doc.visuals,"candidate_properties":candidates,"inspection":inspection,
         "warning":"Pattern matches are candidates, not proven class instances or effective appearance assignments"})
     );
     Ok(())

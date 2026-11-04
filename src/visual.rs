@@ -10,6 +10,11 @@ use crate::{
     AppearanceBinding, AppearanceDefinition, AppearanceLayer, AppearanceOrigin, AppearanceTarget,
     Configuration, PresentationScope, PresentationSource, mesh,
 };
+mod archive;
+pub use archive::{
+    VisualArchive, VisualArchiveComponent, VisualArchiveFailure, VisualArchiveKey,
+    VisualArchiveState,
+};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -276,6 +281,8 @@ pub struct VisualDiagnostic {
 /// Decoded visual evidence with explicit partial coverage; empty is not known absence.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct VisualData {
+    /// Sequential owner/state archive evidence; incomplete payloads stop interpretation.
+    pub archive: Option<VisualArchive>,
     /// Binary definitions, including definitions whose applied ownership is unresolved.
     pub definitions: Vec<AppearanceDefinition>,
     /// Supported explicit document or saved-cache bindings only.
@@ -308,7 +315,7 @@ pub(crate) fn native_string_at(bytes: &[u8], at: usize) -> Option<(NativeString,
 fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
     let legacy_texture_block = match reader.u32()? {
         0 => {
-            if reader.words::<5>()? != [1, 0, 1, 0, 1] {
+            if !matches!(reader.words::<5>()?, [1, 0, 1, 0, 1] | [1, 0, 1, 1, 1]) {
                 return None;
             }
             None
@@ -486,6 +493,7 @@ pub(crate) fn parse(
         .iter()
         .filter(|(name, _)| name.as_str() == "ThirdPtyStore/VisualStates")
     {
+        out.archive = Some(archive::parse(bytes));
         let classes = mesh::class_intervals(bytes);
         let state_start = out.display_states.len();
         for class in classes

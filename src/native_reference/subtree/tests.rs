@@ -724,6 +724,7 @@ fn finish_face(bytes: &mut Vec<u8>, profile: NativeFaceReferenceProfile) {
     // Both authored root declarations have the same 11-byte class-name length.
     bytes[29..33].copy_from_slice(&768_u32.to_le_bytes());
     match profile {
+        NativeFaceReferenceProfile::VisualStatesTwoWords => words(bytes, &[0, 0]),
         NativeFaceReferenceProfile::ThreeWords => words(bytes, &[0, 0, 0]),
         NativeFaceReferenceProfile::FiveWords => words(bytes, &[0, 0, 15000, 0, 0]),
     }
@@ -784,6 +785,9 @@ fn complete_faces_preserve_sequential_map_and_allow_complete_root_backreferences
         assert_eq!(cursor.position(), bytes.len());
         assert_eq!(serde_json::to_value(reader.objects()).unwrap(), saved);
         let wrong_profile = match tail {
+            NativeFaceReferenceProfile::VisualStatesTwoWords => {
+                NativeFaceReferenceProfile::ThreeWords
+            }
             NativeFaceReferenceProfile::ThreeWords => NativeFaceReferenceProfile::FiveWords,
             NativeFaceReferenceProfile::FiveWords => NativeFaceReferenceProfile::ThreeWords,
         };
@@ -1038,3 +1042,54 @@ fn invalid_edge_trailers_headers_and_prefix_backreferences_stop_transactionally(
 }
 
 mod model_header;
+
+#[test]
+fn visual_face_reference_profile_accepts_its_two_word_tail_without_relaxing_other_profiles() {
+    let mut bytes = Vec::new();
+    class(&mut bytes, "moFaceRef_c");
+    words(&mut bytes, &[1, 0, 1, 0, 0]);
+    bytes.extend(COMPONENT_MARKER);
+    tag(&mut bytes, 0);
+    tag(&mut bytes, 0);
+    words(&mut bytes, &[0, 0]);
+    let mut reader = NativeSubtreeReader::new(
+        ArchiveContext::new(),
+        NativeExternalObjectProfile::ThreeStrings,
+    );
+    let mut cursor = BinaryReader::new(&bytes);
+    reader
+        .read_face_reference(
+            &mut cursor,
+            "VisualStates",
+            NativeFaceReferenceProfile::VisualStatesTwoWords,
+        )
+        .unwrap();
+    assert_eq!(cursor.position(), bytes.len());
+    let mut wrong = NativeSubtreeReader::new(
+        ArchiveContext::new(),
+        NativeExternalObjectProfile::ThreeStrings,
+    );
+    let mut cursor = BinaryReader::new(&bytes);
+    assert!(
+        wrong
+            .read_face_reference(
+                &mut cursor,
+                "VisualStates",
+                NativeFaceReferenceProfile::ThreeWords
+            )
+            .is_err()
+    );
+    assert_eq!(cursor.position(), 0);
+    assert!(wrong.archive().entries().is_empty());
+    bytes[29..33].copy_from_slice(&42_u32.to_le_bytes());
+    assert!(
+        wrong
+            .read_face_reference(
+                &mut BinaryReader::new(&bytes),
+                "VisualStates",
+                NativeFaceReferenceProfile::VisualStatesTwoWords
+            )
+            .is_err()
+    );
+    assert!(wrong.archive().entries().is_empty());
+}

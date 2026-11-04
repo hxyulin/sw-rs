@@ -173,7 +173,8 @@ impl<'a> DocumentReader<'a> {
     }
     /// Inspect cached Part surface references once, separately from geometry decoding.
     /// Uses retained carrier bytes and table metadata windows; no mesh buffers are copied.
-    /// Ordinary `geometry()` and the viewer never pay for this opt-in scan.
+    /// Ordinary `geometry()` does not pay for this opt-in scan. The viewer requests
+    /// it for supported complete visual archives when reconstructing saved colors.
     pub fn surface_references(&self) -> Result<&crate::CachedSurfaceData, ParseError> {
         let geometry = self.geometry()?;
         let container = self.container()?;

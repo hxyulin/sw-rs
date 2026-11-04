@@ -219,3 +219,33 @@ for name,properties in [('bitmap-cache',bitmap_property()),('bitmap-override',vi
         archive.writestr('Block.SLDPRT',part([.04,.03,.02],cache_properties=b'\x33\x80'+properties,
             extra_streams=[('ThirdPtyStore/VisualStates',bitmap_state())]))
         archive.writestr('images/grid.png',grid_png())
+
+# Complete authored visual archive: counted state IDs, reused property objects,
+# and a derived feature whose base component consumes its own archive slot.
+def archive_property(rgb):
+    packed = rgb[0] | rgb[1]<<8 | rgb[2]<<16
+    value = visual_property(rgb, '')+u32(0,1,0,1,1,1)+visual_string('')
+    value += u32(1,1,29,0)+visual_string('defaultplastic')+bytes([3])+u32(packed)
+    value += struct.pack('<10f',*([0]*10))+u32(1)+struct.pack('<5f',*([0]*5))+bytes(12)
+    value += visual_string('<SystemTexture>\\graphics\\materials\\color.p2m')+u32(0xffffff)+struct.pack('<2f',1,1)+visual_string('')
+    value += struct.pack('<2f',.001,.005)+u32(0,0,0)+struct.pack('<14f',*([0]*14))+visual_string('')
+    value += u32(0)+visual_string('')*3+bytes(92)+visual_string('')+bytes(8)+visual_string('')+bytes(8)+visual_string('')+bytes(24)
+    return value
+
+def native_archive(selected, ambiguous=False):
+    tag=lambda n:struct.pack('<H',n)
+    value=u32(18000,0)+visual_class('visStateKeyData_c')+u32(5,1,1,0,selected,1,2,1)
+    value+=visual_string('<OldName>_Blue')+u32(0,0,0,2)+visual_string('Gray')+u32(0,0,0)
+    value+=u32(0,3 if ambiguous else 2)+visual_class('moCompHolder_c')+visual_class('moUnitComponent_c')+bytes(79)+u32(18000,2,1,2)
+    value+=visual_class('visStateVisualPropertiesAttribute_c')+u32(1)+visual_class('moVisualProperties_c')+archive_property([180,180,180])
+    value+=visual_class('visStateVisualStateAttribute_c')+u32(1,1,6,1,0)
+    value+=u32(2,2)+tag(8)+tag(12)
+    value+=visual_class('moCompFeature_c')+tag(0x8005)+bytes(79)+u32(18000,7,12345,2,1,2)
+    value+=tag(0x8007)+u32(1)+tag(0x8009)+archive_property([0,49,255])+tag(12)
+    value+=u32(2,2)+tag(0x8007)+u32(1)+tag(0)+tag(12)
+    if ambiguous:
+        value+=tag(0x800d)+tag(0x8005)+bytes(79)+u32(18000,7,54321,2,1,2)+tag(16)+tag(12)+u32(2,2)+tag(18)+tag(12)
+    return value+u32(0,0)
+
+for name,selected,ambiguous in [('native-archive-blue',1,False),('native-archive-gray',2,False),('native-archive-ambiguous',1,True)]:
+    (OUT/(name+'.SLDPRT')).write_bytes(part([.18,.10,.02],extra_streams=[('ThirdPtyStore/VisualStates',native_archive(selected,ambiguous)),('swXmlContents/KeyWords',b'<Keywords><Feature id="7" Name="Colored"/></Keywords>')],cache_properties=visual_string('moSimpleSurfIdRep_c,7,2,')))

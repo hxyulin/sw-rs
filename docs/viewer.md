@@ -146,6 +146,15 @@ unresolved and sentinel cache records block document-color fallback. Multiple
 display states are not guessed. This does not recover native face/body/occurrence
 ownership, optical response or transparent rendering.
 
+For the supported complete native visual archive, saved configuration indices
+select state IDs and their owner/property links. Feature colors project through
+consistent cache source IDs and unique same-document feature matches. Body colors
+require exact native reference classes and complete numeric tuples. This is a
+saved-cache reconstruction; current B-Rep ownership and face timestamps remain
+unverified. Ambiguous owner links, unsupported face-color selection and uncertain
+body coverage keep diagnostic colors. Partial archive walks never resume at
+scanned markers or establish complete ownership.
+
 The physical material fallback uses saved shader identities, swatches and valid
 diffuse/specularity/emission coefficients. Known
 styles include satin aluminum, polished/matte metals, plastic, glass-fiber and

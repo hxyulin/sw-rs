@@ -355,3 +355,68 @@ The research example also emits the source-header words, feature-XML candidates
 and exact carrier/offset pairs for matching cache-source IDs. Optional
 `--dump-stream PATH` writes the decoded visual stream for byte-level inspection;
 keep both stream dumps and JSON reports private.
+
+### Sequential owner/state archive decoding, 2026-11-04
+
+The earlier support gate is superseded by a sequential decoder built from the
+existing local corpus. No new authoring trials were required.
+
+The supported root contains a checked state-key object, configuration-index to
+selected-state-ID rows, a counted component list, and a trailing label/object
+reference table. State key text can retain a configuration's old name after a
+rename. The numeric configuration/state relationship therefore matters: the
+controlled Complete/Reduced fixtures retain an old Default-prefixed key. Their
+state-only alternate save changes Complete's selected-state ID from RedState to
+the alternate key, matching the recorded API operation.
+
+Each component has counted state entries containing attribute pointers. Property
+attributes and properties are shared through object backreferences. Derived
+components serialize a base-component object, which consumes an archive map slot;
+treating that header as only a class reference shifts later object IDs. Following
+these slots recovers shared feature colors that declaration scans never see.
+
+The decoder uses the existing checked archive context and native reference reader.
+It consumes supported key, holder, unit, feature, body, face, property, and state
+attribute payloads sequentially. Unknown payloads stop the walk. It records the
+failure offset and never resumes at a later scanned class declaration. Supported
+visual owner references use a separate two-word trailer profile without relaxing
+other native face-reference profiles. The untextured extension selectors
+`[1,0,1,1,1]` are also supported; their shader fields remain raw source data.
+
+The remaining EGA Part's full visual stream consumes exactly to EOF, with 41
+components and four property objects. The saved selected state and feature-owner
+links now identify the dark-gray and blue appearances, including owners sharing
+an attribute object. Body and face fixture streams also consume to EOF. Across
+the existing controlled corpus, 57 of 80 visual archives match the sequential
+profile; the other layouts retain partial reports and existing independent
+prefix decoders.
+
+### Browser cache projection
+
+The browser uses complete archive reports to select the saved state by native
+configuration index. Feature colors project onto cache tables only when their
+surface references agree and the source ID uniquely matches a feature in that
+same document. This is explicitly a saved-cache visualization convention; it
+still does not prove current B-Rep ownership or face timestamps. Native body
+colors require exact reference-class and complete numeric-tuple matches, including
+suffix fields. Face-owner color selection remains unsupported and blocks lower
+archive-color guesses. Unmatched body coverage, conflicting references and
+ambiguous feature owners remain diagnostic.
+
+Exact independently decoded cache properties retain their existing selection
+path. Material-family mode continues to use physical assignments. No native
+rendering equivalence, texture UV recovery or transparent shading is claimed.
+
+The private remaining-Part scene selects RGB for 29,723 of 29,796 valid rendered
+triangles. The other 73 retain diagnostic colors because of reference uncertainty.
+The full EGA main assembly selects RGB for 3,375,635 of 3,380,059 rendered
+triangles. Another 2,688 triangles retain a physical-material preset; 1,736 remain
+diagnostic. The saved visual stream and per-source reports remain ignored under
+`local-assets/visual-walk/`.
+
+The research example emits the sequential report under `decoded_visuals.archive`
+and reports owner/state decoding separately from current topology ownership:
+
+```sh
+cargo run --locked --example inspect_visual_candidates -- MODEL > SUPPORT-REPORT.json
+```

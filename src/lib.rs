@@ -79,7 +79,8 @@ pub use surface::{
 pub use visual::{
     NativeAppearance, NativeAppearanceExtension, NativeBitmapTextureParameters,
     NativeShaderParameters, NativeString, NativeTextureBlock, NativeTextureMappingHypothesis,
-    SavedDisplayState, UnresolvedVisualBinding, VisualData, VisualDiagnostic,
+    SavedDisplayState, UnresolvedVisualBinding, VisualArchive, VisualArchiveComponent,
+    VisualArchiveFailure, VisualArchiveKey, VisualArchiveState, VisualData, VisualDiagnostic,
 };
 pub use zlb::{ZlbChunk, ZlbStream, decode_zlb};
 

@@ -2,12 +2,12 @@
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 //! Owned synthetic appearance fixtures; no third-party CAD or shader assets.
 use super::*;
-fn class(out: &mut Vec<u8>, name: &str) {
+pub(super) fn class(out: &mut Vec<u8>, name: &str) {
     out.extend([255, 255, 1, 0]);
     out.extend((name.len() as u16).to_le_bytes());
     out.extend(name.as_bytes());
 }
-fn string(out: &mut Vec<u8>, text: &str) {
+pub(super) fn string(out: &mut Vec<u8>, text: &str) {
     let units: Vec<_> = text.encode_utf16().collect();
     out.extend([255, 254, 255]);
     if units.len() < 254 {
@@ -18,7 +18,7 @@ fn string(out: &mut Vec<u8>, text: &str) {
     }
     out.extend(units.into_iter().flat_map(u16::to_le_bytes));
 }
-fn property(rgb: [u8; 3], texture: &str, name: &str) -> Vec<u8> {
+pub(super) fn property(rgb: [u8; 3], texture: &str, name: &str) -> Vec<u8> {
     let mut out = vec![rgb[0], rgb[1], rgb[2], 0];
     out.extend([0; 8]);
     string(&mut out, texture);
@@ -30,7 +30,7 @@ fn property(rgb: [u8; 3], texture: &str, name: &str) -> Vec<u8> {
     );
     out
 }
-fn extension_bytes(out: &mut Vec<u8>) {
+pub(super) fn extension_bytes(out: &mut Vec<u8>) {
     out.extend(
         [0_u32, 1, 0, 1, 0, 1]
             .into_iter()

@@ -65,6 +65,7 @@ pub struct Project {
     embedded_files: BTreeMap<String, FileSet>,
     geometry: BTreeMap<String, Result<sw_rs::GeometryDocument, String>>,
     inspection: Option<SourceInspection>,
+    native_colors: BTreeMap<String, crate::saved_appearance::NativeCacheColors>,
 }
 impl Project {
     pub fn new(files: FileSet) -> Self {
@@ -75,6 +76,7 @@ impl Project {
             embedded_files: BTreeMap::new(),
             geometry: BTreeMap::new(),
             inspection: None,
+            native_colors: BTreeMap::new(),
         }
     }
     fn document(&mut self, path: &str) -> Result<&Document, String> {
@@ -91,6 +93,21 @@ impl Project {
             let is_part = reader.metadata().map_err(|e| e.to_string())?.document_type == "part";
             if is_part {
                 let _ = reader.geometry();
+                if reader
+                    .metadata()
+                    .is_ok_and(|d| d.visuals.archive.as_ref().is_some_and(|g| g.complete))
+                    && let Ok(surfaces) = reader.surface_references()
+                    && let Ok(features) = reader.features()
+                {
+                    self.native_colors.insert(
+                        path.into(),
+                        crate::saved_appearance::archive_colors(
+                            reader.metadata().expect("requested metadata"),
+                            surfaces,
+                            features,
+                        ),
+                    );
+                }
             }
             let output = reader.finish().map_err(|e| e.to_string())?;
             let mut container = output.container;
@@ -525,9 +542,26 @@ impl Project {
         });
         scene.hierarchy[node]["material_index"] = material_index.into();
         for mesh in &g.model.tessellations {
-            let saved_color = crate::saved_appearance::mesh_native(&g.presentation, mesh, name)
-                .and_then(|native| native.color_rgb)
-                .map(|rgb| rgb.map(|v| f32::from(v) / 255.));
+            let native_color = if matches!(
+                g.presentation
+                    .cached_property(&mesh.source_stream, mesh.source_offset),
+                sw_rs::CachedPropertyResolution::NotDecoded
+            ) {
+                self.native_colors.get(path).and_then(|colors| {
+                    colors.get(&(mesh.source_stream.clone(), mesh.source_offset))
+                })
+            } else {
+                None
+            };
+            let saved_color = match native_color {
+                Some(color) => *color,
+                None => crate::saved_appearance::mesh_native(&g.presentation, mesh, name)
+                    .and_then(|native| native.color_rgb),
+            }
+            .map(|rgb| rgb.map(|v| f32::from(v) / 255.));
+            if native_color.is_some_and(|c| c.is_some()) && !scene.diagnostics.iter().any(|d| d == "Native visual colors use saved state links and cache source IDs; current topology is not verified.") {
+                scene.diagnostics.push("Native visual colors use saved state links and cache source IDs; current topology is not verified.".into());
+            }
             let projection = match crate::texture::mesh_projection(
                 &g.presentation,
                 mesh,

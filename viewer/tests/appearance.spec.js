@@ -176,3 +176,33 @@ test.describe("appearance", () => {
     expect(await pixels()).toBe(family);
   });
 });
+
+test("sequential state IDs select feature colors and reject ambiguous owners", { tag: "@hidpi" }, async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    const W = window.Worker;
+    window.Worker = class extends W { constructor(...args) { super(...args); this.addEventListener("message", ({data}) => { if (data.type === "scene") window.archiveScene = data.scene; }); } };
+  });
+  await ready(page);
+  const load = async name => {
+    await page.evaluate(() => { window.archiveScene = null; });
+    await page.locator("#file").setInputFiles(path.join(fixtures,name+".SLDPRT"));
+    await expect.poll(() => page.evaluate(() => window.archiveScene?.triangles)).toBe(12);
+    await expect.poll(() => page.evaluate(() => window.viewer.busy)).toBe(false);
+  };
+  const pixels = () => page.locator("#scene").evaluate(c => c.toDataURL());
+  await load("native-archive-blue");
+  const blueColor = await page.evaluate(() => window.archiveScene.batches[0].saved_color);
+  expect(blueColor[0]).toBe(0); expect(blueColor[1]).toBeCloseTo(49/255); expect(blueColor[2]).toBe(1);
+  const blue = await pixels();
+  const style = page.getByRole("combobox", {name:"Appearance style",exact:true});
+  await style.selectOption("family"); expect(await pixels()).not.toBe(blue);
+  await style.selectOption("saved"); expect(await pixels()).toBe(blue);
+  await load("native-archive-gray");
+  expect(await page.evaluate(() => window.archiveScene.batches[0].saved_color[0])).toBeCloseTo(180/255);
+  expect(await pixels()).not.toBe(blue);
+  await load("native-archive-ambiguous");
+  expect(await page.evaluate(() => window.archiveScene.batches[0].saved_color)).toBeNull();
+  expect(errors).toEqual([]);
+});
