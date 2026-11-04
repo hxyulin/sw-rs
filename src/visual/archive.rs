@@ -209,7 +209,11 @@ impl<'a> Walker<'a> {
                 }
                 Object::Holder
             }
-            "moUnitComponent_c" | "moCompFeature_c" | "moCompSolidBody_c" | "moCompFace_c" => {
+            "moUnitComponent_c"
+            | "moCompFeature_c"
+            | "moCompSolidBody_c"
+            | "moCompSurfaceBody_c"
+            | "moCompFace_c" => {
                 let base = if name != "moUnitComponent_c" {
                     let header = self
                         .subtree
@@ -238,33 +242,41 @@ impl<'a> Walker<'a> {
                     None
                 };
                 let mut raw_owner_tail = Vec::new();
-                let reference_object =
-                    if matches!(name.as_str(), "moCompSolidBody_c" | "moCompFace_c") {
-                        if name == "moCompFace_c" && self.bytes(1)? != [0] {
-                            return Err(self.error("unsupported face-owner flag"));
-                        }
-                        let pointer = self
-                            .subtree
-                            .read_face_reference(
-                                &mut self.cursor,
-                                "ThirdPtyStore/VisualStates",
-                                NativeFaceReferenceProfile::VisualStatesTwoWords,
-                            )
-                            .map_err(Self::archive_error)?;
-                        let n = if name == "moCompSolidBody_c" { 8 } else { 3 };
-                        for _ in 0..n {
+                let reference_object = if matches!(
+                    name.as_str(),
+                    "moCompSolidBody_c" | "moCompSurfaceBody_c" | "moCompFace_c"
+                ) {
+                    if name == "moCompFace_c" && self.bytes(1)? != [0] {
+                        return Err(self.error("unsupported face-owner flag"));
+                    }
+                    let pointer = self
+                        .subtree
+                        .read_face_reference(
+                            &mut self.cursor,
+                            "ThirdPtyStore/VisualStates",
+                            NativeFaceReferenceProfile::VisualStatesTwoWords,
+                        )
+                        .map_err(Self::archive_error)?;
+                    for _ in 0..3 {
+                        raw_owner_tail.push(self.word()?);
+                    }
+                    if name != "moCompFace_c" {
+                        let n = self.count()?;
+                        raw_owner_tail.push(n as u32);
+                        for _ in 0..n + 3 {
                             raw_owner_tail.push(self.word()?);
                         }
-                        if !matches!(raw_owner_tail[0], 13000 | 18000) {
-                            return Err(self.error("unsupported derived component version"));
-                        }
-                        if name == "moCompFace_c" && self.bytes(2)? != [0; 2] {
-                            return Err(self.error("unsupported face-owner trailer"));
-                        }
-                        pointer.header.object_index()
-                    } else {
-                        None
-                    };
+                    }
+                    if !matches!(raw_owner_tail[0], 13000 | 18000) {
+                        return Err(self.error("unsupported derived component version"));
+                    }
+                    if name == "moCompFace_c" && self.bytes(2)? != [0; 2] {
+                        return Err(self.error("unsupported face-owner trailer"));
+                    }
+                    pointer.header.object_index()
+                } else {
+                    None
+                };
                 let n = self.count()?;
                 let mut states = Vec::new();
                 for _ in 0..n {

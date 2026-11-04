@@ -106,8 +106,10 @@ impl<'a> BinaryReader<'a> {
             return None;
         }
         let count = match trial.take(1)?[0] {
-            254 => usize::from(trial.u16()?),
-            255 => usize::try_from(trial.u32()?).ok()?,
+            255 => match trial.u16()? {
+                65535 => usize::try_from(trial.u32()?).ok()?,
+                count => usize::from(count),
+            },
             count => usize::from(count),
         };
         let bytes = trial.take(count.checked_mul(2)?)?;

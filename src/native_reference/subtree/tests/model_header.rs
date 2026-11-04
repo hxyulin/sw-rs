@@ -198,7 +198,7 @@ fn model_header_truncation_and_invalid_schema_count_or_text_are_transactional() 
     let mut invalid_text = bytes.clone();
     let frame = bytes
         .windows(4)
-        .position(|s| s == [255, 254, 255, 254])
+        .position(|s| s == [255, 254, 255, 255])
         .unwrap();
     invalid_text[frame + 6..frame + 8].copy_from_slice(&0xdc00_u16.to_le_bytes());
     for bad in [wrong_schema, extended_count, excessive_count, invalid_text] {

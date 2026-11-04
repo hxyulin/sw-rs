@@ -24,9 +24,10 @@ pub type NativeString = crate::FramedString;
 /// Supported binary visual-property prefix, independent of physical material.
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeAppearance {
-    /// Exact primary packed-color word, including inheritance/sentinel values.
+    /// Exact legacy prefix packed-color word, including inheritance/sentinel values.
     pub packed_color: u32,
-    /// Low-to-high RGB bytes only when the high byte is zero. Other saved words
+    /// Legacy prefix RGB, only when the high byte is zero. The supported render
+    /// primary color can differ; use `render_color_rgb()` for display. Other words
     /// remain uninterpreted; no color profile or alpha/inheritance rule is assumed.
     pub color_rgb: Option<[u8; 3]>,
     /// Uninterpreted saved property flags.
@@ -49,6 +50,25 @@ pub struct NativeAppearance {
     pub extension: Option<NativeAppearanceExtension>,
 }
 
+impl NativeAppearance {
+    /// Saved render-material primary RGB for the supported shader profiles.
+    /// The shader color can differ from the legacy prefix swatch. Unsupported
+    /// shader discriminators retain the legacy RGB fallback; opaque primary-color
+    /// words in a supported shader remain unresolved rather than inheriting it.
+    pub fn render_color_rgb(&self) -> Option<[u8; 3]> {
+        let Some(extension) = self
+            .extension
+            .as_ref()
+            .filter(|e| matches!(e.shader_parameters.discriminator, 2 | 3))
+        else {
+            return self.color_rgb;
+        };
+        let word = extension.shader_parameters.packed_word;
+        let [r, g, b, _] = word.to_le_bytes();
+        (word >> 24 == 0).then_some([r, g, b])
+    }
+}
+
 /// Saved legacy texture-block fields. Supported profiles preserve all selectors;
 /// only the controlled bitmap profile has a limited parameter interpretation.
 #[derive(Clone, Debug, Serialize)]
@@ -62,8 +82,9 @@ pub struct NativeTextureBlock {
     pub reference_flags: u16,
     /// Two additional finite doubles, without guessed scale/offset semantics.
     pub additional_values: [f64; 2],
-    /// Six trailing selector words, retained without invented flag names.
-    pub selectors: [u32; 6],
+    /// Exact trailing selector words: six in the visual-state profile,
+    /// five in the supported display-cache profile. No flag meanings are inferred.
+    pub selectors: Vec<u32>,
 }
 
 /// Source-backed fields in supported visual-property extensions.
@@ -105,7 +126,8 @@ pub struct NativeShaderParameters {
     pub offset: usize,
     /// Raw shader discriminator byte.
     pub discriminator: u8,
-    /// Raw packed word; no color or inheritance interpretation is established.
+    /// Saved render-material primary color for discriminator 2/3; kept raw for
+    /// other profiles and for opaque/sentinel high-byte values.
     pub packed_word: u32,
     /// Ten finite floats, preserved in order without asserting a matrix layout.
     pub values: [f32; 10],
@@ -313,9 +335,16 @@ pub(crate) fn native_string_at(bytes: &[u8], at: usize) -> Option<(NativeString,
 }
 
 fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
+    extension_profile(reader, false)
+}
+
+fn extension_profile(reader: &mut Reader<'_>, cached: bool) -> Option<NativeAppearanceExtension> {
     let legacy_texture_block = match reader.u32()? {
         0 => {
-            if !matches!(reader.words::<5>()?, [1, 0, 1, 0, 1] | [1, 0, 1, 1, 1]) {
+            if !matches!(
+                reader.words::<5>()?,
+                [1, 0, 1, 0, 1] | [1, 0, 1, 1, 1] | [1, 1, 0, 1, 1]
+            ) {
                 return None;
             }
             None
@@ -328,11 +357,25 @@ fn extension(reader: &mut Reader<'_>) -> Option<NativeAppearanceExtension> {
                 return None;
             }
             let additional_values = reader.doubles::<2>()?;
-            let selectors = reader.words::<6>()?;
-            if !matches!(
-                (reference_flags, selectors),
-                (0, [0, 1, 1, 0, 1, 1]) | (1, [0, 1, 0, 1, 0, 1])
-            ) {
+            let compact_selectors = cached && u32_at(reader.bytes, reader.at) == Some(1);
+            let selectors = if compact_selectors {
+                reader.words::<5>()?.to_vec()
+            } else {
+                reader.words::<6>()?.to_vec()
+            };
+            let supported = if compact_selectors {
+                matches!(
+                    (reference_flags, selectors.as_slice()),
+                    (0 | 1, [1, 1, 0, 1, 1]) | (1, [1, 0, 1, 0 | 1, 1])
+                )
+            } else {
+                matches!(
+                    (reference_flags, selectors.as_slice()),
+                    (0, [0, 1, 1, 0, 1, 1] | [0, 1, 0, 1, 1, 1])
+                        | (1, [0, 1, 0, 1, 0 | 1, 1] | [0, 1, 1, 0, 1, 1])
+                )
+            };
+            if !supported {
                 return None;
             }
             Some(NativeTextureBlock {
@@ -417,7 +460,11 @@ fn definition(bytes: &[u8], at: usize, stream: &str) -> Option<AppearanceDefinit
         optical_values,
         optical_bits: optical_bits.map(|bits| format!("{bits:016X}")),
         prefix_end: reader.at,
-        extension: extension(&mut reader),
+        extension: if stream == "Contents/DisplayLists" || stream == "DisplayLists" {
+            extension_profile(&mut reader, true)
+        } else {
+            extension(&mut reader)
+        },
     };
     Some(AppearanceDefinition {
         origin: AppearanceOrigin::SavedAppearance,
@@ -720,18 +767,20 @@ pub(crate) fn cached(
         });
     };
     for face in faces {
-        let Some(class) = classes.iter().find(|c| {
-            c.name == "uoTempFaceTessData_c"
-                && c.content.start <= face.table.start
-                && face.table.end <= c.content.end
-        }) else {
-            continue;
-        };
+        let legacy_end = classes
+            .iter()
+            .find(|c| {
+                c.name == "uoTempFaceTessData_c"
+                    && c.content.start <= face.table.start
+                    && face.table.end <= c.content.end
+            })
+            .map(|c| c.content.end);
         for value in inline(
             bytes,
             stream,
             face.metadata.start,
-            face.metadata.end.min(class.content.end),
+            face.metadata.end,
+            legacy_end,
         ) {
             bind(&value, face, AppearanceLayer::CachedFace);
         }
@@ -788,14 +837,30 @@ fn body_property(bytes: &[u8], stream: &str, at: usize) -> Option<AppearanceDefi
     definition(bytes, reader.at, stream)
 }
 
-fn inline(bytes: &[u8], stream: &str, start: usize, end: usize) -> Vec<AppearanceDefinition> {
+fn inline(
+    bytes: &[u8],
+    stream: &str,
+    start: usize,
+    end: usize,
+    legacy_end: Option<usize>,
+) -> Vec<AppearanceDefinition> {
     let Some(part) = bytes.get(start..end) else {
         return vec![];
     };
     let mut values = Vec::new();
     let mut relative = 0;
     while relative + 2 <= part.len() {
-        if part[relative..relative + 2] == [0x33, 0x80]
+        // A saved face-property slot has a present word and a checked sentinel
+        // before its new-object tag. The tag's map index varies between saves.
+        // This decodes the bounded value, without seeding an MFC object map or
+        // resolving backreferences. Keep the earlier explicit cache profile too.
+        let tag = u16::from_le_bytes([part[relative], part[relative + 1]]);
+        let framed_slot = relative >= 8
+            && part[relative - 8..relative] == [1, 0, 0, 0, 255, 255, 255, 255]
+            && tag > 0x8000
+            && tag < 0xffff;
+        let legacy = tag == 0x8033 && legacy_end.is_some_and(|limit| start + relative < limit);
+        if (framed_slot || legacy)
             && let Some(value) = definition(&bytes[..end], start + relative + 2, stream)
         {
             let native = value.native.as_ref().expect("binary definition");
@@ -804,6 +869,22 @@ fn inline(bytes: &[u8], stream: &str, start: usize, end: usize) -> Vec<Appearanc
                 .as_ref()
                 .map_or(native.prefix_end, |extension| extension.prefix_end);
             relative = next - start;
+            // Reused face classes no longer sit in the original declaration's
+            // interval. A later surface-reference frame anchors the property in
+            // this face's own metadata; body footers have no such frame.
+            if !legacy
+                && crate::CachedSurfaceReferences::inspect(
+                    bytes,
+                    crate::ByteSpan {
+                        offset: next,
+                        length: end.saturating_sub(next),
+                    },
+                )
+                .references
+                .is_empty()
+            {
+                continue;
+            }
             values.push(value);
             continue;
         }

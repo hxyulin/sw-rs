@@ -13,6 +13,11 @@ impl Reader<'_> {
         Some(self.cursor.take(1)?[0])
     }
     fn string(&mut self) -> Option<String> {
+        let mut unicode = self.cursor;
+        if let Some(value) = unicode.string() {
+            self.cursor = unicode;
+            return Some(value.value);
+        }
         let first = self.u8()?;
         if first != 255 {
             return String::from_utf8(self.cursor.take(usize::from(first))?.to_vec()).ok();
@@ -22,15 +27,10 @@ impl Reader<'_> {
             return String::from_utf8(self.cursor.take(usize::from(second))?.to_vec()).ok();
         }
         let third = self.u8()?;
-        let len = if second == 254 && third == 255 {
-            match self.u8()? {
-                254 => usize::from(self.cursor.u16()?),
-                255 => usize::try_from(self.cursor.u32()?).ok()?,
-                n => usize::from(n),
-            }
-        } else {
-            usize::from(third)
-        };
+        if second == 254 && third == 255 {
+            return None;
+        }
+        let len = usize::from(third);
         let raw = self.cursor.take(len.checked_mul(2)?)?;
         let units = raw
             .as_chunks::<2>()
@@ -136,10 +136,10 @@ mod tests {
         let mut frames = vec![vec![255, 254, units.len() as u8]];
         frames.push(vec![255, 255, units.len() as u8]);
         frames.push(vec![255, 254, 255, units.len() as u8]);
-        let mut wide_count = vec![255, 254, 255, 254];
+        let mut wide_count = vec![255, 254, 255, 255];
         wide_count.extend((units.len() as u16).to_le_bytes());
         frames.push(wide_count);
-        let mut long_count = vec![255, 254, 255, 255];
+        let mut long_count = vec![255, 254, 255, 255, 255, 255];
         long_count.extend((units.len() as u32).to_le_bytes());
         frames.push(long_count);
         for mut frame in frames {

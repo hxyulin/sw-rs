@@ -147,13 +147,14 @@ display states are not guessed. This does not recover native face/body/occurrenc
 ownership, optical response or transparent rendering.
 
 For the supported complete native visual archive, saved configuration indices
-select state IDs and their owner/property links. Feature colors project through
-consistent cache source IDs and unique same-document feature matches. Body colors
-require exact native reference classes and complete numeric tuples. This is a
-saved-cache reconstruction; current B-Rep ownership and face timestamps remain
-unverified. Ambiguous owner links, unsupported face-color selection and uncertain
-body coverage keep diagnostic colors. Partial archive walks never resume at
-scanned markers or establish complete ownership.
+select state IDs and their owner/property links. Feature colors require a unique
+same-document source match. Face colors use the selected face's complete reference
+path. Checked saved body groups and carrier-local shared style references support
+body colors, including copied bodies without a new visual-state property. Shared
+style links supply color only. Null links cannot inherit a historical color, and
+conflicting links remain unresolved. This reconstructs the saved display cache;
+current B-Rep ownership and face timestamps remain unverified. Partial archive
+walks never resume at scanned markers or establish complete ownership.
 
 The physical material fallback uses saved shader identities, swatches and valid
 diffuse/specularity/emission coefficients. Known
@@ -164,7 +165,7 @@ classification; a carbon-fiber material can have a saved plastic appearance.
 Changing styles preserves the scene/configuration and needs no mesh decoding.
 
 The browser also renders supplied PNG, JPEG, BMP and WebP images for the supported
-bitmap profile selected by an exact cache-table binding or an unambiguous
+bitmap profile and the supported `carbonfiberepoxy` selector profiles, selected by an exact cache-table binding or an unambiguous
 document-level appearance and display state. Include the image alongside the CAD documents in the uploaded
 archive. Saved Windows references resolve against virtual archive paths; missing
 or ambiguous image references keep the existing shading and report an issue.
@@ -172,7 +173,10 @@ No host filesystem or external URL is opened. Corrupt or over-16-megapixel image
 fall back to shading. Desktop bitmap rendering is not implemented.
 
 Bitmap placement uses approximate dominant-plane projection in Part coordinates,
-with decoded scale, center and stored rotation. Exact supported cache-table
+with decoded scale, center and stored rotation for the controlled bitmap profile.
+Carbon fibre reuses those scalar locations as an unverified placement approximation.
+It requires the referenced image in the archive; `.p2m` files are not executed, and
+its bump, reflection and directional shader behavior is not reproduced. Exact supported cache-table
 bitmap bindings take precedence over a document default. Placement follows the
 Part through assembly transforms. It is explicitly labelled as approximate; native projection
 directions and UVs are not recovered. Other cached face/body properties and unresolved cache links block

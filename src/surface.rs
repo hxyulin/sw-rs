@@ -82,7 +82,9 @@ impl SavedSurfaceReference {
     pub fn parse_all(source: &FramedString) -> Vec<Self> {
         let text = source.value.trim();
         let first_class = text.split([',', '\r', '\n']).next().unwrap_or("");
-        if !first_class.starts_with("mo") || !first_class.ends_with("SurfIdRep_c") {
+        if !first_class.starts_with("mo")
+            || !(first_class.ends_with("SurfIdRep_c") || first_class.ends_with("SurfIdRep2_c"))
+        {
             return Vec::new();
         }
         if !text.contains(['\r', '\n']) {
@@ -168,7 +170,9 @@ impl SavedSurfaceReference {
         let text = source.value.trim();
         let mut fields = text.split(',');
         let class_name = fields.next()?;
-        if !class_name.starts_with("mo") || !class_name.ends_with("SurfIdRep_c") {
+        if !class_name.starts_with("mo")
+            || !(class_name.ends_with("SurfIdRep_c") || class_name.ends_with("SurfIdRep2_c"))
+        {
             return None;
         }
         let feature_source_id = fields
@@ -252,6 +256,12 @@ pub struct CachedSurfaceRecord {
     pub source_offset: usize,
     /// Bounded adjacent metadata evidence, including absent/invalid references.
     pub surface_references: CachedSurfaceReferences,
+    /// Saved body identifier from a checked trailing display-cache group envelope.
+    /// This identifies a saved cache group, not current B-Rep ownership.
+    pub saved_body_id: Option<u32>,
+    /// Non-null reference cell in the checked body-property prefix. The value is
+    /// local to this display carrier; it is not a current B-Rep identifier.
+    pub saved_body_style: Option<u16>,
 }
 
 /// Opt-in cached surface evidence for one source and canonical configuration.
@@ -345,3 +355,86 @@ impl CachedSurfaceReferences {
 
 #[cfg(test)]
 mod tests;
+
+// Body groups follow their final face's reference frame. Interpret only this
+// exact position and the known body-property prefix, never a scanned ID marker.
+pub(crate) fn assign_body_ids(
+    records: &mut [CachedSurfaceRecord],
+    streams: &std::collections::BTreeMap<String, Vec<u8>>,
+) {
+    let mut order: Vec<_> = (0..records.len()).collect();
+    order.sort_by_key(|&i| (&records[i].source_stream, records[i].source_offset));
+    let mut pending = Vec::new();
+    let mut stream_name = String::new();
+    let mut group_known = true;
+    for index in order {
+        let record = &records[index];
+        if stream_name != record.source_stream {
+            pending.clear();
+            stream_name.clone_from(&record.source_stream);
+            group_known = true;
+        }
+        pending.push(index);
+        let bytes = &streams[&record.source_stream];
+        group_known &= !record.surface_references.references.is_empty();
+        let mut boundary = false;
+        let id = (|| {
+            let last = record.surface_references.references.last()?;
+            let mut reader = BinaryReader::at(bytes, last.source.offset)?;
+            reader.string()?;
+            if reader.u32()? != 0 {
+                return None;
+            }
+            // Two observed envelopes: the longer form adds a zero and a present
+            // word before the body ID. Select by checked fields, not file version.
+            let next = reader.u32()?;
+            let id = if next == 0 {
+                if reader.u32()? != 1 {
+                    return None;
+                }
+                reader.u32()?
+            } else {
+                next
+            };
+            boundary = true;
+            if id == 0 || id == u32::MAX || reader.words::<3>()? != [0, 1, u32::MAX] {
+                return None;
+            }
+            let tag = reader.u16()?;
+            if tag == 0xffff {
+                if reader.u16()? != 1 {
+                    return None;
+                }
+                let n = usize::from(reader.u16()?);
+                if reader.take(n)? != b"uoBodyPropInfo_c" {
+                    return None;
+                }
+            } else if tag <= 0x8000 {
+                return None;
+            }
+            let style = reader.u16()?;
+            if style >= 0x8000 {
+                return None;
+            }
+            let prefix = reader.words::<5>()?;
+            if prefix[..2] != [1, 6] || prefix[2] > 1 || prefix[3] > 1 || prefix[4] != 0 {
+                return None;
+            }
+            reader.string()?;
+            if reader.u32()? != 0 {
+                return None;
+            }
+            Some((id, style))
+        })();
+        if boundary {
+            if let Some((id, style)) = id.filter(|_| group_known) {
+                for &i in &pending {
+                    records[i].saved_body_id = Some(id);
+                    records[i].saved_body_style = (style != 0).then_some(style);
+                }
+            }
+            pending.clear();
+            group_known = true;
+        }
+    }
+}

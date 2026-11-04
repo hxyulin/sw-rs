@@ -65,7 +65,7 @@ pub struct Project {
     embedded_files: BTreeMap<String, FileSet>,
     geometry: BTreeMap<String, Result<sw_rs::GeometryDocument, String>>,
     inspection: Option<SourceInspection>,
-    native_colors: BTreeMap<String, crate::saved_appearance::NativeCacheColors>,
+    native_appearances: BTreeMap<String, crate::saved_appearance::NativeCacheAppearances>,
 }
 impl Project {
     pub fn new(files: FileSet) -> Self {
@@ -76,7 +76,7 @@ impl Project {
             embedded_files: BTreeMap::new(),
             geometry: BTreeMap::new(),
             inspection: None,
-            native_colors: BTreeMap::new(),
+            native_appearances: BTreeMap::new(),
         }
     }
     fn document(&mut self, path: &str) -> Result<&Document, String> {
@@ -99,9 +99,9 @@ impl Project {
                     && let Ok(surfaces) = reader.surface_references()
                     && let Ok(features) = reader.features()
                 {
-                    self.native_colors.insert(
+                    self.native_appearances.insert(
                         path.into(),
-                        crate::saved_appearance::archive_colors(
+                        crate::saved_appearance::archive_appearances(
                             reader.metadata().expect("requested metadata"),
                             surfaces,
                             features,
@@ -542,34 +542,40 @@ impl Project {
         });
         scene.hierarchy[node]["material_index"] = material_index.into();
         for mesh in &g.model.tessellations {
-            let native_color = if matches!(
+            let archive_property = if matches!(
                 g.presentation
                     .cached_property(&mesh.source_stream, mesh.source_offset),
                 sw_rs::CachedPropertyResolution::NotDecoded
             ) {
-                self.native_colors.get(path).and_then(|colors| {
+                self.native_appearances.get(path).and_then(|colors| {
                     colors.get(&(mesh.source_stream.clone(), mesh.source_offset))
                 })
             } else {
                 None
             };
-            let saved_color = match native_color {
-                Some(color) => *color,
-                None => crate::saved_appearance::mesh_native(&g.presentation, mesh, name)
-                    .and_then(|native| native.color_rgb),
+            let native = match archive_property {
+                Some(Some(crate::saved_appearance::CacheAppearance::Property(id))) => self.metadata
+                    [path]
+                    .visuals
+                    .archive
+                    .as_ref()
+                    .and_then(|archive| archive.properties.get(id)),
+                Some(_) => None,
+                None => crate::saved_appearance::mesh_native(&g.presentation, mesh, name),
+            };
+            let saved_color = match archive_property {
+                Some(Some(crate::saved_appearance::CacheAppearance::Color(rgb))) => Some(*rgb),
+                _ => native.and_then(|n| n.render_color_rgb()),
             }
             .map(|rgb| rgb.map(|v| f32::from(v) / 255.));
-            if native_color.is_some_and(|c| c.is_some()) && !scene.diagnostics.iter().any(|d| d == "Native visual colors use saved state links and cache source IDs; current topology is not verified.") {
+            if archive_property.is_some_and(|c| c.is_some()) && !scene.diagnostics.iter().any(|d| d == "Native visual colors use saved state links and cache source IDs; current topology is not verified.") {
                 scene.diagnostics.push("Native visual colors use saved state links and cache source IDs; current topology is not verified.".into());
             }
-            let projection = match crate::texture::mesh_projection(
-                &g.presentation,
-                mesh,
-                name,
-                path,
-                &self.files,
-            ) {
-                Ok(projection) => projection,
+            let projection = match native
+                .map(|native| crate::texture::native_projection(native, path, &self.files))
+                .transpose()
+            {
+                Ok(projection) => projection.flatten(),
                 Err(message) => {
                     if !scene.diagnostics.contains(&message) {
                         scene.diagnostics.push(message);

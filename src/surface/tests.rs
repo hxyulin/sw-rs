@@ -117,10 +117,10 @@ fn duplicate_consensus_never_discards_conflicting_tails_or_higher_order_evidence
 fn framed(value: &str) -> Vec<u8> {
     let units = value.encode_utf16().collect::<Vec<_>>();
     let mut bytes = vec![255, 254, 255];
-    if units.len() < 254 {
+    if units.len() < 255 {
         bytes.push(units.len() as u8);
     } else {
-        bytes.push(254);
+        bytes.push(255);
         bytes.extend((units.len() as u16).to_le_bytes());
     }
     bytes.extend(units.into_iter().flat_map(u16::to_le_bytes));
@@ -300,4 +300,71 @@ fn multiline_duplicates_nested_tails_and_unknown_rows_remain_distinct() {
         assert_eq!(records[0].feature_source_id, None);
         assert!(records[0].identity.is_none());
     }
+}
+
+#[test]
+fn body_group_ids_require_a_checked_boundary_and_do_not_cross_a_bad_group() {
+    fn table(bytes: &mut Vec<u8>, id: u32, valid: bool, short: bool) -> CachedSurfaceRecord {
+        let offset = bytes.len();
+        let text = "moSimpleSurfIdRep_c,7,2,";
+        bytes.extend([0xff, 0xfe, 0xff, text.len() as u8]);
+        bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+        bytes.extend([0; 4]);
+        if !short {
+            bytes.extend([0; 4]);
+            bytes.extend(1_u32.to_le_bytes());
+        }
+        for word in [id, 0, 1, u32::MAX] {
+            bytes.extend(word.to_le_bytes());
+        }
+        bytes.extend(0x8040_u16.to_le_bytes());
+        bytes.extend(0_u16.to_le_bytes());
+        for word in [1_u32, 6, 0, if valid { 1 } else { 2 }, 0] {
+            bytes.extend(word.to_le_bytes());
+        }
+        bytes.extend([0xff, 0xfe, 0xff, 0]);
+        bytes.extend(0_u32.to_le_bytes());
+        CachedSurfaceRecord {
+            source_stream: "DisplayLists".into(),
+            source_offset: offset,
+            saved_body_id: None,
+            saved_body_style: None,
+            surface_references: CachedSurfaceReferences {
+                metadata_span: ByteSpan {
+                    offset,
+                    length: bytes.len() - offset,
+                },
+                references: vec![
+                    SavedSurfaceReference::parse(&FramedString {
+                        offset,
+                        value: text.into(),
+                    })
+                    .unwrap(),
+                ],
+            },
+        }
+    }
+    let mut bytes = Vec::new();
+    let bad = table(&mut bytes, 100, false, false);
+    let good = table(&mut bytes, 200, true, false);
+    let short = table(&mut bytes, 300, true, true);
+    let mut records = vec![good, bad, short]; // Geometry order need not be serialization order.
+    let streams = [("DisplayLists".into(), bytes)].into_iter().collect();
+    assign_body_ids(&mut records, &streams);
+    assert_eq!(records[0].saved_body_id, Some(200));
+    assert_eq!(records[1].saved_body_id, None);
+    assert_eq!(records[2].saved_body_id, Some(300));
+}
+
+#[test]
+fn circular_reference_frames_remain_evidence_without_a_flat_identity() {
+    let saved =
+        reference("moCirPatternSurfIdRep2_c,730,3,0,<moFromSktEnt3IntSurfIdRep_c,701,3,-1,0>,");
+    assert_eq!(saved.class_name, "moCirPatternSurfIdRep2_c");
+    assert_eq!(saved.feature_source_id, Some(730));
+    assert_eq!(saved.status, SurfaceReferenceStatus::OpaqueTail);
+    assert!(
+        saved.identity.is_none(),
+        "nested paths never become flat identities"
+    );
 }

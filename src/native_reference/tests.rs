@@ -22,7 +22,7 @@ fn prefix(path: &str) -> Vec<u8> {
         class(&mut out, name);
     }
     let units = path.encode_utf16().collect::<Vec<_>>();
-    out.extend([255, 254, 255, 254]);
+    out.extend([255, 254, 255, 255]);
     out.extend((units.len() as u16).to_le_bytes());
     out.extend(units.into_iter().flat_map(u16::to_le_bytes));
     out
@@ -161,7 +161,7 @@ fn graph_ignores_prefix_lookalikes_inside_cstrings_but_keeps_adjacent_prefixes()
 
 fn string(out: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
-    out.extend([255, 254, 255, 254]);
+    out.extend([255, 254, 255, 255]);
     out.extend((units.len() as u16).to_le_bytes());
     out.extend(units.into_iter().flat_map(u16::to_le_bytes));
 }
@@ -470,7 +470,7 @@ fn failed_counted_strings_do_not_expose_nested_candidate_markers() {
         .offset
         + 2;
     outer.truncate(at);
-    outer.extend([255, 254, 255, 254]);
+    outer.extend([255, 254, 255, 255]);
     outer.extend((units.len() as u16).to_le_bytes());
     outer.extend(units.into_iter().flat_map(u16::to_le_bytes));
     let report = graph(vec![

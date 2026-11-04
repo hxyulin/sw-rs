@@ -17,7 +17,7 @@ fn words(b: &mut Vec<u8>, ns: &[u32]) {
 }
 fn text(b: &mut Vec<u8>, s: &str) {
     let units = s.encode_utf16().collect::<Vec<_>>();
-    b.extend([255, 254, 255, 254]);
+    b.extend([255, 254, 255, 255]);
     tag(b, units.len() as u16);
     b.extend(units.into_iter().flat_map(u16::to_le_bytes));
 }
@@ -1092,4 +1092,94 @@ fn visual_face_reference_profile_accepts_its_two_word_tail_without_relaxing_othe
             .is_err()
     );
     assert!(wrong.archive().entries().is_empty());
+}
+
+#[test]
+fn visual_mixed_array_retains_edge_identity_and_rejects_it_in_surface_profiles() {
+    for header in [4, 772] {
+        let mut bytes = Vec::new();
+        class(&mut bytes, "moFaceRef_c");
+        words(&mut bytes, &[1, 0, 2, header, 0]);
+        bytes.extend(COMPONENT_MARKER);
+        tag(&mut bytes, 0);
+        class(&mut bytes, "moSimpleEdgeIdRep_c");
+        tag(&mut bytes, 0);
+        tag(&mut bytes, 0);
+        words(&mut bytes, &[123]);
+        tag(&mut bytes, 0);
+        words(&mut bytes, &[0, 0]);
+        let mut reader = NativeSubtreeReader::new(
+            ArchiveContext::new(),
+            NativeExternalObjectProfile::ThreeStrings,
+        );
+        let mut cursor = BinaryReader::new(&bytes);
+        reader
+            .read_face_reference(
+                &mut cursor,
+                "VisualStates",
+                NativeFaceReferenceProfile::VisualStatesTwoWords,
+            )
+            .unwrap();
+        assert_eq!(cursor.position(), bytes.len());
+        assert!(reader.objects().values().any(|o| matches!(
+            o.payload,
+            NativeSubtreePayload::SimpleEdge { raw_word: 123, .. }
+        )));
+        let mut wrong = NativeSubtreeReader::new(
+            ArchiveContext::new(),
+            NativeExternalObjectProfile::ThreeStrings,
+        );
+        let mut cursor = BinaryReader::new(&bytes);
+        assert!(
+            wrong
+                .read_face_reference(
+                    &mut cursor,
+                    "VisualStates",
+                    NativeFaceReferenceProfile::ThreeWords
+                )
+                .is_err()
+        );
+        assert_eq!(cursor.position(), 0);
+        assert!(wrong.objects().is_empty());
+    }
+}
+
+#[test]
+fn indirect_surface_has_nested_identity_without_a_scalar_trailer() {
+    for (name, tail) in [
+        ("moIndirectSurfIdRep_c", Vec::new()),
+        ("moMirPatternSurfIdRep_c", Vec::new()),
+        ("moCirPatternSurfIdRep2_c", vec![1, 0]),
+    ] {
+        let mut bytes = Vec::new();
+        class(&mut bytes, name);
+        tag(&mut bytes, 0);
+        tag(&mut bytes, 0);
+        class(&mut bytes, "moSimpleSurfIdRep_c");
+        tag(&mut bytes, 0);
+        tag(&mut bytes, 0);
+        words(&mut bytes, &[42]);
+        words(&mut bytes, &tail);
+        let end = bytes.len();
+        words(&mut bytes, &[0x12345678]);
+        let mut reader = NativeSubtreeReader::new(
+            ArchiveContext::new(),
+            NativeExternalObjectProfile::ThreeStrings,
+        );
+        let mut cursor = BinaryReader::new(&bytes);
+        let pointer = reader.read_surface(&mut cursor, "VisualStates").unwrap();
+        assert_eq!(cursor.position(), end);
+        let NativeSubtreePayload::Surface {
+            nested: Some(nested),
+            raw_tail,
+            ..
+        } = &reader.objects()[&pointer.header.object_index().unwrap()].payload
+        else {
+            panic!("indirect surface");
+        };
+        assert_eq!(raw_tail, &tail);
+        assert!(
+            matches!(reader.objects()[&nested.header.object_index().unwrap()].payload, NativeSubtreePayload::Surface {ref raw_tail, ..} if raw_tail == &[42])
+        );
+    }
 }

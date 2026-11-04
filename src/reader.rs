@@ -180,24 +180,28 @@ impl<'a> DocumentReader<'a> {
         let container = self.container()?;
         Ok(self.surface_references.get_or_init(|| {
             let configuration = &geometry.configurations[0]; // canonical geometry invariant
+            let mut records: Vec<_> = geometry
+                .model
+                .tessellations
+                .iter()
+                .map(|table| crate::CachedSurfaceRecord {
+                    source_stream: table.source_stream.clone(),
+                    source_offset: table.source_offset,
+                    surface_references: crate::CachedSurfaceReferences::inspect(
+                        &container.streams[&table.source_stream],
+                        table.metadata_span,
+                    ),
+                    saved_body_id: None,
+                    saved_body_style: None,
+                })
+                .collect();
+            crate::surface::assign_body_ids(&mut records, &container.streams);
             crate::CachedSurfaceData {
                 schema: "sw-rs-surface-references-v1",
                 source_sha256: self.source_hash.clone(),
                 configuration_index: configuration.index,
                 configuration_name: configuration.name.clone(),
-                records: geometry
-                    .model
-                    .tessellations
-                    .iter()
-                    .map(|table| crate::CachedSurfaceRecord {
-                        source_stream: table.source_stream.clone(),
-                        source_offset: table.source_offset,
-                        surface_references: crate::CachedSurfaceReferences::inspect(
-                            &container.streams[&table.source_stream],
-                            table.metadata_span,
-                        ),
-                    })
-                    .collect(),
+                records,
             }
         }))
     }

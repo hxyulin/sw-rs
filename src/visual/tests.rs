@@ -10,10 +10,10 @@ pub(super) fn class(out: &mut Vec<u8>, name: &str) {
 pub(super) fn string(out: &mut Vec<u8>, text: &str) {
     let units: Vec<_> = text.encode_utf16().collect();
     out.extend([255, 254, 255]);
-    if units.len() < 254 {
+    if units.len() < 255 {
         out.push(units.len() as u8);
     } else {
-        out.push(254);
+        out.push(255);
         out.extend((units.len() as u16).to_le_bytes());
     }
     out.extend(units.into_iter().flat_map(u16::to_le_bytes));
@@ -632,7 +632,7 @@ fn controlled_texture_profile_decodes_without_losing_reference_flags() {
     // The two observed profiles are coupled, not independent accepted flag sets.
     for (flag, selectors) in [
         (0, [0, 1, 0, 1, 0, 1]),
-        (1, [0, 1, 1, 0, 1, 1]),
+        (1, [0, 1, 1, 1, 1, 1]),
         (2, [0, 1, 0, 1, 0, 1]),
     ] {
         assert!(
@@ -670,4 +670,121 @@ fn bitmap_parameters_keep_saved_units_and_reject_unverified_shader_profiles() {
     parsed.shader_identifier.value = "texture".into();
     parsed.shader_parameters.values[6] = f32::NAN;
     assert!(parsed.bitmap_texture_parameters().is_none());
+}
+
+#[test]
+fn framed_cache_face_property_accepts_variable_object_tags_only_inside_its_slot() {
+    for tag in [0x8034_u16, 0x8041] {
+        let mut bytes = Vec::new();
+        let first = face(&mut bytes, None);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.extend(u32::MAX.to_le_bytes());
+        bytes.extend(tag.to_le_bytes());
+        bytes.extend(property([255, 255, 0], "", ""));
+        string(&mut bytes, "moSimpleSurfIdRep_c,7,2,");
+        let second = face(&mut bytes, None);
+        let faces = mesh::section_display_faces(&bytes);
+        let data = cached(&bytes, "DisplayLists", &faces, &[]);
+        assert_eq!(data.bindings.len(), 1);
+        assert!(
+            matches!(data.bindings[0].target, AppearanceTarget::Tessellation {source_offset, ..} if source_offset == first)
+        );
+        assert_ne!(first, second);
+        assert_eq!(
+            data.definitions[0].native.as_ref().unwrap().color_rgb,
+            Some([255, 255, 0])
+        );
+        let mut unknown = bytes.clone();
+        let slot = unknown
+            .windows(8)
+            .position(|w| w == [1, 0, 0, 0, 255, 255, 255, 255])
+            .unwrap();
+        unknown[slot] = 2;
+        let faces = mesh::section_display_faces(&unknown);
+        assert!(
+            cached(&unknown, "DisplayLists", &faces, &[])
+                .bindings
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn cache_texture_selector_count_is_explicit_and_does_not_change_visual_state_layout() {
+    let mut bytes = controlled_texture_extension(1, [0, 1, 0, 1, 0, 1]);
+    let selectors: Vec<_> = [0_u32, 1, 0, 1, 0, 1]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect();
+    let at = bytes
+        .windows(selectors.len())
+        .position(|w| w == selectors)
+        .unwrap();
+    bytes.drain(at..at + 4);
+    let mut reader = Reader::new(&bytes);
+    let parsed = extension_profile(&mut reader, true).expect("five-word cache selectors");
+    assert_eq!(reader.position(), bytes.len());
+    assert_eq!(
+        parsed.legacy_texture_block.unwrap().selectors,
+        [1, 0, 1, 0, 1]
+    );
+    assert!(
+        extension(&mut Reader::new(&bytes)).is_none(),
+        "visual archive retains its six-word contract"
+    );
+    assert!(extension_profile(&mut Reader::new(&bytes[..bytes.len() - 1]), true).is_none());
+    let full = controlled_texture_extension(1, [0, 1, 0, 1, 0, 1]);
+    assert!(
+        extension_profile(&mut Reader::new(&full), true).is_some(),
+        "longer cache profile remains supported"
+    );
+}
+
+#[test]
+fn reused_face_properties_need_a_following_reference_in_the_same_window() {
+    let mut bytes = Vec::new();
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend(u32::MAX.to_le_bytes());
+    bytes.extend(0x8035_u16.to_le_bytes());
+    bytes.extend(property([12, 34, 56], "", ""));
+    assert!(inline(&bytes, "DisplayLists", 0, bytes.len(), None).is_empty());
+    string(&mut bytes, "moSimpleSurfIdRep_c,7,2,");
+    let found = inline(&bytes, "DisplayLists", 0, bytes.len(), None);
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].native.as_ref().unwrap().color_rgb,
+        Some([12, 34, 56])
+    );
+}
+
+#[test]
+fn render_color_uses_the_shader_primary_color_without_replacing_the_legacy_swatch() {
+    let mut bytes = property([229, 234, 237], "", "");
+    extension_bytes(&mut bytes);
+    let mut native = definition(&bytes, 0, "VisualStates")
+        .unwrap()
+        .native
+        .unwrap();
+    native
+        .extension
+        .as_mut()
+        .unwrap()
+        .shader_parameters
+        .packed_word = 0x00ffe8dd;
+    assert_eq!(native.color_rgb, Some([229, 234, 237]));
+    assert_eq!(native.render_color_rgb(), Some([221, 232, 255]));
+    native
+        .extension
+        .as_mut()
+        .unwrap()
+        .shader_parameters
+        .packed_word = u32::MAX;
+    assert_eq!(native.render_color_rgb(), None);
+    native
+        .extension
+        .as_mut()
+        .unwrap()
+        .shader_parameters
+        .discriminator = 255;
+    assert_eq!(native.render_color_rgb(), native.color_rgb);
 }

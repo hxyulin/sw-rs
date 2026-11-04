@@ -394,25 +394,17 @@ prefix decoders.
 ### Browser cache projection
 
 The browser uses complete archive reports to select the saved state by native
-configuration index. Feature colors project onto cache tables only when their
-surface references agree and the source ID uniquely matches a feature in that
-same document. This is explicitly a saved-cache visualization convention; it
-still does not prove current B-Rep ownership or face timestamps. Native body
-colors require exact reference-class and complete numeric-tuple matches, including
-suffix fields. Face-owner color selection remains unsupported and blocks lower
-archive-color guesses. Unmatched body coverage, conflicting references and
-ambiguous feature owners remain diagnostic.
+configuration index. Feature colors require consistent source IDs and a unique
+same-document feature match. Supported selected-face identities keep the full
+reference class, nested source IDs, local surface IDs and suffix fields. Body
+colors use the checked saved body group ID or supported complete reference paths.
+This reconstructs saved display-cache assignments; it does not establish current
+B-Rep topology ownership or face timestamps. Conflicting and unsupported links
+remain unresolved.
 
 Exact independently decoded cache properties retain their existing selection
-path. Material-family mode continues to use physical assignments. No native
-rendering equivalence, texture UV recovery or transparent shading is claimed.
-
-The private remaining-Part scene selects RGB for 29,723 of 29,796 valid rendered
-triangles. The other 73 retain diagnostic colors because of reference uncertainty.
-The full EGA main assembly selects RGB for 3,375,635 of 3,380,059 rendered
-triangles. Another 2,688 triangles retain a physical-material preset; 1,736 remain
-diagnostic. The saved visual stream and per-source reports remain ignored under
-`local-assets/visual-walk/`.
+path. Material-family mode continues to use physical assignments. Native shader
+response, exact texture UVs and transparent shading are not reproduced.
 
 The research example emits the sequential report under `decoded_visuals.archive`
 and reports owner/state decoding separately from current topology ownership:
@@ -420,3 +412,44 @@ and reports owner/state decoding separately from current topology ownership:
 ```sh
 cargo run --locked --example inspect_visual_candidates -- MODEL > SUPPORT-REPORT.json
 ```
+
+
+### Selected faces and saved cache body groups
+
+A six-color, six-face controlled save was reopened in SolidWorks. For every
+selected face, the first native face-reference entry matched the saved cache
+surface tuple and the API face bounds. Later reference entries describe context;
+they are not additional selected faces. The browser joins supported first-entry
+identities using the complete class, feature source, local surface ID and suffix.
+Unsupported nested identities block their involved source IDs rather than
+assigning the appearance to every reference in the array.
+
+The cache's trailing body-group envelope supplies a saved body ID. The checked
+profile starts after a face's final reference frame, validates reserved fields,
+its body-property header and label framing, and assigns that ID to the preceding
+serialized group of tables. Invalid boundaries cannot spill into a later group.
+The browser compares the ID with the visual component's common body identifier;
+its counted historical body list is retained separately. This remains a saved
+cache projection, not verified current B-Rep topology.
+
+The appearance link now retains the whole property object. Colors and supplied
+bitmap textures use the same selected property. Carbon-fibre bitmap placement
+remains approximate, and native bump, reflection and directional behavior is not
+reproduced. Historical carbon-fibre properties do not establish appearance on a
+current body without a supported assignment link.
+
+
+### Render primary colors and copied-body styles
+
+The render-material primary color can differ from the legacy property-prefix
+swatch. `NativeAppearance::render_color_rgb()` reads the checked packed shader
+color for discriminator 2/3 and preserves opaque high-byte words as unresolved.
+The original prefix swatch remains available independently. Read-only SolidWorks
+material queries confirmed the distinction on an aluminum appearance.
+
+The checked display-cache body prefix also retains its non-null reference cell.
+Within one carrier, resolved body references can anchor a color for this shared
+style reference. The viewer uses that relation for copied bodies that have no
+new explicit visual-state property. A null cell does not inherit a historical
+color. Conflicting anchors remain unresolved. This relation supplies color only;
+it does not infer bitmap ownership, UVs or a full render material from RGB.

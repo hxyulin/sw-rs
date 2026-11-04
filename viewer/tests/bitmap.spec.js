@@ -51,6 +51,10 @@ test("supplied bitmap pixels render and release on document changes", { tag: "@h
   await load("bitmap-cache.zip");
   expect(await page.evaluate(() => window.bitmapScene.textures.map(t => t.path))).toEqual(["images/grid.png"]);
   expect(await pixels()).toBe(textured);
+  await load("bitmap-carbon-cache.zip");
+  expect(await page.evaluate(() => window.bitmapScene.textures.map(t => t.path))).toEqual(["images/grid.png"]);
+  expect(await page.evaluate(() => window.bitmapScene.batches[0].texture_index)).toBe(0);
+  expect(await pixels()).toBe(textured);
   await load("bitmap-override.zip");
   expect(await page.evaluate(() => window.bitmapScene.textures)).toEqual([]);
   expect(await pixels()).not.toBe(textured);

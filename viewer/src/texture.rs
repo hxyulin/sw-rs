@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 //! Supplied bitmap selection and approximate Part-local dominant-plane projection.
-use sw_rs::{
-    PresentationData,
-    archive::{FileSet, Resolution},
-};
+use sw_rs::archive::{FileSet, Resolution};
 
 /// Supplied image selected by a supported cache or document appearance binding.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -40,21 +37,49 @@ impl Projection {
     }
 }
 
-pub(crate) fn mesh_projection(
-    presentation: &PresentationData,
-    mesh: &sw_rs::Tessellation,
-    configuration: &str,
-    owner: &str,
-    files: &FileSet,
-) -> Result<Option<Projection>, String> {
-    let Some(native) = crate::saved_appearance::mesh_native(presentation, mesh, configuration)
-    else {
-        return Ok(None);
-    };
-    native_projection(native, owner, files)
+// Carbon uses the same saved scalar locations as the controlled bitmap profile.
+// Reusing them is a viewer approximation, not a native mapping claim.
+fn projection_parameters(
+    extension: &sw_rs::NativeAppearanceExtension,
+) -> Option<([f64; 2], f64, [f32; 3])> {
+    if let Some(p) = extension.bitmap_texture_parameters() {
+        return Some((
+            p.reciprocal_scale_per_metre,
+            p.stored_rotation_degrees,
+            p.center_metres,
+        ));
+    }
+    let block = extension.legacy_texture_block.as_ref()?;
+    let shader = &extension.shader_parameters;
+    if extension.shader_identifier.value != "carbonfiberepoxy"
+        || !matches!(
+            (
+                shader.selectors,
+                block.selectors.as_slice(),
+                shader.discriminator
+            ),
+            ([1, 1, 3, 0], [0, 1, 0, 1, 0, 1] | [1, 0, 1, 0, 1], 3)
+                | ([1, 1, 27, 0], [0, 1, 0, 1, 1, 1] | [1, 0, 1, 1, 1], 2)
+                | ([1, 1, 4, 0], [0, 1, 1, 0, 1, 1] | [1, 1, 0, 1, 1], 2)
+        )
+        || shader.mode != 4
+        || block.reference_flags != 1
+    {
+        return None;
+    }
+    let scale = [block.values[0], block.values[1]];
+    let rotation = block.values[12];
+    let center = [shader.values[6], shader.values[7], shader.values[8]];
+    if !scale.iter().all(|v| v.is_finite() && *v > 0.)
+        || !rotation.is_finite()
+        || !center.iter().all(|v| v.is_finite())
+    {
+        return None;
+    }
+    Some((scale, rotation, center))
 }
 
-fn native_projection(
+pub(crate) fn native_projection(
     native: &sw_rs::NativeAppearance,
     owner: &str,
     files: &FileSet,
@@ -62,16 +87,11 @@ fn native_projection(
     let Some(extension) = native.extension.as_ref() else {
         return Ok(None);
     };
-    let Some(parameters) = extension.bitmap_texture_parameters() else {
+    let Some((scale, rotation, center)) = projection_parameters(extension) else {
         return Ok(None);
     };
     // The projection-coupled discriminator is not a planar repeat-size profile.
-    if extension.shader_parameters.discriminator != 3
-        || parameters
-            .reciprocal_scale_per_metre
-            .iter()
-            .any(|s| *s <= 0.)
-    {
+    if extension.shader_parameters.discriminator == 6 || scale.iter().any(|s| *s <= 0.) {
         return Ok(None);
     }
     let Some(block) = extension.legacy_texture_block.as_ref() else {
@@ -94,19 +114,69 @@ fn native_projection(
         image: BitmapTexture {
             path,
             base_color: native
-                .color_rgb
+                .render_color_rgb()
                 .unwrap_or([255; 3])
                 .map(|v| f32::from(v) / 255.),
         },
-        center: parameters.center_metres,
-        scale: parameters.reciprocal_scale_per_metre,
-        rotation: parameters.stored_rotation_degrees.to_radians(),
+        center,
+        scale,
+        rotation: rotation.to_radians(),
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn carbon_profile_is_opt_in_and_requires_valid_mapping_values() {
+        let text = |value: &str| sw_rs::NativeString {
+            offset: 0,
+            value: value.into(),
+        };
+        let mut extension = sw_rs::NativeAppearanceExtension {
+            legacy_texture_block: Some(sw_rs::NativeTextureBlock {
+                values: [25., 50., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 90.],
+                reference: text("weave.jpg"),
+                reference_flags: 1,
+                additional_values: [0.; 2],
+                selectors: vec![0, 1, 0, 1, 0, 1],
+            }),
+            shader_parameters: sw_rs::NativeShaderParameters {
+                label: text(""),
+                selectors: [1, 1, 3, 0],
+                offset: 0,
+                discriminator: 3,
+                packed_word: 0,
+                values: [0.; 10],
+                mode: 4,
+                parameters: [0.; 5],
+                flags: [0; 3],
+                appearance_word: 0,
+                finish_values: [0.; 2],
+            },
+            shader_identifier: text("carbonfiberepoxy"),
+            appearance_reference: text("weave.p2m"),
+            surface_finish_reference: text(""),
+            mapping_offset: 0,
+            mapping_scalars: [0.; 2],
+            mapping_flags: [0; 3],
+            mapping_values: [0.; 14],
+            prefix_end: 0,
+        };
+        assert!(
+            extension.bitmap_texture_parameters().is_none(),
+            "core mapping remains unverified"
+        );
+        assert_eq!(
+            projection_parameters(&extension),
+            Some(([25., 50.], 90., [0.; 3]))
+        );
+        extension.shader_parameters.mode = 1;
+        assert!(projection_parameters(&extension).is_none());
+        extension.shader_parameters.mode = 4;
+        extension.legacy_texture_block.as_mut().unwrap().values[0] = f64::NAN;
+        assert!(projection_parameters(&extension).is_none());
+    }
     #[test]
     fn projection_uses_metres_and_centered_repeat_scale_on_each_plane() {
         let mut projection = Projection {

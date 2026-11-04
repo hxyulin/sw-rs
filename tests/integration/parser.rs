@@ -560,10 +560,10 @@ fn utf8_embedded_stream_names_and_explicit_replacement_chains_are_preserved() {
     fn string(out: &mut Vec<u8>, text: &str) {
         let units: Vec<_> = text.encode_utf16().collect();
         out.extend([255, 254, 255]);
-        if units.len() < 254 {
+        if units.len() < 255 {
             out.push(units.len() as u8);
         } else {
-            out.push(254);
+            out.push(255);
             out.extend((units.len() as u16).to_le_bytes());
         }
         for unit in units {

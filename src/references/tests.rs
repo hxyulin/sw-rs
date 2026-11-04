@@ -265,6 +265,8 @@ fn cache_feature_candidates_preserve_duplicate_ids_and_conflicting_prefixes() {
         &[],
     );
     let record = |offset, values: &[&str]| crate::CachedSurfaceRecord {
+        saved_body_id: None,
+        saved_body_style: None,
         source_stream: "Contents/DisplayLists".into(),
         source_offset: offset,
         surface_references: crate::CachedSurfaceReferences {

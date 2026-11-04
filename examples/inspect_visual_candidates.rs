@@ -26,6 +26,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let doc = reader.metadata()?;
     let keywords = reader.inspect_stream("swXmlContents/KeyWords")?;
     let surfaces = reader.surface_references().ok();
+    let cached_bounds = reader.geometry().ok().map(|geometry| {
+        geometry.model.tessellations.iter().map(|mesh| {
+            let mut bounds = [f64::INFINITY; 3].into_iter().chain([f64::NEG_INFINITY; 3]).collect::<Vec<_>>();
+            for vertex in &mesh.vertices {
+                for axis in 0..3 {
+                    bounds[axis] = bounds[axis].min(vertex[axis] / 1000.);
+                    bounds[axis + 3] = bounds[axis + 3].max(vertex[axis] / 1000.);
+                }
+            }
+            serde_json::json!({"source_stream":mesh.source_stream,"source_offset":mesh.source_offset,"bounds_metres":bounds,"triangles":mesh.triangles.len()})
+        }).collect::<Vec<_>>()
+    });
     let mut candidates = Vec::new();
     // Candidate-only matching: two contiguous CString frames, six finite doubles,
     // and the fixed shader-identifier position seen in supported property prefixes.
@@ -132,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "{}",
         serde_json::json!({"schema":"sw-rs-visual-candidates-v1","source_sha256":reader.source_sha256(),
-        "recovered_feature_support":assessment,"decoded_visuals":doc.visuals,"candidate_properties":candidates,"inspection":inspection,
+        "cached_appearances":reader.geometry().ok().map(|g| &g.presentation.appearances),"cached_bounds":cached_bounds,"cached_surfaces":surfaces,"recovered_feature_support":assessment,"decoded_visuals":doc.visuals,"candidate_properties":candidates,"inspection":inspection,
         "warning":"Pattern matches are candidates, not proven class instances or effective appearance assignments"})
     );
     Ok(())

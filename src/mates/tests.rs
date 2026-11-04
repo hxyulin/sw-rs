@@ -5,11 +5,11 @@ use super::*;
 fn text(out: &mut Vec<u8>, value: &str) {
     let units: Vec<_> = value.encode_utf16().collect();
     out.extend([255, 254, 255]);
-    if units.len() < 254 {
+    if units.len() < 255 {
         out.push(units.len() as u8);
     } else {
         out.push(255);
-        out.extend((units.len() as u32).to_le_bytes());
+        out.extend((units.len() as u16).to_le_bytes());
     }
     out.extend(units.into_iter().flat_map(u16::to_le_bytes));
 }

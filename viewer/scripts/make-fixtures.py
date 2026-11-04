@@ -55,7 +55,7 @@ def legacy_part(display):
     directory = (entry('Root Entry',5,child=1)+entry('Contents',1,child=2)+
                  entry('DisplayLists__ZLB',2,start=2,length=len(stream))+entry('',0))
     return bytes(header+directory+u32(*fat)+stream+bytes(sectors*512-len(stream)))
-def part(size, material=False, visual=False, extra_streams=(), legacy=False, cache_properties=b''):
+def part(size, material=False, visual=False, extra_streams=(), legacy=False, cache_properties=b'', cache_groups=None):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
@@ -70,6 +70,8 @@ def part(size, material=False, visual=False, extra_streams=(), legacy=False, cac
         display += (b'\x33\x80'+visual_property([255,0,0],'Cached face')+
                     visual_class('uoBodyPropInfo_c')+b'\x33\x80'+visual_property([0,0,255],'Cached body'))
     display += cache_properties
+    if cache_groups is not None:
+        display = b''.join(display+footer for footer in cache_groups)
     streams = [('swXmlContents/COMPINSTANCETREE',info),('Contents/DisplayLists',display)]
     if visual: streams.append(('ThirdPtyStore/VisualStates',native_visual_state()))
     if material:
@@ -123,7 +125,7 @@ def linked_assembly(name, references, extra_streams=(), flags=None):
     return container([('swXmlContents/COMPINSTANCETREE',xml.encode()),*extra_streams])
 def mfc_string(text):
     data=text.encode('utf-16le');n=len(data)//2
-    return b'\xff\xfe\xff'+(bytes([n]) if n<254 else b'\xfe'+struct.pack('<H',n))+data
+    return b'\xff\xfe\xff'+(bytes([n]) if n<255 else b'\xff'+struct.pack('<H',n))+data
 old='C:/source/Old.SLDPRT';middle='C:/copy/Middle.SLDPRT';new='C:/export/New.SLDPRT'
 remaps=u32(2)+b''.join(map(mfc_string,[old,middle,middle,new]))
 renamed=linked_assembly('Renamed.SLDASM',[old],[('SwDocMgrTempStorage/ReplaceRef',remaps)])
@@ -188,11 +190,12 @@ inspection_binary = visual_class('UnknownClass')+mfc_string('<img src=x onerror=
 (OUT/'legacy-valid.SLDPRT').write_bytes(part([.18,.10,.02],legacy=True))
 
 # Authored bitmap appearance plus image. The projection remains a viewer convention.
-def bitmap_property():
+def bitmap_property(shader="texture", cached=False):
     block = u32(1)+struct.pack('<13d',25,100/3,*([0]*11))
-    block += visual_string('C:\\Fixture\\images\\grid.png')+struct.pack('<HI2d',1,0,.02,.015)+u32(0,1,0,1,0,1)
-    block += visual_string('')+u32(1,1,33,0)+visual_string('texture')
-    block += bytes([3])+u32(0xFFFFFF)+struct.pack('<10f',1,0,0,0,1,0,0,0,0,1)+u32(4)
+    selectors = (1,1,0,1,1) if cached else (0,1,0,1,0,1)
+    block += visual_string('C:\\Fixture\\images\\grid.png')+struct.pack('<HI2d',1,0,.02,.015)+u32(*selectors)
+    block += visual_string('')+u32(1,1,4 if cached else 33,0)+visual_string(shader)
+    block += bytes([2 if cached else 3])+u32(0xFFFFFF)+struct.pack('<10f',1,0,0,0,1,0,0,0,0,1)+u32(4)
     block += struct.pack('<5f',0,0,1,1,.5)+u32(0,0,0)+visual_string('texture.p2m')+u32(0)+struct.pack('<2f',.4,1)+visual_string('')
     block += struct.pack('<2f3I14f',.001,.005,0,0,0,0,1,0,0,0,1,0,0,0,1,90,1,-1,-1)+visual_string('')
     return visual_property([255,255,255],'Bitmap default')+block
@@ -214,7 +217,7 @@ for name,images in [('bitmap', [('images/grid.png',grid_png())]),('bitmap-missin
         archive.writestr('Block.SLDPRT',bitmap_part)
         for path,data in images:archive.writestr(path,data)
 
-for name,properties in [('bitmap-cache',bitmap_property()),('bitmap-override',visual_property([255,0,0],'Cached override'))]:
+for name,properties in [('bitmap-cache',bitmap_property()),('bitmap-carbon-cache',bitmap_property('carbonfiberepoxy',True)),('bitmap-override',visual_property([255,0,0],'Cached override'))]:
     with zipfile.ZipFile(OUT/(name+'.zip'),'w',zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('Block.SLDPRT',part([.04,.03,.02],cache_properties=b'\x33\x80'+properties,
             extra_streams=[('ThirdPtyStore/VisualStates',bitmap_state())]))
@@ -249,3 +252,59 @@ def native_archive(selected, ambiguous=False):
 
 for name,selected,ambiguous in [('native-archive-blue',1,False),('native-archive-gray',2,False),('native-archive-ambiguous',1,True)]:
     (OUT/(name+'.SLDPRT')).write_bytes(part([.18,.10,.02],extra_streams=[('ThirdPtyStore/VisualStates',native_archive(selected,ambiguous)),('swXmlContents/KeyWords',b'<Keywords><Feature id="7" Name="Colored"/></Keywords>')],cache_properties=visual_string('moSimpleSurfIdRep_c,7,2,')))
+
+
+# Complete selected-face records plus multiple names retained by the same cache
+# table. Contradictory explicit aliases must remain unresolved.
+def native_face_alias(conflict=False):
+    tag=lambda n:struct.pack('<H',n)
+    marker=bytes.fromhex('7dc39425ad49b2547dc39425ad49b254')
+    value=u32(18000,0)+visual_class('visStateKeyData_c')+u32(5,0,1,0,1,1,1,1)
+    value+=visual_string('<Default>_Saved')+u32(0,0,0)+u32(0,3 if conflict else 2)
+    value+=visual_class('moCompHolder_c')+visual_class('moUnitComponent_c')+bytes(79)+u32(18000,1,1,2)
+    value+=visual_class('visStateVisualPropertiesAttribute_c')+u32(1)+visual_class('moVisualProperties_c')+archive_property([180,180,180])
+    value+=visual_class('visStateVisualStateAttribute_c')+u32(1,1,6,1,0)
+    value+=visual_class('moCompFace_c')+tag(0x8005)+bytes(79)+u32(18000)+b'\0'
+    value+=visual_class('moFaceRef_c')+u32(1,0,1,768,0)+marker+tag(0)
+    value+=visual_class('moSimpleSurfIdRep_c')+tag(0)+visual_class('moFR_c')+tag(0)+u32(7,12345,2)
+    value+=u32(0,0,18000,0,0)+tag(0)+u32(1,1,1)
+    value+=tag(0x8007)+u32(1)+tag(0x8009)+archive_property([0,49,255])
+    if conflict:
+        value+=tag(0x800d)+tag(0x8005)+bytes(79)+u32(18000)+b'\0'
+        value+=tag(0x8010)+u32(1,0,1,768,0)+marker+tag(0)
+        value+=tag(0x8012)+tag(0)+tag(0x8014)+tag(0)+u32(8,12345,4)
+        value+=u32(0,0,18000,0,0)+tag(0)+u32(1,1,1)
+        value+=tag(0x8007)+u32(1)+tag(0x8009)+archive_property([255,0,0])
+    return value+u32(0,0)
+for name,conflict in [('native-face-alias',False),('native-face-alias-conflict',True)]:
+    (OUT/(name+'.SLDPRT')).write_bytes(part([.18,.10,.02],extra_streams=[('ThirdPtyStore/VisualStates',native_face_alias(conflict))],cache_properties=visual_string('moSimpleSurfIdRep_c,7,2,\nmoSimpleSurfIdRep_c,8,4,')))
+
+(OUT/'native-feature-surface-alias.SLDPRT').write_bytes(part([.18,.10,.02],extra_streams=[('ThirdPtyStore/VisualStates',native_archive(1)),('swXmlContents/KeyWords',b'<Keywords><Feature id="7" Name="Colored"/></Keywords>')],cache_properties=visual_string('moSimpleSurfIdRep_c,7,2,\nmoSimpleSurfIdRep_c,7,3,')))
+
+# Shared body-style references copy a resolved color within one carrier. Null
+# references retain the document default even when a historical tuple matches.
+def native_body_styles(conflict=False):
+    value = native_face_alias(conflict).replace(b'moCompFace_c', b'moCompSolidBody_c')
+    # Update the framed class-name length after replacing its ASCII name.
+    value = value.replace(struct.pack('<H',len('moCompFace_c'))+b'moCompSolidBody_c',
+                          struct.pack('<H',len('moCompSolidBody_c'))+b'moCompSolidBody_c')
+    old = struct.pack('<H',0x8005)+bytes(79)+u32(18000)+b'\0'
+    for body_id in ([100,101] if conflict else [100]):
+        common = bytes(7)+u32(body_id,body_id)+bytes(64)
+        value = value.replace(old,struct.pack('<H',0x8005)+common+u32(18000),1)
+    value = value.replace(u32(0,0,18000,0,0)+b'\0\0'+u32(1,1,1),
+                          u32(0,0,18000,0,0,1,100,0xffffffff,0,0)+u32(1,1,1))
+    return value
+
+def body_style_footer(body_id,style,reference):
+    return (visual_string(reference)+u32(0,0,1,body_id,0,1,0xffffffff)+
+            visual_class('uoBodyPropInfo_c')+struct.pack('<H',style)+
+            u32(1,6,1,0,0)+visual_string('Body')+u32(0))
+
+for name,style,conflict in [('shared-body-style',42,False),('null-body-style',0,False),
+                            ('conflicting-body-style',42,True)]:
+    groups=[body_style_footer(100,42,'moSimpleSurfIdRep_c,7,2,')]
+    if conflict: groups.append(body_style_footer(101,42,'moSimpleSurfIdRep_c,8,4,'))
+    groups.append(body_style_footer(200,style,'moSimpleSurfIdRep_c,7,2,'))
+    (OUT/(name+'.SLDPRT')).write_bytes(part([.18,.10,.02],cache_groups=groups,
+        extra_streams=[('ThirdPtyStore/VisualStates',native_body_styles(conflict))]))

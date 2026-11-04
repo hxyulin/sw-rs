@@ -32,7 +32,8 @@ pub enum NativeExternalObjectProfile {
 #[serde(rename_all = "snake_case")]
 pub enum NativeFaceReferenceProfile {
     /// VisualStates owner reference: two checked zero words; header word three
-    /// is zero or 768 in the explicitly supported visual profile.
+    /// is zero, 4, 512, 768 or 772 in the explicitly supported visual profile.
+    /// Mixed arrays retain supported edge entries separately from surfaces.
     VisualStatesTwoWords,
     /// Three zero words following the surface array.
     ThreeWords,
@@ -238,6 +239,14 @@ pub enum NativeSubtreePayload {
         /// Class-specific trailing words, without topology interpretation.
         raw_tail: Vec<u32>,
     },
+    /// Simple edge identity retained in mixed visual-selection arrays.
+    /// It is never promoted to a surface identity.
+    SimpleEdge {
+        /// Saved feature-reference pointer.
+        feature_reference: NativeArchivePointer,
+        /// Uninterpreted edge-local scalar.
+        raw_word: u32,
+    },
     /// Face/edge array prefix. Its parent-object trailer is not consumed.
     ReferenceArrayPrefix {
         /// Five saved words; word two is consumed as count in this explicit profile.
@@ -283,6 +292,7 @@ enum Role {
     Face(NativeFaceReferenceProfile),
     Edge(NativeEdgeReferenceProfile),
     Surface,
+    VisualSelection,
     Feature,
     External,
     Handle,
@@ -310,7 +320,11 @@ impl Role {
                     | "moFromSktEnt3IntSurfIdRep_c"
                     | "moThinOffsetSurfIdRep_c"
                     | "moLPatternSurfIdRep_c"
+                    | "moIndirectSurfIdRep_c"
+                    | "moCirPatternSurfIdRep2_c"
+                    | "moMirPatternSurfIdRep_c"
             ),
+            Self::VisualSelection => Self::Surface.accepts(name) || name == "moSimpleEdgeIdRep_c",
             Self::Feature => name == "moFR_c",
             Self::External => name == "moExtObject_c",
             Self::Handle => name == "moCStringHandle_c",
@@ -814,7 +828,7 @@ impl NativeSubtreeReader {
                 if matches!(
                     role,
                     Role::Face(NativeFaceReferenceProfile::VisualStatesTwoWords)
-                ) && !matches!(raw_header[3], 0 | 768)
+                ) && !matches!(raw_header[3], 0 | 4 | 512 | 768 | 772)
                 {
                     return Err(error(at + 12, "unsupported visual face-reference header"));
                 }
@@ -827,7 +841,14 @@ impl NativeSubtreeReader {
                 let records = self.pointer_list(
                     cursor,
                     source,
-                    Role::Surface,
+                    if matches!(
+                        role,
+                        Role::Face(NativeFaceReferenceProfile::VisualStatesTwoWords)
+                    ) {
+                        Role::VisualSelection
+                    } else {
+                        Role::Surface
+                    },
                     depth + 1,
                     count,
                     count_offset,
@@ -870,14 +891,30 @@ impl NativeSubtreeReader {
                     return Err(error(at, "unsupported surface scalar prefix"));
                 }
                 let feature_reference = self.pointer(cursor, source, Role::Feature, depth + 1)?;
-                let nested = if matches!(class, "moDerivedSurfIdRep_c" | "moLPatternSurfIdRep_c") {
+                if class == "moSimpleEdgeIdRep_c" {
+                    return Ok(NativeSubtreePayload::SimpleEdge {
+                        feature_reference,
+                        raw_word: words::<1>(cursor)?[0],
+                    });
+                }
+                let nested = if matches!(
+                    class,
+                    "moDerivedSurfIdRep_c"
+                        | "moLPatternSurfIdRep_c"
+                        | "moIndirectSurfIdRep_c"
+                        | "moCirPatternSurfIdRep2_c"
+                        | "moMirPatternSurfIdRep_c"
+                ) {
                     Some(self.pointer(cursor, source, Role::Surface, depth + 1)?)
                 } else {
                     None
                 };
                 let count = match class {
+                    "moIndirectSurfIdRep_c" | "moMirPatternSurfIdRep_c" => 0,
                     "moEndFace3IntSurfIdRep_c" | "moFromSktEnt3IntSurfIdRep_c" => 3,
-                    "moEndFaceSurfIdRep_c" | "moLPatternSurfIdRep_c" => 2,
+                    "moEndFaceSurfIdRep_c"
+                    | "moLPatternSurfIdRep_c"
+                    | "moCirPatternSurfIdRep2_c" => 2,
                     _ => 1,
                 };
                 let mut raw_tail = Vec::new();

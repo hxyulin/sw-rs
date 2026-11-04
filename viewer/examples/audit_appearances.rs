@@ -134,10 +134,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .entry(format!("{reason}_{category}_triangles"))
                 .or_default() += triangles * occurrences;
         }
-        documents.push(serde_json::json!({"path":path,"configuration":name,"occurrences":occurrences,
+        let configuration_index = doc
+            .configurations
+            .iter()
+            .position(|c| c.name == name)
+            .ok_or("missing named configuration")?;
+        documents.push(serde_json::json!({"path":path.clone(),"configuration":name,"occurrences":occurrences,
             "physical_material_status":reason,"source_triangle_categories":counts,"document_rgb":document_rgb,
             "material_definitions":doc.materials.as_ref().map_or(0,|m|m.definitions.len()),
             "material_assignments":doc.materials.as_ref().map(|m| &m.assignments)}));
+        drop(reader);
+        let rendered = project.scene(&path, configuration_index, false);
+        let mut selected_colors = BTreeMap::<String, usize>::new();
+        let mut unresolved = 0;
+        for batch in &rendered.batches {
+            if let Some(rgb) = batch.saved_color {
+                let [r, g, b] = rgb.map(|v| (v * 255.).round() as u8);
+                *selected_colors
+                    .entry(format!("{r:02X}{g:02X}{b:02X}"))
+                    .or_default() += batch.vertex_count / 3;
+            } else if batch.texture_index.is_none() {
+                unresolved += batch.vertex_count / 3;
+            }
+        }
+        let entry = documents.last_mut().expect("just appended document");
+        entry["rendered_rgb_triangle_counts"] = serde_json::json!(selected_colors);
+        entry["unresolved_saved_triangles"] = unresolved.into();
     }
     let material_triangles: usize = scene
         .batches
@@ -165,12 +187,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .map(|b| b.vertex_count / 3)
         .sum();
+    let mut rendered_colors = BTreeMap::<String, usize>::new();
+    let mut textured_triangles = 0;
+    for batch in &scene.batches {
+        if let Some(rgb) = batch.saved_color {
+            let [r, g, b] = rgb.map(|v| (v * 255.).round() as u8);
+            *rendered_colors
+                .entry(format!("{r:02X}{g:02X}{b:02X}"))
+                .or_default() += batch.vertex_count / 3;
+        }
+        if batch.texture_index.is_some() {
+            textured_triangles += batch.vertex_count / 3;
+        }
+    }
     println!(
         "{}",
         serde_json::json!({"assembly":root,"rendered_triangles":scene.vertices.len()/27,
         "physical_material_triangles":material_triangles,"physical_unassigned_triangles":fallback_triangles,
         "saved_rgb_triangles":saved_rgb_triangles,"saved_diagnostic_triangles":saved_fallback_triangles,
-        "material_presets":scene.materials.len(),"bitmap_images":scene.textures.len(),
+        "rendered_rgb_triangle_counts":rendered_colors,"textured_triangles":textured_triangles,"material_presets":scene.materials.len(),"bitmap_images":scene.textures.len(),
         "rendered_occurrences":scene.occurrences,"totals":totals,"source_rgb_triangle_counts":colors,"documents":documents})
     );
     Ok(())

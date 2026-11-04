@@ -204,5 +204,35 @@ test("sequential state IDs select feature colors and reject ambiguous owners", {
   expect(await pixels()).not.toBe(blue);
   await load("native-archive-ambiguous");
   expect(await page.evaluate(() => window.archiveScene.batches[0].saved_color)).toBeNull();
+  await load("native-feature-surface-alias");
+  expect(await page.evaluate(() => window.archiveScene.batches[0].saved_color)).toEqual(blueColor);
+  expect(await pixels()).toBe(blue);
+  await load("native-face-alias");
+  expect(await page.evaluate(() => window.archiveScene.batches[0].saved_color)).toEqual(blueColor);
+  expect(await pixels()).toBe(blue);
+  await load("native-face-alias-conflict");
+  expect(await page.evaluate(() => window.archiveScene.batches[0].saved_color)).toBeNull();
+
   expect(errors).toEqual([]);
+});
+
+
+test("shared body styles inherit only unique non-null color references", async ({ page }) => {
+  await page.addInitScript(() => {
+    const W = window.Worker;
+    window.Worker = class extends W { constructor(...args) { super(...args); this.addEventListener("message", ({data}) => { if (data.type === "scene") window.styleScene = data.scene; }); } };
+  });
+  await ready(page);
+  for (const [name, triangles, target] of [
+    ["shared-body-style",24,[0,49/255,1]],
+    ["null-body-style",24,[180/255,180/255,180/255]],
+    ["conflicting-body-style",36,null],
+  ]) {
+    await page.evaluate(() => { window.styleScene = null; });
+    await page.locator("#file").setInputFiles(path.join(fixtures,name+".SLDPRT"));
+    await expect.poll(() => page.evaluate(() => window.styleScene?.triangles)).toBe(triangles);
+    const color = await page.evaluate(() => window.styleScene.batches.at(-1).saved_color);
+    if (target === null) expect(color).toBeNull();
+    else target.forEach((v,i) => expect(color[i]).toBeCloseTo(v));
+  }
 });
