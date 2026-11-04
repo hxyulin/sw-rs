@@ -284,3 +284,74 @@ cargo run --release --locked --manifest-path viewer/Cargo.toml --example audit_a
 The report includes per-document names and references; keep it private. The tool
 counts only rendered external Parts, preserves repeated occurrences and reports
 embedded occurrences separately rather than inferring their source documents.
+
+
+## Offline class-reference investigation, 2026-11-04
+
+Further analysis uses the existing native corpus and recorded API results. No new
+SolidWorks save trials or installed application access are required.
+
+The unresolved EGA Part contains four property-shaped blocks, rather than only
+the single definition returned by the current decoder. The explicit declaration
+has RGB `(202,209,238)`. Three further blocks have candidate RGB `(229,234,237)`,
+`(57,57,57)` and `(0,49,255)`. Each additional block is preceded by word `0x8009`
+and has the same short CString, finite six-double optical prefix and fixed shader
+identifier placement. These are candidate instances, not proven entity links.
+
+The same candidate inspection was run on all 80 native files in the existing
+controlled corpus. It found 31 matching prefixes. For all 25 already-decoded
+matches, candidate RGB and optical values exactly match the current decoder.
+The six additional candidates include the green body and yellow face variants:
+their candidate colors match the independently recorded reopened API values.
+Four other candidates occur in the configuration/state Part family. Those API
+experiments did not prove independent display-state appearance assignment.
+
+This narrows the missing-color work to two stages: decode MFC class/object reuse,
+then connect those instances to body/face/feature/state owners and exact cached
+surfaces. Repeated colors or proximity to an entity record cannot establish those
+links. In particular, applying the unresolved Part's first blue-gray definition
+to every triangle could hide its dark and blue local appearances.
+
+`inspect_visual_candidates` is a read-only research example. Its fixed prefix
+patterns deliberately remain separate from the production appearance decoder.
+It emits candidate offsets, preceding words, optical values, shader identifiers,
+existing visual records and structural inspection. It does not assign candidates
+or alter browser rendering. It handles only empty texture strings and short
+material-name CString frames in this candidate profile; absence of a candidate
+is not evidence of absent appearance data.
+
+```sh
+cargo run --locked --example inspect_visual_candidates -- MODEL > REPORT.json
+```
+
+Reports contain private strings and paths. The local results are stored under
+ignored `local-assets/remaining-visual-candidates.json` and
+`local-assets/offline-corpus-visual-candidates.json`.
+
+
+### Feature-prefix and cache-source correlation
+
+The next offline pass found two repeated blocks inside the declared
+`moCompFeature_c` interval. Their prefixes contain version word 18000, source IDs
+98 and 92, the same saved timestamp, selectors `[3,1,2]`, and the previously
+supported attribute/property tag sequence. Both source IDs have unique matches
+in the same Part's feature XML. The cached-surface catalog independently contains
+17 records agreeing on source ID 98 and 64 agreeing on source ID 92.
+
+The decoder previously accepted only selectors `[1,1,2]` in this feature-prefix
+scan. It now also accepts the observed `[3,1,2]` profile and preserves the dark-gray
+and blue definitions with their source ID/timestamp evidence. It does not infer a
+meaning for selector 3 or accept other selector values. A regression test covers
+recovery of the new profile, retained unresolved ownership, and rejection of an
+unobserved selector.
+
+These definitions remain unresolved visual bindings. The matching cache records
+establish source-ID correlations, not timestamp continuity, the active display
+state, native archive-map continuity, or complete precedence over face/body
+properties. No browser colors are changed by this decoder extension. The light-gray
+candidate still lacks this supported feature prefix.
+
+The research example also emits the source-header words, feature-XML candidates
+and exact carrier/offset pairs for matching cache-source IDs. Optional
+`--dump-stream PATH` writes the decoded visual stream for byte-level inspection;
+keep both stream dumps and JSON reports private.

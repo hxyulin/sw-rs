@@ -607,8 +607,8 @@ pub(crate) fn parse(
             let part = &bytes[..class.content.end];
             for at in class.content.start..class.content.end.saturating_sub(35) {
                 if !matches!(u32_at(part, at), Some(17000 | 18000))
-                    || [12, 16, 20].map(|offset| u32_at(part, at + offset))
-                        != [Some(1), Some(1), Some(2)]
+                    || !matches!(u32_at(part, at + 12), Some(1 | 3))
+                    || [16, 20].map(|offset| u32_at(part, at + offset)) != [Some(1), Some(2)]
                     || part.get(at + 24..at + 32) != Some(&[7, 128, 1, 0, 0, 0, 9, 128])
                 {
                     continue;

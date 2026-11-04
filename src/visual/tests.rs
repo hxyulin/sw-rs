@@ -316,6 +316,38 @@ fn source_feature_id_and_timestamp_are_not_promoted_to_guessed_face_ownership() 
     );
 }
 #[test]
+fn three_selector_feature_prefix_preserves_identity_without_assigning_surfaces() {
+    let mut bytes = vec![];
+    class(&mut bytes, "moCompFeature_c");
+    bytes.extend(
+        [18000_u32, 98, 0x12345678, 3, 1, 2]
+            .into_iter()
+            .flat_map(u32::to_le_bytes),
+    );
+    bytes.extend([7, 128, 1, 0, 0, 0, 9, 128]);
+    bytes.extend(property([57, 57, 57], "", "feature"));
+    let native = doc(&bytes, &["A"], "part.SLDPRT").visuals;
+    assert_eq!(native.definitions.len(), 1);
+    assert_eq!(
+        native.definitions[0].native.as_ref().unwrap().color_rgb,
+        Some([57; 3])
+    );
+    assert_eq!(native.unresolved_bindings[0].identity, [98, 0x12345678]);
+    assert!(
+        native.bindings.is_empty(),
+        "source IDs do not establish applied surfaces"
+    );
+    bytes[6 + b"moCompFeature_c".len() + 12] = 2;
+    assert!(
+        doc(&bytes, &["A"], "part.SLDPRT")
+            .visuals
+            .definitions
+            .is_empty(),
+        "unobserved selector stays unsupported"
+    );
+}
+
+#[test]
 fn projection_offsets_native_indices_after_material_defaults() {
     let bytes = root("<A>_State", &property([1, 2, 3], "", ""));
     let mut doc = doc(&bytes, &["A"], "part.SLDPRT");
