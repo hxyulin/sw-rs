@@ -3,7 +3,7 @@
 # Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 """Generate synthetic native-container fixtures, never third-party CAD."""
 from pathlib import Path
-import io,struct,tarfile,zipfile,zlib
+import io,struct,tarfile,zipfile,zlib,math
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'test-fixtures';OUT.mkdir(exist_ok=True)
 def u32(*values):return struct.pack('<'+'I'*len(values),*values)
@@ -55,16 +55,18 @@ def legacy_part(display):
     directory = (entry('Root Entry',5,child=1)+entry('Contents',1,child=2)+
                  entry('DisplayLists__ZLB',2,start=2,length=len(stream))+entry('',0))
     return bytes(header+directory+u32(*fat)+stream+bytes(sectors*512-len(stream)))
-def part(size, material=False, visual=False, extra_streams=(), legacy=False, cache_properties=b'', cache_groups=None):
+def part(size, material=False, visual=False, extra_streams=(), legacy=False, cache_properties=b'', cache_groups=None, points_override=None):
     x,y,z=[v/2 for v in size]
     p=[[-x,-y,-z],[x,-y,-z],[x,y,-z],[-x,y,-z],[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]]
     faces=[(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
     triangles=[t for a,b,c,d in faces for t in [(a,b,c),(a,c,d)]]
     points=[p[i] for t in triangles for i in t]
+    if points_override is not None: points=points_override
+    count=len(points)//3
     raw=b''.join(struct.pack('<fff',*v) for v in points)
-    table=(descriptor(4,8,12,u32(*([3]*12)))+descriptor(12,100,36,raw)+descriptor(12,100,36,bytes(432))+
-           descriptor(4,8,48,bytes(192))+descriptor(4,8,12,u32(*([4]*12)))+descriptor(1,8,48,bytes(48)))
-    cls=b'uoTempFaceTessData_c';display=b'\xff\xff\x01\0'+struct.pack('<H',len(cls))+cls+u32(12,12)+table
+    table=(descriptor(4,8,count,u32(*([3]*count)))+descriptor(12,100,len(points),raw)+descriptor(12,100,len(points),bytes(len(raw)))+
+           descriptor(4,8,count*4,bytes(count*16))+descriptor(4,8,count,u32(*([4]*count)))+descriptor(1,8,count*4,bytes(count*4)))
+    cls=b'uoTempFaceTessData_c';display=b'\xff\xff\x01\0'+struct.pack('<H',len(cls))+cls+u32(count,count)+table
     info=b'<swSolidWorks><swHeader><swFile id="p"/></swHeader><swModelList><swModel id="m" swFileRef="p" swConfigurationId="0" swConfigurationName="Default"/></swModelList></swSolidWorks>'
     if visual:
         display += (b'\x33\x80'+visual_property([255,0,0],'Cached face')+
@@ -334,4 +336,16 @@ for name,shader,roughness in [('invalid','blacklowglossplastic',-1),('unknown','
 with zipfile.ZipFile(OUT/'bitmap-opaque-color.zip','w',zipfile.ZIP_DEFLATED) as archive:
     state=bitmap_state().replace(bytes([3])+u32(0xffffff),bytes([3])+u32(0xffffffff))
     archive.writestr('Block.SLDPRT',part([.04,.03,.02],extra_streams=[('ThirdPtyStore/VisualStates',state)]))
+    archive.writestr('images/grid.png',grid_png())
+
+# One curved cache face crosses the old dominant-plane switch at 45 degrees.
+arc=[]
+for angle in [20,40,60,80,100]:
+    a=math.radians(angle)
+    for z in [0,.002]:arc.append([.01+.003*math.cos(a),-.005+.003*math.sin(a),z])
+arc_triangles=[t for i in range(0,8,2) for t in [(i,i+2,i+1),(i+2,i+3,i+1)]]
+with zipfile.ZipFile(OUT/'bitmap-carbon-arc.zip','w',zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr('Arc.SLDPRT',part([.04,.03,.02],points_override=[arc[i] for t in arc_triangles for i in t],
+        cache_properties=b'\x33\x80'+bitmap_property('carbonfiberepoxy',True),
+        extra_streams=[('ThirdPtyStore/VisualStates',bitmap_state())]))
     archive.writestr('images/grid.png',grid_png())

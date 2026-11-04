@@ -469,3 +469,22 @@ Selected appearance response travels with the cache draw batch instead of being
 replaced by a common plastic response. Shared-style anchors must agree on the
 whole supported optical response; a color match cannot merge unlike shaders.
 No image-space equivalence to the SolidWorks environment is claimed.
+
+
+### Carbon projection continuity
+
+Read-only comparison of the source JPEG against the installed texture found
+identical SHA-256 bytes. Reopened material queries confirmed reciprocal image
+scales, zero rotation and the checked planar direction vectors. Straight-on
+captures distinguish the fine source weave from oblique sampling and shading.
+Agreement on those values does not establish the native phase or face wrapping.
+
+The prior viewer chose a projection plane independently for each triangle. On a
+curved face, neighboring normals could select different axes and assign different
+UVs to the same geometric point. The browser now fits axis-aligned circular
+cylinders to carbon cache faces and uses arc length along their circumference.
+Every vertex and triangle normal must pass the fit; unsupported shapes retain
+the previous planar approximation. One unwrap seam remains on closed cylinders.
+Regression fixtures cross the former normal-axis switch and require shared
+vertices to retain equal UVs. These are viewer coordinates, not decoded native
+B-Rep parameterization. Source pixels and repeat sizes are not rescaled.

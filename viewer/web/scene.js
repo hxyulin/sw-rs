@@ -247,6 +247,10 @@ export class SceneView {
     const gl = this.gl;
     for (const texture of this.textureImages) if (texture) gl.deleteTexture(texture);
     this.textureDefinitions = definitions || [];
+    // Oblique faces need filtering along the texture footprint's long axis.
+    // Trilinear mipmaps alone blur or alias fine weave at grazing angles.
+    const anisotropy = gl.getExtension("EXT_texture_filter_anisotropic");
+    const anisotropyLimit = anisotropy ? Math.min(8, gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) : 1;
     this.textureImages = (images || []).map(image => {
       if (!image) return null;
       try {
@@ -259,6 +263,7 @@ export class SceneView {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, anisotropyLimit);
         return texture;
       } finally { image.close(); }
     });

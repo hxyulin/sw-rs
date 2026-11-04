@@ -629,6 +629,7 @@ impl Project {
             if projection.is_some() && scene.texture_uvs.is_empty() {
                 scene.texture_uvs.resize(first_vertex * 2, 0.);
             }
+            let cylinder = projection.as_ref().and_then(|p| p.cylinder(mesh));
             for triangle in &mesh.triangles {
                 let p = triangle.map(|i| point(pose, mesh.vertices[i as usize]));
                 let a = std::array::from_fn::<_, 3, _>(|i| p[1][i] - p[0][i]);
@@ -650,13 +651,18 @@ impl Project {
                     a[2] * b[0] - a[0] * b[2],
                     a[0] * b[1] - a[1] * b[0],
                 ];
-                for (v, local) in p.into_iter().zip(local) {
+                let texture_uvs = projection.as_ref().map(|projection| {
+                    projection.triangle_uv(
+                        local.map(|p| p.map(|v| v / 1000.)),
+                        local_normal,
+                        cylinder.as_ref(),
+                    )
+                });
+                for (i, v) in p.into_iter().enumerate() {
                     if projection.is_some() || !scene.texture_uvs.is_empty() {
-                        scene.texture_uvs.extend(
-                            projection.as_ref().map_or([0.; 2], |projection| {
-                                projection.uv(local.map(|v| v / 1000.), local_normal)
-                            }),
-                        );
+                        scene
+                            .texture_uvs
+                            .extend(texture_uvs.map_or([0.; 2], |uv| uv[i]));
                     }
                     scene.vertices.extend(v.map(|x| x as f32));
                     scene.vertices.extend(n.map(|x| (x / length) as f32));

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 //! Supplied bitmap selection and approximate Part-local dominant-plane projection.
+mod cylinder;
+
 use sw_rs::archive::{FileSet, Resolution};
 
 /// Supplied image selected by a supported cache or document appearance binding.
@@ -17,8 +19,34 @@ pub(crate) struct Projection {
     center: [f32; 3],
     scale: [f64; 2],
     rotation: f64,
+    cylindrical_faces: bool,
 }
 impl Projection {
+    pub(crate) fn cylinder(&self, mesh: &sw_rs::Tessellation) -> Option<cylinder::Cylinder> {
+        self.cylindrical_faces
+            .then(|| cylinder::Cylinder::fit(mesh))
+            .flatten()
+    }
+    pub(crate) fn triangle_uv(
+        &self,
+        points: [[f64; 3]; 3],
+        normal: [f64; 3],
+        cylinder: Option<&cylinder::Cylinder>,
+    ) -> [[f32; 2]; 3] {
+        if let Some(cylinder) = cylinder {
+            return cylinder
+                .coordinates(points, self.center)
+                .map(|uv| self.transform(uv));
+        }
+        points.map(|p| self.uv(p, normal))
+    }
+    fn transform(&self, [u, v]: [f64; 2]) -> [f32; 2] {
+        let (sin, cos) = self.rotation.sin_cos();
+        [
+            ((u * cos - v * sin) * self.scale[0] + 0.5) as f32,
+            ((u * sin + v * cos) * self.scale[1] + 0.5) as f32,
+        ]
+    }
     pub(crate) fn uv(&self, position: [f64; 3], normal: [f64; 3]) -> [f32; 2] {
         let p = std::array::from_fn::<_, 3, _>(|i| position[i] - f64::from(self.center[i]));
         let a = normal.map(f64::abs);
@@ -29,11 +57,7 @@ impl Projection {
         } else {
             [p[1], p[2]]
         };
-        let (sin, cos) = self.rotation.sin_cos();
-        [
-            ((u * cos - v * sin) * self.scale[0] + 0.5) as f32,
-            ((u * sin + v * cos) * self.scale[1] + 0.5) as f32,
-        ]
+        self.transform([u, v])
     }
 }
 
@@ -121,6 +145,7 @@ pub(crate) fn native_projection(
         center,
         scale,
         rotation: rotation.to_radians(),
+        cylindrical_faces: extension.shader_identifier.value == "carbonfiberepoxy",
     }))
 }
 
@@ -187,6 +212,7 @@ mod tests {
             center: [0.; 3],
             scale: [25., 50.],
             rotation: 0.,
+            cylindrical_faces: false,
         };
         assert_eq!(projection.uv([0., 0., 0.], [0., 0., 1.]), [0.5, 0.5]);
         assert_eq!(projection.uv([0.04, 0.02, 0.], [0., 0., 1.]), [1.5, 1.5]);

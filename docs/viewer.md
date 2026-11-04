@@ -173,7 +173,8 @@ or ambiguous image references keep the existing shading and report an issue.
 No host filesystem or external URL is opened. Corrupt or over-16-megapixel images
 fall back to shading. Desktop bitmap rendering is not implemented.
 
-Bitmap placement uses approximate dominant-plane projection in Part coordinates,
+Bitmap placement uses approximate Part-local planar projection, with arc-length
+coordinates for checked axis-aligned cylindrical carbon cache faces,
 with decoded scale, center and stored rotation for the controlled bitmap profile.
 Carbon fibre reuses those scalar locations as an unverified placement approximation.
 It requires the referenced image in the archive; `.p2m` files are not executed, and
@@ -325,3 +326,14 @@ Equal colors with different optical settings remain separate draw batches.
 Bitmap sampling retains the selected surface response instead of resetting it.
 Lighting, tone mapping, shadows, edge display and native bump response still differ
 from SolidWorks, so base-color agreement does not establish visual equivalence.
+
+
+Curved carbon cache faces that fit an axis-aligned circular cylinder use continuous
+arc-length coordinates. The fit checks every vertex against the circle and each
+triangle normal against the cylinder axis. Planar faces and rejected fits keep
+the planar fallback. A full cylinder retains one wrap seam; open rounded edges
+do not acquire seams when triangle normals cross a dominant-plane boundary.
+This geometry-based approximation does not recover native surface UV origins or
+ensure continuity between separate cache faces. The source bitmap and repeat
+sizes remain unchanged. Supported GPUs also use up to 8× anisotropic filtering
+for oblique bitmap detail, with trilinear filtering as the capability fallback.
