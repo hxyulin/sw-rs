@@ -90,6 +90,35 @@ Missing references are allowed: available sibling parts still render, while the
 header and inspector label the assembly as partial and list omitted references.
 Missing files are never replaced with invented geometry.
 
+Click an occurrence row, move through the tree with the arrow keys, or click
+geometry in the viewport to select that instance. Selection highlights its
+rendered subtree in cyan, including in wireframe. A viewport drag still orbits
+or pans; clicking empty space clears selection. Repeated instances of the same
+Part remain separate selections.
+
+The component inspector shows the source document, configuration, status,
+triangle count, saved material when available, assembly position in millimetres
+and the saved world transform. **Focus** fits the selected subtree without
+changing the orbit direction. **Isolate** shows only that subtree. **Hide** /
+**Show** changes the selected subtree's visibility. **Restore all** clears viewer
+visibility overrides, including after selection is cleared. These controls use
+already loaded geometry and leave the opened assembly unchanged. Excluded or
+unavailable occurrences can be inspected but have no geometry controls. Native
+saved hidden/suppressed flags still determine which geometry was loaded.
+Selection and visibility overrides reset when a scene/configuration is reloaded.
+
+**Saved assembly mates** lists evidence for the opened document's exact native
+configuration. Expand a record to see its class evidence, source offset and saved
+reference strings. Unknown reused mate types stay unknown. This list is scoped
+to the opened assembly, not filtered by the selected component: entity ownership,
+parameters and active state are not resolved. Mate editing and constrained motion
+are not implemented. See [mate decoding](mates.md) for the current parser contract.
+
+Occurrence geometry ranges and saved transforms come from the shared Rust scene
+model. Browser selection, picking and visibility controls use WebGL; the native
+host does not yet expose these interactions. Browser picking checks visible
+triangles on the CPU and may take longer on large scenes.
+
 Use **Search parts** above the document list to filter filenames or full archive
 paths, ignoring case. Unicode names are supported. Press **/** with the sidebar
 focused to jump to search. Filtering keeps the current scene; selecting a result

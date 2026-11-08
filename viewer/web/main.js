@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 import init, { WebApp } from "./pkg/sw_viewer.js";
+import { ComponentPanel } from "./components.js";
 import { SceneView } from "./scene.js";
 import { InventoryPanel } from "./inventory.js";
 const sidebar = document.querySelector("#sidebar"),
@@ -13,6 +14,7 @@ const sidebar = document.querySelector("#sidebar"),
   partsSearch = document.querySelector("#parts-search"),
   searchInput = document.querySelector("#part-search"),
   clearSearch = document.querySelector("#clear-search");
+let componentPanel;
 let app,
   scene,
   worker,
@@ -60,6 +62,7 @@ function openChooser() {
 }
 function resetOverlays() {
   inventoryPanel.reset();
+  componentPanel?.reset();
   awaitingChoice = false;
   chooser.close();
   chooseAssembly.hidden = true;
@@ -68,7 +71,7 @@ function resetOverlays() {
   assemblyPaths = [];
 }
 // Render exported occurrence metadata independently of the RXUI inspector.
-export function renderHierarchy(sceneMetadata, container, onOpen) {
+export function renderHierarchy(sceneMetadata, container, onOpen, onSelect = () => {}) {
   container.replaceChildren();
   const nodes = sceneMetadata.hierarchy || [], groups = new Map([[null, container]]);
   const parents = new Set(nodes.map(node => node.parent));
@@ -78,12 +81,15 @@ export function renderHierarchy(sceneMetadata, container, onOpen) {
     const item = document.createElement("div");
     item.setAttribute("role", "treeitem");
     item.tabIndex = node.id === 0 ? 0 : -1;
+    item.dataset.occurrence = node.id;
+    item.setAttribute("aria-selected", "false");
     const row = document.createElement("div");
     row.className = "node-row";
     const label = document.createElement("span");
     label.className = "node-name";
     label.textContent = node.name;
     row.append(label);
+    row.onclick = event => { event.stopPropagation(); if (!event.target.closest("button")) { item.focus(); onSelect(node.id); } };
     const state = document.createElement("span");
     state.className = "node-state";
     state.textContent = node.status === "available" ? node.kind : node.status;
@@ -124,6 +130,7 @@ export function renderHierarchy(sceneMetadata, container, onOpen) {
     parent.append(item);
     item.onfocus = event => {
       if (event.target !== item) return;
+      onSelect(node.id);
       for (const entry of container.querySelectorAll('[role="treeitem"]')) entry.tabIndex = entry === item ? 0 : -1;
     };
     item.onkeydown = event => {
@@ -341,10 +348,11 @@ function startWorker() {
         );
         app.show_scene(JSON.stringify(data.scene));
         inventoryPanel.setDocument(controls.path);
-        renderHierarchy(data.scene, occurrenceTree, selectDocument);
+        renderHierarchy(data.scene, occurrenceTree, selectDocument, id => componentPanel.select(id));
         hierarchyPanel.hidden = !data.scene.hierarchy?.length;
         progress("Uploading mesh to the viewport…");
         scene.setMesh(data.vertices, data.scene.materials || [], data.scene.batches || [], data.textureUVs, data.textureImages, data.scene.textures);
+        componentPanel.reset(data.scene);
         finishProgress();
         empty.hidden = data.vertices.length > 0;
         empty.textContent = data.vertices.length
@@ -420,6 +428,7 @@ try {
     searchInput.focus();
   });
   scene = new SceneView(document.querySelector("#scene"));
+  componentPanel = new ComponentPanel(scene, occurrenceTree);
   scene.axesCanvas = document.querySelector("#axis-triad");
   const upAxis = document.querySelector("#up-axis");
   upAxis.onchange = () => scene.setUpAxis(upAxis.value);
@@ -575,6 +584,7 @@ try {
     },
     snapshot: () => JSON.parse(app.snapshot()),
     orientation: () => scene.orientation(),
+    components: () => ({ selected: scene.components.selected, isolated: scene.components.isolated, hidden: [...scene.components.hidden], ranges: scene.componentRanges }),
     get busy() {
       return busy;
     },

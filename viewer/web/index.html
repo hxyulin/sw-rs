@@ -180,6 +180,14 @@
       #occurrence-tree .node-name { overflow-wrap: anywhere; flex: 1; }
       #occurrence-tree [role=treeitem]:focus > .node-row { outline: 2px solid #72d5c7; }
       #occurrence-tree button { padding: 2px 5px; font-size: 11px; }
+      #occurrence-tree [aria-selected=true] > .node-row { background: #24545d; }
+      #component-inspector { border-top: 1px solid #314451; margin-top: 10px; }
+      .component-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+      #component-properties dt { color: #91a5b4; margin-top: 8px; }
+      #component-properties dd { margin: 2px 0; overflow-wrap: anywhere; }
+      #hierarchy-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+      #mate-inspector { border-top: 1px solid #314451; padding-top: 10px; }
+      #mate-list details { margin: 8px 0; }
       #occurrence-tree .node-state { color: #edb27b; }
       #source-inventory { width: min(1100px, calc(100vw - 48px)); max-width: none;
         height: min(760px, calc(100vh - 48px)); box-sizing: border-box; color: #d0dce6;
@@ -237,6 +245,13 @@
         <canvas id="scene" tabindex="0" aria-label="3D CAD viewport"></canvas>
         <details id="hierarchy-panel" hidden open><summary>Component occurrences</summary>
           <div id="occurrence-tree" role="tree" aria-label="Component occurrences"></div>
+          <button id="component-restore" disabled>Restore all</button>
+          <section id="component-inspector" hidden aria-label="Selected component">
+            <h3 id="component-name"></h3>
+            <div class="component-actions"><button id="component-focus">Focus</button><button id="component-isolate">Isolate</button><button id="component-hide">Hide</button></div>
+            <dl id="component-properties"></dl>
+          </section>
+          <details id="mate-inspector" hidden><summary>Saved assembly mates</summary><p id="mate-status"></p><div id="mate-list"></div></details>
         </details>
         <div class="tag">SOURCE DISPLAY CACHE</div>
         <div id="view-controls" role="group" aria-label="Model orientation">

@@ -333,6 +333,23 @@ impl Project {
         ancestors: &mut BTreeSet<(String, String)>,
         scene: &mut Scene,
     ) {
+        // Each subtree owns a contiguous range independent of material batching.
+        // Keep source poses in metres so either host can inspect an instance.
+        let first_vertex = scene.vertices.len() / 9;
+        scene.hierarchy[node]["world_transform"] = serde_json::json!(pose);
+        self.visit_contents((node, path), name, pose, show_hidden, ancestors, scene);
+        scene.hierarchy[node]["first_vertex"] = first_vertex.into();
+        scene.hierarchy[node]["vertex_count"] = (scene.vertices.len() / 9 - first_vertex).into();
+    }
+    fn visit_contents(
+        &mut self,
+        (node, path): (usize, &str),
+        name: &str,
+        pose: [f64; 16],
+        show_hidden: bool,
+        ancestors: &mut BTreeSet<(String, String)>,
+        scene: &mut Scene,
+    ) {
         scene.visited_nodes += 1;
         if ancestors.contains(&(path.into(), name.into())) {
             scene.hierarchy[node]["status"] = "cyclic".into();
@@ -413,6 +430,7 @@ impl Project {
                     "available"
                 };
                 scene.hierarchy.push(serde_json::json!({"id":child_node,"parent":node,"name":label,"path":null,"reference":reference,"configuration":config,"kind":if reference.to_ascii_lowercase().ends_with(".sldasm") {"assembly"} else {"part"},"status":status,"hidden":hidden}));
+                scene.hierarchy[child_node]["local_transform"] = serde_json::json!(transform);
                 if suppressed || (hidden && !show_hidden) {
                     continue;
                 }
@@ -1172,6 +1190,15 @@ mod traversal_tests {
         let all = p.scene("root.SLDASM", 0, true);
         assert_eq!(all.occurrences, 2);
         assert_eq!(all.vertices[27], 2.);
+        assert_eq!(all.hierarchy[0]["first_vertex"], 0);
+        assert_eq!(all.hierarchy[0]["vertex_count"], 6);
+        assert_eq!(all.hierarchy[1]["first_vertex"], 0);
+        assert_eq!(all.hierarchy[1]["vertex_count"], 3);
+        assert_eq!(all.hierarchy[2]["first_vertex"], 3);
+        assert_eq!(all.hierarchy[2]["vertex_count"], 3);
+        assert_eq!(all.hierarchy[2]["world_transform"][12], 2.);
+        assert_eq!(all.hierarchy[2]["local_transform"][12], 2.);
+        assert!(visible.hierarchy[2]["first_vertex"].is_null());
         assert_eq!(p.geometry.len(), 1);
     }
     #[test]

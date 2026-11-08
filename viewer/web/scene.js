@@ -2,6 +2,8 @@
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 // App-owned WebGL2 viewport. All CAD parsing and assembly placement is Rust/WASM.
 // Coordinates stay in source XYZ/metres. Only the camera chooses its orbit-up axis.
+import { ComponentState } from "./components.js";
+
 export function orbitBasis(yaw, pitch, upAxis = "y") {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   return upAxis === "z" ? {
@@ -46,7 +48,7 @@ export class SceneView {
         `#version 300 es
       precision highp float;
       in vec3 n; in vec3 c; in vec3 worldPosition; in vec2 bitmapUV; out vec4 outputColor;
-      uniform int surfaceMode; uniform bool bitmapEnabled; uniform sampler2D bitmap;
+      uniform bool selected; uniform int surfaceMode; uniform bool bitmapEnabled; uniform sampler2D bitmap;
       uniform vec3 baseColor; uniform float roughness; uniform float metallic; uniform float reflectivity;
       uniform vec3 eyePosition;
       uniform vec3 sceneUp;
@@ -100,6 +102,7 @@ export class SceneView {
         return ((1.-fresnel)*(1.-metal)*base/PI*opticalCoefficients.x+specular*opticalCoefficients.y)*nl;
       }
       void main(){
+        if(selected){outputColor=vec4(0.25,0.9,0.95,1.);return;}
         vec3 normal=normalize(n);if(!gl_FrontFacing)normal=-normal;
         if(surfaceMode==0){
           float diffuse=max(dot(normal,normalize(environmentLight(vec3(0.4,-0.5,0.8)))),0.);
@@ -148,6 +151,9 @@ export class SceneView {
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS))
       throw Error(gl.getProgramInfoLog(program));
+    this.selectedUniform = gl.getUniformLocation(program, "selected");
+    this.components = new ComponentState();
+    this.componentRanges = [];
     this.matrix = gl.getUniformLocation(program, "camera");
     this.surfaceMode = gl.getUniformLocation(program, "surfaceMode");
     this.bitmapEnabled = gl.getUniformLocation(program, "bitmapEnabled");
@@ -180,7 +186,7 @@ export class SceneView {
     let drag = null;
     canvas.addEventListener("pointerdown", (e) => {
       if (e.button > 2) return;
-      drag = { x: e.clientX, y: e.clientY, pan: e.button !== 0 || e.shiftKey };
+      drag = { startX: e.clientX, startY: e.clientY, moved: false, x: e.clientX, y: e.clientY, pan: e.button !== 0 || e.shiftKey };
       canvas.setPointerCapture(e.pointerId);
       canvas.focus();
       e.preventDefault();
@@ -189,6 +195,8 @@ export class SceneView {
       if (!drag) return;
       const dx = e.clientX - drag.x,
         dy = e.clientY - drag.y;
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 4 && !drag.moved) return;
+      drag.moved = true;
       drag.x = e.clientX;
       drag.y = e.clientY;
       if (drag.pan) {
@@ -204,7 +212,10 @@ export class SceneView {
       this.draw();
     });
     const end = () => (drag = null);
-    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointerup", e => {
+      if (drag && !drag.moved && !drag.pan) this.onSelect?.(this.pick(e.clientX, e.clientY));
+      end();
+    });
     canvas.addEventListener("pointercancel", end);
     canvas.addEventListener("lostpointercapture", end);
     canvas.addEventListener(
@@ -271,6 +282,8 @@ export class SceneView {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, this.hasTextureUVs ? textureUVs : 0, gl.STATIC_DRAW);
     this.data = data;
+    this.components = new ComponentState([], data.length / 9);
+    this.componentRanges = this.components.ranges();
     this.materials = Array.isArray(materials) ? materials : [];
     // Preserve every triangle exactly once, even if a caller omits unassigned
     // ranges. Invalid/overlapping batches are ignored; gaps remain diagnostic.
@@ -314,24 +327,72 @@ export class SceneView {
       throw Error("Unable to build wireframe. Available GPU memory may be exhausted.");
     this.lineCount = indices.length;
   }
+  updateComponents() {
+    this.componentRanges = this.components.ranges();
+    this.draw();
+  }
+  focusComponent(node) {
+    this.fitRanges([{ first_vertex: node.first_vertex, vertex_count: node.vertex_count }]);
+  }
   fit() {
-    const lo = [Infinity, Infinity, Infinity],
-      hi = [-Infinity, -Infinity, -Infinity];
-    for (let i = 0; i < this.data.length; i += 9)
-      for (let a = 0; a < 3; a++) {
-        lo[a] = Math.min(lo[a], this.data[i + a]);
-        hi[a] = Math.max(hi[a], this.data[i + a]);
-      }
-    this.center = this.data.length
-      ? lo.map((v, i) => (v + hi[i]) / 2)
-      : [0, 0, 0];
-    this.radius = this.data.length
-      ? Math.max(Math.hypot(...hi.map((v, i) => v - lo[i])) / 2, 0.001)
-      : 1;
-    this.distance = this.radius * 3.2;
+    this.fitRanges(this.componentRanges);
     this.yaw = Math.PI / 4;
     this.pitch = 0.45;
     this.draw();
+  }
+  fitRanges(ranges) {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const range of ranges)
+      for (let i = range.first_vertex * 9; i < (range.first_vertex + range.vertex_count) * 9; i += 9)
+        for (let a = 0; a < 3; a++) {
+          lo[a] = Math.min(lo[a], this.data[i + a]);
+          hi[a] = Math.max(hi[a], this.data[i + a]);
+        }
+    if (!Number.isFinite(lo[0])) return;
+    this.center = lo.map((v, i) => (v + hi[i]) / 2);
+    this.radius = Math.max(Math.hypot(...hi.map((v, i) => v - lo[i])) / 2, 0.001);
+    this.distance = this.radius * 3.2;
+    this.draw();
+  }
+  pick(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const basis = orbitBasis(this.yaw, this.pitch, this.upAxis);
+    const x = (2 * (clientX - rect.left) / rect.width - 1) * rect.width / rect.height * Math.tan(Math.PI / 8);
+    const y = (1 - 2 * (clientY - rect.top) / rect.height) * Math.tan(Math.PI / 8);
+    const origin = this.center.map((v, i) => v + this.distance * basis.back[i]);
+    const direction = basis.back.map((v, i) => -v + x * basis.right[i] + y * basis.up[i]);
+    const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
+    const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    let nearest = this.radius * 300 / Math.hypot(...direction), hit = null;
+    for (const range of this.componentRanges) {
+      for (let vertex = range.first_vertex; vertex < range.first_vertex + range.vertex_count; vertex += 3) {
+        const at = vertex * 9, a = [this.data[at], this.data[at + 1], this.data[at + 2]];
+        const edge1 = a.map((v, i) => this.data[at + 9 + i] - v);
+        const edge2 = a.map((v, i) => this.data[at + 18 + i] - v);
+        const p = cross(direction, edge2), determinant = dot(edge1, p);
+        if (Math.abs(determinant) < 1e-12 * Math.hypot(...edge1) * Math.hypot(...edge2)) continue;
+        const t = a.map((v, i) => origin[i] - v), u = dot(t, p) / determinant;
+        if (u < 0 || u > 1) continue;
+        const q = cross(t, edge1), v = dot(direction, q) / determinant;
+        if (v < 0 || u + v > 1) continue;
+        const distance = dot(edge2, q) / determinant;
+        if (distance >= this.radius * 0.005 && distance < nearest) {
+          nearest = distance; hit = this.components.owner(vertex)?.id ?? null;
+        }
+      }
+    }
+    return hit;
+  }
+  drawRange(first, count) {
+    const gl = this.gl;
+    for (const range of this.componentRanges) {
+      const start = Math.max(first, range.first_vertex);
+      const end = Math.min(first + count, range.first_vertex + range.vertex_count);
+      if (end <= start) continue;
+      gl.uniform1i(this.selectedUniform, range.selected ? 1 : 0);
+      if (this.wire) gl.drawElements(gl.LINES, (end - start) * 2, gl.UNSIGNED_INT, start * 2 * 4);
+      else gl.drawArrays(gl.TRIANGLES, start, end - start);
+    }
   }
   setUpAxis(axis) {
     if (!["y", "z"].includes(axis)) throw Error("Unsupported camera up axis");
@@ -421,7 +482,7 @@ export class SceneView {
     if (this.wire) {
       this.prepareWireframe();
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lines);
-      gl.drawElements(gl.LINES, this.lineCount, gl.UNSIGNED_INT, 0);
+      this.drawRange(0, this.data.length / 9);
     } else if (this.materialsEnabled && this.batches.length) {
       for (const batch of this.batches) {
         const index = batch.material_index;
@@ -442,10 +503,10 @@ export class SceneView {
           // The bitmap changes base color, not the selected surface response.
           // applyMaterial already supplied its roughness and optical coefficients.
         }
-        gl.drawArrays(gl.TRIANGLES, batch.first_vertex, batch.vertex_count);
+        this.drawRange(batch.first_vertex, batch.vertex_count);
       }
     } else {
-      gl.drawArrays(gl.TRIANGLES, 0, this.data.length / 9);
+      this.drawRange(0, this.data.length / 9);
     }
   }
   applyMaterial(material) {
