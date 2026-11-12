@@ -173,10 +173,40 @@ unchanged reopen/save control each report zero records and a saved count of zero
 The six single-mate variants each report one record, matching the saved count,
 the expected explicit class family and two textual reference candidates:
 coincident, concentric, two distances and two angles. Reopened API evidence gives
-distances of 10/20 mm and angles of 30/60 degrees. The parser still does not read
-those numeric values or resolve the selected entities. Reference strings and a
+distances of 10/20 mm and angles of 30/60 degrees. At that checkpoint the parser
+did not read those numeric values or resolve the selected entities. Reference strings and a
 known numeric API value alone do not establish a native dimension-object layout.
 
 Per-file reports remain ignored under `local-assets/controlled-saves-2026-11-03/`.
 These checks confirm the existing header inventory on controlled examples; they
 do not promote endpoint, parameter or solver coverage.
+
+## Numerical parameter prefixes
+
+`MateRecord::parameter_candidates` retains named feature-derived scalar prefixes
+inside each record's evidence interval. The supported layout requires a framed
+name, the saved parameter marker and sentinel identifier, a framed note, a zero
+word and a finite little-endian f64. Parameter names are not used to infer their
+meaning. Truncated, nonfinite and unsupported explicit parameter classes are not
+reported as supported values.
+
+Explicit `moLengthParameter_c` and `moAngleParameter_c` declarations establish
+metres and radians respectively. Unknown reused class references retain the raw
+scalar and tag with a null unit. Every result retains its name offset and
+`value_offset` in the enclosing decoded stream. These are partial parameter
+prefixes, not complete dimension objects or resolved driving equations.
+
+On 2026-11-12 the four controlled dimension saves above were checked again.
+Distance values decoded as 0.01/0.02 metres at stream offset 4531. Angle values
+decoded as 0.5235987755982988/1.0471975511965976 radians at offset 4798. The
+baseline, control, coincident and concentric saves yielded no parameter candidates.
+These offsets describe those fixtures; the parser follows framing, not fixed
+offsets. Synthetic tests cover renamed parameters, reused classes, record scope,
+damaged markers, truncation and nonfinite values.
+
+Numerical travel bounds remain unsupported: `limit_bounds_decoded` is false.
+A limit mate can contain a dimension, tolerance values, presentation coordinates
+and other scalars. None is labelled minimum or maximum without controlled saves
+changing each bound independently. `parameters_decoded` also remains false:
+alignment, suppression, rotation locks and complete dimension semantics are not
+decoded. Numerical candidates must not automatically become simulation limits.

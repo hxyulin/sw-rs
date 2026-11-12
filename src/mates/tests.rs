@@ -46,6 +46,105 @@ fn reference(out: &mut Vec<u8>, descriptor: &str, path: &str) {
     text(out, path);
 }
 
+fn parameter(out: &mut Vec<u8>, kind: Option<&str>, value: f64) -> usize {
+    if let Some(kind) = kind {
+        class(out, kind);
+    } else {
+        out.extend(0x81a7_u16.to_le_bytes());
+    }
+    out.extend(0x8006_u16.to_le_bytes());
+    text(out, "renamed parameter");
+    out.extend([0, 0, 0, 0, 0, 0, 0, 0x40]);
+    out.extend(u32::MAX.to_le_bytes());
+    out.extend([0; 4]);
+    text(out, "parameter note");
+    out.extend([0; 2]);
+    let offset = out.len();
+    out.extend(value.to_le_bytes());
+    offset
+}
+
+#[test]
+fn numerical_parameters_keep_names_units_offsets_and_record_scope() {
+    let mut bytes = header(3);
+    record(&mut bytes, Some("moMateDistanceDim_c"), "arbitrary name", 1);
+    let length_at = parameter(&mut bytes, Some("moLengthParameter_c"), 0.01);
+    record(
+        &mut bytes,
+        Some("moMatePlanarAngleDim_c"),
+        "not localized",
+        2,
+    );
+    let angle_at = parameter(
+        &mut bytes,
+        Some("moAngleParameter_c"),
+        std::f64::consts::FRAC_PI_6,
+    );
+    record(&mut bytes, Some("moMateLimitDistanceDim_c"), "limit", 3);
+    parameter(&mut bytes, None, -0.02);
+    let config = parse_stream(&bytes, "Contents/Config-0-MatesList", 0);
+    assert_eq!(config.records.len(), 3);
+    assert!(config.inventory_matches_declared_count);
+    assert!(!config.parameters_decoded);
+    assert!(!config.limit_bounds_decoded);
+    let length = &config.records[0].parameter_candidates;
+    assert_eq!(length.len(), 1);
+    assert_eq!(length[0].value, 0.01);
+    assert_eq!(length[0].value_offset, length_at);
+    assert_eq!(length[0].unit, Some("metres"));
+    assert_eq!(length[0].name.value, "renamed parameter");
+    let angle = &config.records[1].parameter_candidates;
+    assert_eq!(angle.len(), 1);
+    assert_eq!(angle[0].value, std::f64::consts::FRAC_PI_6);
+    assert_eq!(angle[0].value_offset, angle_at);
+    assert_eq!(angle[0].unit, Some("radians"));
+    let unknown = &config.records[2].parameter_candidates;
+    assert_eq!(unknown.len(), 1);
+    assert_eq!(unknown[0].value, -0.02);
+    assert_eq!(unknown[0].class_reference, Some(0x81a7));
+    assert!(unknown[0].unit.is_none()); // A limit mate does not identify this scalar's role.
+}
+
+#[test]
+fn numerical_parameters_reject_nonfinite_unknown_declarations_and_truncated_scalars() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut bytes = header(1);
+        record(&mut bytes, Some("moMateDistanceDim_c"), "mate", 1);
+        parameter(&mut bytes, Some("moLengthParameter_c"), value);
+        assert!(
+            parse_stream(&bytes, "Contents/Config-0-MatesList", 0).records[0]
+                .parameter_candidates
+                .is_empty()
+        );
+    }
+    let mut bytes = header(1);
+    record(&mut bytes, Some("moMateDistanceDim_c"), "mate", 1);
+    parameter(&mut bytes, Some("moFutureParameter_c"), 3.);
+    assert!(
+        parse_stream(&bytes, "Contents/Config-0-MatesList", 0).records[0]
+            .parameter_candidates
+            .is_empty()
+    );
+    let mut bytes = header(1);
+    record(&mut bytes, Some("moMateDistanceDim_c"), "mate", 1);
+    let value_at = parameter(&mut bytes, Some("moLengthParameter_c"), 0.02);
+    for end in value_at..bytes.len() {
+        assert!(
+            parse_stream(&bytes[..end], "Contents/Config-0-MatesList", 0).records[0]
+                .parameter_candidates
+                .is_empty()
+        );
+    }
+    // A damaged marker must not be accepted as the known parameter layout.
+    let marker = value_at - 2 - (4 + "parameter note".len() * 2) - 16;
+    bytes[marker] = 1;
+    assert!(
+        parse_stream(&bytes, "Contents/Config-0-MatesList", 0).records[0]
+            .parameter_candidates
+            .is_empty()
+    );
+}
+
 #[test]
 fn multiline_selection_descriptors_keep_all_rows_without_choosing_an_endpoint() {
     let mut bytes = header(1);

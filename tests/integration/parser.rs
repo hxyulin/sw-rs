@@ -721,3 +721,53 @@ fn occurrence_numbers_and_flexibility_preserve_saved_identity_and_unknowns() {
         assert_eq!(component.is_flexible, None);
     }
 }
+
+#[test]
+fn analytical_cli_preserves_configuration_scope_unknown_coverage_and_exact_stream_bytes() {
+    let tree = br#"<swSolidWorks><swHeader><swFile id="root" swPath="root.SLDASM"/><swFile id="part" swPath="part.SLDPRT"/></swHeader><swModelList><swModel id="r" swFileRef="root" swConfigurationId="0" swConfigurationName="Default"><swReference swModelRef="p" swName="same" swID="7" swReferenceNumber="1" swSuppressed="NO" swFlexible="NO" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 2 3 4 1"/><swReference swModelRef="p" swName="same" swID="8" swReferenceNumber="2" swSuppressed="YES"/></swModel><swModel id="p" swFileRef="part"/></swModelList></swSolidWorks>"#;
+    let mates = [193, 0, 0, 0, 0, 0];
+    let bytes = file(&[
+        ("swXmlContents/COMPINSTANCETREE", tree),
+        ("Contents/Config-0-MatesList", &mates),
+        ("Contents/Config-7-MatesList", &mates),
+    ]);
+    let path =
+        std::env::temp_dir().join(format!("sw-rs-analysis-cli-{}.SLDASM", std::process::id()));
+    std::fs::write(&path, &bytes).unwrap();
+    let run = |arguments: &[&str]| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_sw-dump"));
+        command.arg(arguments[0]).arg(&path).args(&arguments[1..]);
+        command.output().unwrap()
+    };
+    let analysis = run(&["assembly-analysis"]);
+    let raw = run(&["stream", "Contents/Config-7-MatesList"]);
+    let missing = run(&["stream", "absent"]);
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        analysis.status.success(),
+        "{}",
+        String::from_utf8_lossy(&analysis.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&analysis.stdout).unwrap();
+    assert_eq!(json["schema"], "sw-rs-assembly-analysis-v1");
+    let reader = sw_rs::DocumentReader::open(&bytes, "root.SLDASM", Limits::default()).unwrap();
+    assert_eq!(json["source_sha256"], reader.source_sha256());
+    assert_eq!(json["coverage"]["grounding_decoded"], false);
+    assert_eq!(json["coverage"]["limit_bounds_decoded"], false);
+    let components = &json["configurations"][0]["components"];
+    assert_eq!(components[0]["native_id"], 7);
+    assert_eq!(components[1]["native_id"], 8);
+    assert_eq!(components[0]["transform"][12], 2.);
+    assert_eq!(components[1]["is_suppressed"], true);
+    assert!(components[1]["transform"].is_null());
+    assert_eq!(json["configurations"][1]["configuration_index"], 7);
+    assert_eq!(json["configurations"][1]["mates"]["configuration_index"], 7);
+    assert_eq!(
+        json["configurations"][1]["mate_reference_graph"],
+        serde_json::json!([])
+    );
+    assert!(raw.status.success());
+    assert_eq!(raw.stdout, mates);
+    assert!(!missing.status.success());
+    assert!(missing.stdout.is_empty());
+}

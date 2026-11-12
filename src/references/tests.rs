@@ -202,6 +202,7 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
         inventory_matches_declared_count: true,
         entity_ownership_decoded: false,
         parameters_decoded: false,
+        limit_bounds_decoded: false,
         diagnostics: Vec::new(),
         records: vec![crate::MateRecord {
             name: crate::NativeString {
@@ -215,6 +216,7 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
             kind: Some(crate::MateKind::Width),
             source_offset: 6,
             evidence_end: 200,
+            parameter_candidates: Vec::new(),
             reference_candidates: vec![crate::MateReferenceCandidate {
                 reference: crate::NativeString {
                     offset: 150,

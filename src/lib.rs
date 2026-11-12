@@ -45,8 +45,8 @@ pub use inventory::{
     XmlText,
 };
 pub use mates::{
-    ConfigurationMates, MateData, MateDiagnostic, MateKind, MateRecord, MateReferenceCandidate,
-    MateReferenceNode,
+    ConfigurationMates, MateData, MateDiagnostic, MateKind, MateParameterCandidate, MateRecord,
+    MateReferenceCandidate, MateReferenceNode,
 };
 pub use model_headers::{
     NativeModelHeaderAttempt, NativeModelHeaderAttemptOutcome, NativeModelHeaderDecoding,

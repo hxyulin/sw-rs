@@ -20,9 +20,9 @@ pub enum MateKind {
     Perpendicular,
     /// Tangency of the selected entities.
     Tangent,
-    /// Saved distance dimension; value/units are not decoded by this profile.
+    /// Saved distance dimension; named scalar prefixes may be available separately.
     Distance,
-    /// Saved planar angle dimension; value/units are not decoded by this profile.
+    /// Saved planar angle dimension; named scalar prefixes may be available separately.
     Angle,
     /// Symmetric positioning of selected entities.
     Symmetric,
@@ -108,6 +108,28 @@ pub struct MateRecord {
     pub evidence_end: usize,
     /// Saved occurrence/selection-looking strings, preserving order and duplicates.
     pub reference_candidates: Vec<MateReferenceCandidate>,
+    /// Named numerical parameter prefixes inside this evidence interval.
+    /// Unknown class references retain raw values without assigning physical units.
+    /// These values are not automatically driving dimensions or travel bounds.
+    pub parameter_candidates: Vec<MateParameterCandidate>,
+}
+
+/// A supported named native parameter prefix, not a complete dimension object.
+#[derive(Clone, Debug, Serialize)]
+pub struct MateParameterCandidate {
+    /// Saved parameter name and its decoded-stream offset.
+    pub name: NativeString,
+    /// Explicit parameter class, when declared directly at this prefix.
+    pub class_name: Option<String>,
+    /// Raw class-reference tag when the shared archive dictionary is unavailable.
+    pub class_reference: Option<u16>,
+    /// Finite saved scalar. This is not a measured joint coordinate.
+    pub value: f64,
+    /// `metres` or `radians` only for an explicit supported parameter class.
+    /// None means that the physical meaning and units remain unknown.
+    pub unit: Option<&'static str>,
+    /// Exact little-endian f64 offset in the configuration's decoded source stream.
+    pub value_offset: usize,
 }
 
 /// One distinct saved reference string and the mate records mentioning it.
@@ -148,8 +170,10 @@ pub struct ConfigurationMates {
     pub inventory_matches_declared_count: bool,
     /// Always false: complete entity/component ownership has not been decoded.
     pub entity_ownership_decoded: bool,
-    /// Always false: distance/angle/limits, alignment and suppression remain unknown.
+    /// Always false: complete parameters, alignment and suppression remain unknown.
     pub parameters_decoded: bool,
+    /// Always false: numerical parameter prefixes do not establish travel bounds.
+    pub limit_bounds_decoded: bool,
     /// Unsupported framing and partial reference-graph limitations.
     pub diagnostics: Vec<MateDiagnostic>,
 }
@@ -242,6 +266,7 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
         inventory_matches_declared_count: false,
         entity_ownership_decoded: false,
         parameters_decoded: false,
+        limit_bounds_decoded: false,
         diagnostics: Vec::new(),
     };
     if out.header_word.is_none() || out.declared_count.is_none() {
@@ -311,6 +336,7 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
             source_offset: start,
             evidence_end: bytes.len(),
             reference_candidates: Vec::new(),
+            parameter_candidates: Vec::new(),
         });
     }
     for index in 0..out.records.len() {
@@ -331,6 +357,11 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
         let last = texts.partition_point(|(text, _)| text.offset < end);
         for text_index in first..last {
             let (text, _) = &texts[text_index];
+            if let Some(parameter) =
+                parameter_candidate(bytes, &texts[text_index], note_end, end, &classes_by_start)
+            {
+                record.parameter_candidates.push(parameter);
+            }
             if !text.value.contains('@') || text.value.contains('\\') || text.value.contains(':') {
                 continue;
             }
@@ -363,9 +394,66 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
     diagnostic(
         &mut out,
         "partial_mate_relations",
-        "Reference strings are candidates; reused class tags, topology ownership, active/suppressed state, parameters and solving remain unsupported",
+        "Reference strings and named scalar prefixes are candidates; reused class tags, topology ownership, active/suppressed state, travel bounds and solving remain unsupported",
     );
     out
+}
+
+fn parameter_candidate(
+    bytes: &[u8],
+    (name, name_end): &(NativeString, usize),
+    first: usize,
+    end: usize,
+    classes: &BTreeMap<usize, &mesh::ClassInterval>,
+) -> Option<MateParameterCandidate> {
+    let tag_at = name.offset.checked_sub(2)?;
+    if name.value.is_empty() || tag_at < first || !class_tag(word(bytes, tag_at)?) {
+        return None;
+    }
+    // Feature-derived parameter prefix: marker 2.0, sentinel identifier,
+    // zero word, framed note, zero word, then the scalar. Do not scan arbitrary
+    // doubles or infer a dimension from a localized feature/parameter name.
+    if bytes.get(*name_end..name_end.checked_add(16)?)?
+        != [0, 0, 0, 0, 0, 0, 0, 0x40, 255, 255, 255, 255, 0, 0, 0, 0]
+    {
+        return None;
+    }
+    let (_, note_end) = native_string_at(bytes, name_end.checked_add(16)?)?;
+    if word(bytes, note_end)? != 0 {
+        return None;
+    }
+    let value_offset = note_end.checked_add(2)?;
+    let value_end = value_offset.checked_add(8)?;
+    if value_end > end {
+        return None;
+    }
+    let value = f64::from_le_bytes(bytes.get(value_offset..value_end)?.try_into().ok()?);
+    if !value.is_finite() {
+        return None;
+    }
+    let class = classes.get(&tag_at).filter(|c| c.class_offset >= first);
+    let unit = match class.map(|c| c.name.as_str()) {
+        Some("moLengthParameter_c") => Some("metres"),
+        Some("moAngleParameter_c") => Some("radians"),
+        Some(_) => return None,
+        None => None,
+    };
+    let class_reference = if class.is_none() {
+        Some(word(bytes, tag_at.checked_sub(2)?)?).filter(|t| class_tag(*t))
+    } else {
+        None
+    };
+    if class.is_none() && class_reference.is_none() {
+        return None;
+    }
+    Some(MateParameterCandidate {
+        name: name.clone(),
+        class_name: class.map(|c| c.name.clone()),
+        class_reference,
+        value,
+        unit,
+        value_offset,
+    })
 }
 
 #[cfg(test)]

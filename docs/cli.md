@@ -2,7 +2,8 @@
 <!-- Copyright (c) 2026 hxyulin <hxyulin@proton.me> -->
 # Command-line reference
 
-`sw-dump` reads one native file and writes JSON to stdout. Install/build from
+`sw-dump` reads one native file and writes JSON to stdout, except for the raw
+`stream` mode. Install/build from
 this checkout; the package is not published. The CLI uses bounded default
 `Limits` and has no flag to remove them. Archive composition lives in the viewer
 and audit examples, not this command.
@@ -16,6 +17,8 @@ cargo run --release --locked --bin sw-dump -- [MODE] FILE [OPTION]
 | `FILE` or `metadata FILE` | Saved metadata (`sw-rs-metadata-v1`) |
 | `geometry FILE.SLDPRT` | `sw-rs-geometry-v1` envelope |
 | `mates FILE.SLDASM` | `sw-rs-mates-v1` header inventory |
+| `assembly-analysis FILE.SLDASM` | Configuration-local occurrences, mate evidence and source-reference graph |
+| `stream FILE STREAM_NAME` | Exact decoded stream bytes on stdout, with no JSON wrapper |
 | `inventory FILE` | Source inventory and no selected stream inspection |
 | `inventory FILE STREAM_NAME` | Inventory plus structural XML/binary inspection |
 | `model-headers FILE` | Complete local model-header report (`sw-rs-model-headers-v1`) |
@@ -26,7 +29,38 @@ cargo run --release --locked --bin sw-dump -- [MODE] FILE [OPTION]
 ```sh
 cargo run --release --locked --bin sw-dump -- inventory part.SLDPRT swXmlContents/MATERIALTREE
 cargo run --release --locked --bin sw-dump -- references part.SLDPRT --geometry
+cargo run --release --locked --bin sw-dump -- assembly-analysis assembly.SLDASM > assembly.json
+cargo run --release --locked --bin sw-dump -- stream assembly.SLDASM Contents/Config-0-MatesList > mates.bin
 ```
+
+## Assembly analysis
+
+`assembly-analysis` writes `sw-rs-assembly-analysis-v1`. It retains source SHA-256,
+native version, configuration indices and names, exact occurrence identities,
+saved local transforms, suppression, visibility, BOM exclusion and explicit
+rigid/flexible flags. Components are direct saved occurrences; this command does
+not recursively open external files or compose world transforms.
+
+Each configuration includes its mate inventory and a bipartite graph linking exact
+saved reference strings to mate record indices. Native configuration indices remain
+present even when their names are unavailable. The source-reference graph and explicit path
+replacement records retain ambiguous and unresolved identities. Matching strings
+do not establish physical mate endpoints or a solved component graph.
+
+Mate `parameter_candidates` retain supported named scalar prefixes and byte
+offsets. Explicit length/angle parameter declarations establish metres/radians;
+reused unknown classes have a null unit. A scalar in a limit mate is not identified
+as its lower or upper bound. See [numerical mate evidence](mates.md#numerical-parameter-prefixes).
+
+The coverage object reports grounding, limit bounds, mate ownership and solving
+as unsupported. Fixed state is unknown, even when a transform is identity or
+mates appear to constrain a component. Saved flexible flags remain separate from
+grounding. Missing values never become zero bounds or unconstrained motion.
+
+`stream` exports the reader's decoded bytes with the same limits and integrity
+checks as other modes. Its offsets match inventory inspections and mate evidence;
+it does not export the encoded container record. An absent stream fails without
+writing payload bytes. Redirect stdout to a file for binary streams.
 
 Geometry failure writes a JSON envelope with `geometry: null` and a diagnostic,
 then exits unsuccessfully. Other hard failures exit unsuccessfully through the
