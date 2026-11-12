@@ -693,3 +693,31 @@ fn complete_model_header_reports_are_cached_opt_in_and_transferred_without_other
     assert!(invalid.model_headers().is_err());
     assert!(invalid.inventory().container_error.is_some());
 }
+
+#[test]
+fn occurrence_numbers_and_flexibility_preserve_saved_identity_and_unknowns() {
+    let tree = r#"<swSolidWorks><swHeader><swFile id="root" swPath="root.SLDASM"/><swFile id="part" swPath="part.SLDPRT"/></swHeader><swModelList><swModel id="rootModel" swFileRef="root" swConfigurationId="0" swConfigurationName="Default">
+    <swReference swModelRef="p" swName="Label" swComponentName="Part" swReferenceNumber="1" swID="27" swFlexible="NO" swSuppressed="NO"/>
+    <swReference swModelRef="p" swName="Label" swComponentName="Part" swReferenceNumber="2" swID="28" swFlexible="YES" swSuppressed="NO"/>
+    <swReference swModelRef="p" swName="Label"/>
+    <swReference swModelRef="p" swName="Label" swComponentName="" swReferenceNumber="unknown" swID="-1" swFlexible="unknown"/>
+    </swModel><swModel id="p" swFileRef="part"/></swModelList></swSolidWorks>"#;
+    let bytes = file(&[("swXmlContents/COMPINSTANCETREE", tree.as_bytes())]);
+    let doc = sw_rs::parse(&bytes, "root.SLDASM").unwrap();
+    let components = &doc.configurations[0].components;
+    assert_eq!(components.len(), 4);
+    assert_eq!(components[0].name, components[1].name);
+    assert_eq!(components[0].component_name.as_deref(), Some("Part"));
+    assert_eq!(components[0].reference_number, Some(1));
+    assert_eq!(components[1].reference_number, Some(2));
+    assert_eq!(components[0].native_id, Some(27));
+    assert_eq!(components[1].native_id, Some(28));
+    assert_eq!(components[0].is_flexible, Some(false));
+    assert_eq!(components[1].is_flexible, Some(true));
+    for component in &components[2..] {
+        assert_eq!(component.component_name, None);
+        assert_eq!(component.reference_number, None);
+        assert_eq!(component.native_id, None);
+        assert_eq!(component.is_flexible, None);
+    }
+}

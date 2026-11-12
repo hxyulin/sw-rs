@@ -34,6 +34,18 @@ pub struct MassProperties {
 pub struct Component {
     /// Occurrence name, preserving Unicode.
     pub name: String,
+    /// Saved component-name attribute, separate from the editable occurrence label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_name: Option<String>,
+    /// Saved occurrence number; absent or invalid numbers remain unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_number: Option<u32>,
+    /// Saved configuration-local `swID`, not a global persistent entity identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_id: Option<u32>,
+    /// Explicit saved flexible flag; unknown does not imply rigid.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_flexible: Option<bool>,
     /// Source path, often a Windows path.
     pub path: String,
     /// Referenced child configuration.

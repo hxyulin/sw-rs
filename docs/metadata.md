@@ -30,6 +30,14 @@ visibility, suppression and BOM exclusion. Repeated occurrences remain separate
 from shared document definitions. A saved 16-value transform is optional;
 missing/malformed data is `None` rather than an invented identity matrix.
 
+The component tree also preserves `swComponentName`, `swReferenceNumber`, `swID`
+and the explicit `swFlexible` flag as `component_name`, `reference_number`,
+`native_id` and `is_flexible`. Missing or malformed values stay unknown. The
+native ID belongs to the saved configuration context; it is not a global
+persistent entity identifier. These fields retain evidence for occurrence
+matching without rewriting historical mate-selection names. Rigid/flexible mode
+does not establish whether a component is grounded in its parent assembly.
+
 Transforms follow the openswx-derived column-major interpretation. Agreement
 with that implementation is not independent validation of every placement.
 Viewer composition uses these saved poses; mates do not drive positioning.

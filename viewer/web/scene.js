@@ -256,6 +256,9 @@ export class SceneView {
   }
   setMesh(data, materials = [], batches = [], textureUVs, images = [], definitions = []) {
     const gl = this.gl;
+    this.motionPreview = null;
+    this.simulationPreview = null;
+    this.simulationActive = false;
     for (const texture of this.textureImages) if (texture) gl.deleteTexture(texture);
     this.textureDefinitions = definitions || [];
     // Oblique faces need filtering along the texture footprint's long axis.
@@ -326,6 +329,72 @@ export class SceneView {
     if (gl.getError() !== gl.NO_ERROR)
       throw Error("Unable to build wireframe. Available GPU memory may be exhausted.");
     this.lineCount = indices.length;
+  }
+  clearSimulation() {
+    if (!this.simulationPreview) return;
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+    for (const chunk of this.simulationPreview.chunks) {
+      this.data.set(chunk.source, chunk.offset);
+      this.gl.bufferSubData(this.gl.ARRAY_BUFFER, chunk.offset * 4, chunk.source);
+    }
+    this.simulationPreview = null;
+    this.draw();
+  }
+  previewSimulation(ranges, yaw, pitch, linkage) {
+    const key = JSON.stringify(ranges);
+    if (this.simulationPreview?.key !== key) {
+      this.clearSimulation();
+      this.simulationPreview = { key, chunks: ranges.map(range => ({
+        ...range, offset: range.first_vertex * 9,
+        source: this.data.slice(range.first_vertex * 9, (range.first_vertex + range.vertex_count) * 9),
+      })) };
+    }
+    const combined = multiply(yaw, pitch);
+    const followers = linkage ? { crank: multiply(yaw,linkage.crank), coupler: multiply(yaw,linkage.coupler) } : {};
+    const updates = this.simulationPreview.chunks.map(chunk => {
+      const matrix = chunk.linkage ? followers[chunk.linkage] : chunk.pitch ? combined : yaw, source = chunk.source, moved = source.slice();
+      for (let i = 0; i < source.length; i += 9) for (let a = 0; a < 3; a++) {
+        moved[i+a] = matrix[a]*source[i] + matrix[4+a]*source[i+1] + matrix[8+a]*source[i+2] + matrix[12+a];
+        moved[i+3+a] = matrix[a]*source[i+3] + matrix[4+a]*source[i+4] + matrix[8+a]*source[i+5];
+      }
+      if (!moved.every(Number.isFinite)) throw Error('Simulation exceeds the viewport coordinate range.');
+      return { offset: chunk.offset, moved };
+    });
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+    for (const { offset, moved } of updates) {
+      this.data.set(moved, offset);
+      this.gl.bufferSubData(this.gl.ARRAY_BUFFER, offset * 4, moved);
+    }
+    this.draw();
+  }
+  clearMotion() {
+    const preview = this.motionPreview;
+    if (!preview) return;
+    this.data.set(preview.source, preview.offset);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+    this.gl.bufferSubData(this.gl.ARRAY_BUFFER, preview.offset * 4, preview.source);
+    this.motionPreview = null;
+    this.draw();
+  }
+  previewMotion(node, matrix) {
+    if (this.motionPreview?.id !== node.id) {
+      this.clearMotion();
+      const offset = node.first_vertex * 9;
+      this.motionPreview = { id: node.id, offset, source: this.data.slice(offset, offset + node.vertex_count * 9) };
+    }
+    const { source, offset } = this.motionPreview;
+    const moved = source.slice();
+    for (let i = 0; i < source.length; i += 9) {
+      for (let a = 0; a < 3; a++) {
+        moved[i + a] = matrix[a]*source[i] + matrix[4+a]*source[i+1] + matrix[8+a]*source[i+2] + matrix[12+a];
+        moved[i + 3 + a] = matrix[a]*source[i+3] + matrix[4+a]*source[i+4] + matrix[8+a]*source[i+5];
+      }
+    }
+    if (!moved.every(Number.isFinite)) throw Error('Motion exceeds the viewport coordinate range.');
+    this.data.set(moved, offset);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+    this.gl.bufferSubData(this.gl.ARRAY_BUFFER, offset * 4, moved);
+    this.draw();
   }
   updateComponents() {
     this.componentRanges = this.components.ranges();

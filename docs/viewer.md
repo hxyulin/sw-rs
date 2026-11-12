@@ -98,7 +98,10 @@ Part remain separate selections.
 
 The component inspector shows the source document, configuration, status,
 triangle count, saved material when available, assembly position in millimetres
-and the saved world transform. **Focus** fits the selected subtree without
+and the saved world transform. Saved component names, occurrence numbers and native
+component IDs appear when available. Subassembly mode distinguishes an explicit
+Rigid/Flexible flag from Unknown; these labels do not establish grounding.
+**Focus** fits the selected subtree without
 changing the orbit direction. **Isolate** shows only that subtree. **Hide** /
 **Show** changes the selected subtree's visibility. **Restore all** clears viewer
 visibility overrides, including after selection is cleared. These controls use
@@ -111,8 +114,70 @@ Selection and visibility overrides reset when a scene/configuration is reloaded.
 configuration. Expand a record to see its class evidence, source offset and saved
 reference strings. Unknown reused mate types stay unknown. This list is scoped
 to the opened assembly, not filtered by the selected component: entity ownership,
-parameters and active state are not resolved. Mate editing and constrained motion
+parameters and active state are not resolved. Native mate editing and solving
 are not implemented. See [mate decoding](mates.md) for the current parser contract.
+
+With a rendered component selected, expand **Viewer joint preview** to define a
+single hinge or slider relative to the stationary assembly frame. Choose an
+assembly X/Y/Z axis. A hinge also takes an explicit pivot in millimetres, initially
+the component's saved assembly origin. Set lower/upper travel limits and move the
+slider or enter a value. Hinge values and limits use degrees; slider values use
+millimetres. Limits must include zero, the saved pose. Invalid definitions and
+out-of-range values restore the saved pose and show an error.
+
+The preview moves the entire selected subtree while leaving other occurrences
+fixed. **Reset motion**, changing selection, or reloading the scene restores the
+saved geometry. Axis, pivot and limit edits reset the coordinate to zero. Preview
+controls evaluate each pose from the saved geometry, so repeated edits do not
+accumulate motion. Picking, focus, shading and wireframe use the previewed geometry;
+the property inspector continues to show saved transforms and positions.
+
+These are viewer-defined joints, independent of saved native mates. Other mates,
+collisions and linked mechanisms are not enforced. Definitions and preview poses
+are not saved to the CAD file. Joint validation and rigid-transform evaluation live
+in the shared Rust `motion` module; the native host can use that module but does
+not yet expose preview controls.
+
+For an explicitly authored mechanism, expand **Simulation overrides**. Select
+occurrences and use **Add selected to Yaw**, **Add selected to Pitch**, or
+**Add selected to Grounded**. Assignment includes the selected subtree. Grounded
+geometry takes priority over overlapping driven groups; unassigned geometry
+stays in its saved pose. Root-document assignment is disabled so the entire
+robot cannot accidentally become one driven group.
+
+Set each joint's axis vector and pivot in the saved assembly frame, with pivots
+in millimetres and angles/limits in degrees. **Use selected origin** copies a
+saved occurrence origin; it does not infer a physical bearing axis. Pitch is
+relative to yaw: its assigned geometry receives pitch motion first, then yaw.
+This keeps the pitch axis attached to the rotating yaw frame. Overlapping
+subtrees are partitioned so vertices move once.
+
+For a parallelogram mechanism, expand **Pitch linkage** and check **Use
+parallelogram linkage**. Assign the input arm to **Crank** and the connecting rod
+to **Coupler**. Set the crank pivot and saved crank-to-rod connection point in
+the assembly frame. The head uses the ordinary Pitch group and pivot. The crank
+rotates by the pitch angle about its own pivot; the coupler translates without
+changing orientation. Both then follow yaw. This keeps the folding arm at its
+saved pose. Grounded assignments take priority; crank and coupler assignments
+take priority over overlapping head or yaw subtrees.
+
+Check **Enable simulation overrides** to apply the setup. These authored joints
+replace saved constraints for their assigned groups; they do not solve a subset
+of decoded native mates or model collisions. Changing selection preserves the
+simulation pose. The single-component preview is hidden while simulation is
+enabled. **Reset simulation pose**, disabling overrides, or reloading the scene
+restores saved geometry. Groups and joint definitions reset on scene reload.
+Use **Export setup…** to save groups, axes, pivots, limits and angles as JSON.
+The exported setup also includes an enabled pitch linkage and its assignments.
+**Import setup…** restores a setup with simulation disabled until you enable it.
+Imports require the same source SHA-256, configuration and exact component
+ancestry, including occurrence indices and dependency hashes. A mismatched
+setup leaves the current setup and pose intact. Imported setup notes remain
+visible; editing groups or joint definitions marks them as edited and removes
+their original calibration claims. Changing only angles preserves those notes.
+
+No override changes the source CAD. An EGA-specific setup requires measured
+rotor/pitch membership and joint axes; names alone do not establish those roles.
 
 Occurrence geometry ranges and saved transforms come from the shared Rust scene
 model. Browser selection, picking and visibility controls use WebGL; the native

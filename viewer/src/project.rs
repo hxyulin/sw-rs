@@ -63,6 +63,7 @@ struct SourceInspection {
 pub struct Project {
     pub files: FileSet,
     metadata: BTreeMap<String, Document>,
+    source_hashes: BTreeMap<String, String>,
     embedded_documents: BTreeMap<String, Arc<[u8]>>,
     embedded_files: BTreeMap<String, FileSet>,
     geometry: BTreeMap<String, Result<sw_rs::GeometryDocument, String>>,
@@ -74,6 +75,7 @@ impl Project {
         Self {
             files,
             metadata: BTreeMap::new(),
+            source_hashes: BTreeMap::new(),
             embedded_documents: BTreeMap::new(),
             embedded_files: BTreeMap::new(),
             geometry: BTreeMap::new(),
@@ -92,6 +94,8 @@ impl Project {
                 .ok_or("document not present")?;
             let reader = sw_rs::DocumentReader::open(&bytes, path, sw_rs::Limits::unlimited())
                 .map_err(|e| e.to_string())?;
+            self.source_hashes
+                .insert(path.into(), reader.source_sha256().into());
             let is_part = reader.metadata().map_err(|e| e.to_string())?.document_type == "part";
             if is_part {
                 let _ = reader.geometry();
@@ -338,6 +342,7 @@ impl Project {
         let first_vertex = scene.vertices.len() / 9;
         scene.hierarchy[node]["world_transform"] = serde_json::json!(pose);
         self.visit_contents((node, path), name, pose, show_hidden, ancestors, scene);
+        scene.hierarchy[node]["source_sha256"] = serde_json::json!(self.source_hashes.get(path));
         scene.hierarchy[node]["first_vertex"] = first_vertex.into();
         scene.hierarchy[node]["vertex_count"] = (scene.vertices.len() / 9 - first_vertex).into();
     }
@@ -416,11 +421,17 @@ impl Project {
                         c.is_suppressed,
                         c.is_hidden,
                         c.transform,
+                        (
+                            c.component_name.clone(),
+                            c.reference_number,
+                            c.native_id,
+                            c.is_flexible,
+                        ),
                     )
                 })
                 .collect();
             ancestors.insert((path.into(), name.into()));
-            for (label, reference, config, suppressed, hidden, transform) in children {
+            for (label, reference, config, suppressed, hidden, transform, identity) in children {
                 let child_node = scene.hierarchy.len();
                 let status = if suppressed {
                     "suppressed"
@@ -431,6 +442,10 @@ impl Project {
                 };
                 scene.hierarchy.push(serde_json::json!({"id":child_node,"parent":node,"name":label,"path":null,"reference":reference,"configuration":config,"kind":if reference.to_ascii_lowercase().ends_with(".sldasm") {"assembly"} else {"part"},"status":status,"hidden":hidden}));
                 scene.hierarchy[child_node]["local_transform"] = serde_json::json!(transform);
+                scene.hierarchy[child_node]["component_name"] = serde_json::json!(identity.0);
+                scene.hierarchy[child_node]["reference_number"] = serde_json::json!(identity.1);
+                scene.hierarchy[child_node]["native_id"] = serde_json::json!(identity.2);
+                scene.hierarchy[child_node]["is_flexible"] = serde_json::json!(identity.3);
                 if suppressed || (hidden && !show_hidden) {
                     continue;
                 }
@@ -857,6 +872,10 @@ mod traversal_tests {
     fn component(path: &str, transform: Option<[f64; 16]>, hidden: bool) -> sw_rs::Component {
         sw_rs::Component {
             name: path.into(),
+            component_name: None,
+            reference_number: None,
+            native_id: None,
+            is_flexible: None,
             path: path.into(),
             ref_config: "Default".into(),
             component_reference: String::new(),
@@ -1180,10 +1199,17 @@ mod traversal_tests {
     fn repeated_hidden_occurrences_keep_source_poses_and_shared_decode() {
         let mut second = IDENTITY;
         second[12] = 2.;
-        let mut p = fixture(vec![
-            component("part.SLDPRT", Some(IDENTITY), false),
-            component("part.SLDPRT", Some(second), true),
-        ]);
+        let mut first = component("part.SLDPRT", Some(IDENTITY), false);
+        first.component_name = Some("Part".into());
+        first.reference_number = Some(1);
+        first.native_id = Some(27);
+        first.is_flexible = Some(false);
+        let mut repeated = component("part.SLDPRT", Some(second), true);
+        repeated.component_name = Some("Part".into());
+        repeated.reference_number = Some(2);
+        repeated.native_id = Some(28);
+        repeated.is_flexible = Some(true);
+        let mut p = fixture(vec![first, repeated]);
         let visible = p.scene("root.SLDASM", 0, false);
         assert_eq!(visible.occurrences, 1);
         assert_eq!(visible.vertices.len(), 27);
@@ -1192,6 +1218,13 @@ mod traversal_tests {
         assert_eq!(all.vertices[27], 2.);
         assert_eq!(all.hierarchy[0]["first_vertex"], 0);
         assert_eq!(all.hierarchy[0]["vertex_count"], 6);
+        assert_eq!(all.hierarchy[1]["component_name"], "Part");
+        assert_eq!(all.hierarchy[1]["reference_number"], 1);
+        assert_eq!(all.hierarchy[2]["reference_number"], 2);
+        assert_eq!(all.hierarchy[1]["native_id"], 27);
+        assert_eq!(all.hierarchy[2]["native_id"], 28);
+        assert_eq!(all.hierarchy[1]["is_flexible"], false);
+        assert_eq!(all.hierarchy[2]["is_flexible"], true);
         assert_eq!(all.hierarchy[1]["first_vertex"], 0);
         assert_eq!(all.hierarchy[1]["vertex_count"], 3);
         assert_eq!(all.hierarchy[2]["first_vertex"], 3);

@@ -186,6 +186,20 @@
       #component-properties dt { color: #91a5b4; margin-top: 8px; }
       #component-properties dd { margin: 2px 0; overflow-wrap: anywhere; }
       #hierarchy-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+      #simulation-panel { border-top: 1px solid #314451; padding: 10px 0; }
+      #simulation-panel fieldset { border: 1px solid #314451; margin: 8px 0; }
+      #simulation-panel label { display: block; margin: 5px 0; }
+      #simulation-panel input[type=number] { width: 85px; background: #17212b; color: inherit; border: 1px solid #526576; }
+      #simulation-panel input[type=range] { width: 100%; }
+      #simulation-panel ul { padding-left: 18px; overflow-wrap: anywhere; }
+      #simulation-status[data-state=error] { color: #ff9a90; }
+      #motion-panel { border-top: 1px solid #314451; padding: 10px 0; }
+      #motion-panel label { display: block; margin: 6px 0; }
+      #motion-panel input[type=number] { width: 90px; background: #17212b; color: inherit; border: 1px solid #526576; }
+      #motion-range { width: 100%; }
+      #motion-panel fieldset { margin: 8px 0; border: 1px solid #314451; }
+      .motion-limits { display: flex; gap: 10px; }
+      #motion-status[data-state=error] { color: #ff9a90; }
       #mate-inspector { border-top: 1px solid #314451; padding-top: 10px; }
       #mate-list details { margin: 8px 0; }
       #occurrence-tree .node-state { color: #edb27b; }
@@ -246,10 +260,46 @@
         <details id="hierarchy-panel" hidden open><summary>Component occurrences</summary>
           <div id="occurrence-tree" role="tree" aria-label="Component occurrences"></div>
           <button id="component-restore" disabled>Restore all</button>
+          <details id="simulation-panel" hidden><summary>Simulation overrides</summary>
+            <p>These joints replace saved constraints for assigned groups. The CAD file stays unchanged.</p>
+            <p id="simulation-setup-name" hidden></p><p id="simulation-setup-note" hidden></p>
+            <label><input id="simulation-enable" type="checkbox"> Enable simulation overrides</label>
+            <button id="simulation-import">Import setup…</button><button id="simulation-export">Export setup…</button>
+            <input id="simulation-file" type="file" accept=".json,application/json" aria-label="Simulation setup file" hidden>
+            <div id="simulation-joints"></div>
+            <details id="simulation-linkage"><summary>Pitch linkage</summary>
+              <label><input id="simulation-linkage-enable" type="checkbox"> Use parallelogram linkage</label>
+              <p>The crank follows the pitch angle and axis. The coupler translates; the folding arm stays in its saved pose.</p>
+              <div id="simulation-linkage-inputs"></div>
+              <button id="simulation-add-crank" disabled>Add selected to Crank</button><ul id="simulation-members-crank"></ul>
+              <button id="simulation-add-coupler" disabled>Add selected to Coupler</button><ul id="simulation-members-coupler"></ul>
+            </details>
+            <button id="simulation-add-grounded" disabled>Add selected to Grounded</button>
+            <ul id="simulation-members-grounded"></ul>
+            <button id="simulation-reset">Reset simulation pose</button>
+            <p id="simulation-status" role="status"></p>
+          </details>
           <section id="component-inspector" hidden aria-label="Selected component">
             <h3 id="component-name"></h3>
             <div class="component-actions"><button id="component-focus">Focus</button><button id="component-isolate">Isolate</button><button id="component-hide">Hide</button></div>
             <dl id="component-properties"></dl>
+            <details id="motion-panel" hidden><summary>Viewer joint preview</summary>
+              <p>One joint in assembly XYZ. Changing selection restores the saved pose.</p>
+              <label>Joint <select id="motion-kind" aria-label="Joint type"><option value="hinge">Hinge</option><option value="slider">Slider</option></select></label>
+              <label>Axis <select id="motion-axis" aria-label="Joint axis"><option value="x">X</option><option value="y">Y</option><option value="z" selected>Z</option></select></label>
+              <fieldset id="motion-pivot"><legend>Pivot in assembly frame (mm)</legend>
+                <label>X <input id="motion-pivot-x" type="number" step="any" aria-label="Pivot X (mm)"></label>
+                <label>Y <input id="motion-pivot-y" type="number" step="any" aria-label="Pivot Y (mm)"></label>
+                <label>Z <input id="motion-pivot-z" type="number" step="any" aria-label="Pivot Z (mm)"></label>
+              </fieldset>
+              <div class="motion-limits"><label>Lower <input id="motion-lower" type="number" step="any" aria-label="Lower travel limit"></label>
+                <label>Upper <input id="motion-upper" type="number" step="any" aria-label="Upper travel limit"></label></div>
+              <label id="motion-unit" for="motion-value">Angle (degrees)</label>
+              <input id="motion-value" type="number" step="any" aria-label="Motion value">
+              <input id="motion-range" type="range" step="any" min="-180" max="180" value="0" aria-label="Joint motion">
+              <button id="motion-reset">Reset motion</button>
+              <p id="motion-status" role="status"></p>
+            </details>
           </section>
           <details id="mate-inspector" hidden><summary>Saved assembly mates</summary><p id="mate-status"></p><div id="mate-list"></div></details>
         </details>

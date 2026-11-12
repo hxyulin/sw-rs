@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
-import init, { WebApp } from "./pkg/sw_viewer.js";
+import init, { WebApp, joint_transform, linkage_transform } from "./pkg/sw_viewer.js";
+import { SimulationPanel } from "./simulation.js";
+import { MotionPanel } from "./motion.js";
 import { ComponentPanel } from "./components.js";
 import { SceneView } from "./scene.js";
 import { InventoryPanel } from "./inventory.js";
@@ -14,7 +16,7 @@ const sidebar = document.querySelector("#sidebar"),
   partsSearch = document.querySelector("#parts-search"),
   searchInput = document.querySelector("#part-search"),
   clearSearch = document.querySelector("#clear-search");
-let componentPanel;
+let componentPanel, simulationPanel;
 let app,
   scene,
   worker,
@@ -62,6 +64,7 @@ function openChooser() {
 }
 function resetOverlays() {
   inventoryPanel.reset();
+  simulationPanel?.reset();
   componentPanel?.reset();
   awaitingChoice = false;
   chooser.close();
@@ -352,6 +355,7 @@ function startWorker() {
         hierarchyPanel.hidden = !data.scene.hierarchy?.length;
         progress("Uploading mesh to the viewport…");
         scene.setMesh(data.vertices, data.scene.materials || [], data.scene.batches || [], data.textureUVs, data.textureImages, data.scene.textures);
+        simulationPanel.reset(data.scene);
         componentPanel.reset(data.scene);
         finishProgress();
         empty.hidden = data.vertices.length > 0;
@@ -428,7 +432,9 @@ try {
     searchInput.focus();
   });
   scene = new SceneView(document.querySelector("#scene"));
-  componentPanel = new ComponentPanel(scene, occurrenceTree);
+  simulationPanel = new SimulationPanel(scene, joint_transform, linkage_transform);
+  componentPanel = new ComponentPanel(scene, occurrenceTree, new MotionPanel(scene, joint_transform), simulationPanel);
+  simulationPanel.onActiveChange = () => componentPanel.select(scene.components.selected);
   scene.axesCanvas = document.querySelector("#axis-triad");
   const upAxis = document.querySelector("#up-axis");
   upAxis.onchange = () => scene.setUpAxis(upAxis.value);

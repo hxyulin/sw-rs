@@ -35,7 +35,9 @@ export class ComponentState {
 }
 
 export class ComponentPanel {
-  constructor(scene, tree) {
+  constructor(scene, tree, motion, simulation) {
+    this.motion = motion;
+    this.simulation = simulation;
     this.scene = scene;
     this.tree = tree;
     this.panel = document.querySelector('#component-inspector');
@@ -65,6 +67,8 @@ export class ComponentPanel {
       item.setAttribute('aria-selected', String(Number(item.dataset.occurrence) === id));
     }
     const node = state.nodes.find(n => n.id === id);
+    this.motion?.select(node);
+    this.simulation?.select(node);
     this.panel.hidden = !node;
     if (!node) return;
     document.querySelector('#component-name').textContent = node.name;
@@ -77,6 +81,10 @@ export class ComponentPanel {
     };
     add('Document', node.path || node.reference);
     add('Configuration', node.configuration);
+    add('Saved component name', node.component_name);
+    add('Occurrence number', node.reference_number);
+    add('Native component ID', node.native_id);
+    if (node.kind === 'assembly') add('Subassembly mode', node.is_flexible === true ? 'Flexible' : node.is_flexible === false ? 'Rigid' : 'Unknown');
     add('Status', node.status);
     add('Triangles', (node.vertex_count || 0) / 3);
     const material = this.metadata.presentations?.[node.path]?.physical_materials?.[node.physical_material_index];

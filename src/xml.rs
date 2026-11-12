@@ -182,6 +182,19 @@ pub(crate) fn components(tree: &Tree<'_>, index: u32) -> Vec<Component> {
             }
             Component {
                 name: attr(r, "swName"),
+                component_name: r
+                    .attribute("swComponentName")
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned),
+                reference_number: r
+                    .attribute("swReferenceNumber")
+                    .and_then(|s| s.parse().ok()),
+                native_id: r.attribute("swID").and_then(|s| s.parse().ok()),
+                is_flexible: match r.attribute("swFlexible") {
+                    Some("YES" | "TRUE" | "yes" | "true") => Some(true),
+                    Some("NO" | "FALSE" | "no" | "false") => Some(false),
+                    _ => None,
+                },
                 path,
                 ref_config,
                 component_reference: attr(r, "swComponentReference"),
