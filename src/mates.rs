@@ -5,7 +5,8 @@ use crate::{NativeString, mesh, visual::native_string_at};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// Semantic family established only by an explicit saved native class declaration.
+/// Semantic family established by an explicit saved native class declaration,
+/// directly or through a supported configuration-local class reference.
 /// Numeric SolidWorks API enum values are not assumed to be native file tags.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -97,10 +98,14 @@ pub struct MateRecord {
     /// None means a reused/unsupported class reference, not an absent mate type.
     pub class_name: Option<String>,
     /// Raw reused class tag preceding the feature-base tag, when no declaration exists.
-    /// The external MFC object/class map is not decoded.
+    /// The complete MFC object/class map remains undecoded; see resolution evidence.
     pub class_reference: Option<u16>,
-    /// Known family only when `class_name` explicitly establishes it.
+    /// Known family from a direct declaration or supported local class-reference resolution.
     pub kind: Option<MateKind>,
+    /// Provenance for a reused class resolved through this stream's leading index.
+    /// None does not imply a missing type; direct declarations use `class_name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_reference_resolution: Option<MateClassReferenceResolution>,
     /// Start of the record's declaration/reference tag in decoded-stream bytes.
     pub source_offset: usize,
     /// End of this source interval, bounded by the next supported mate header or EOF.
@@ -112,6 +117,22 @@ pub struct MateRecord {
     /// Unknown class references retain raw values without assigning physical units.
     /// These values are not automatically driving dimensions or travel bounds.
     pub parameter_candidates: Vec<MateParameterCandidate>,
+}
+
+/// A short class reference anchored to the first explicit declaration in one stream.
+/// This is a partial native profile, not a recovered general MFC archive dictionary.
+#[derive(Clone, Debug, Serialize)]
+pub struct MateClassReferenceResolution {
+    /// Exact runtime-class name from the first inline mate declaration.
+    pub class_name: String,
+    /// Archive-local index from the leading u32, not a global SolidWorks type tag.
+    pub class_index: u32,
+    /// Offset of the leading index in the enclosing decoded stream, currently zero.
+    pub index_source_offset: usize,
+    /// First explicit class declaration's offset, currently six.
+    pub declaration_offset: usize,
+    /// Offset of this record's short reused class tag in the same stream.
+    pub reference_offset: usize,
 }
 
 /// A supported named native parameter prefix, not a complete dimension object.
@@ -159,7 +180,7 @@ pub struct ConfigurationMates {
     pub configuration_index: u32,
     /// Exact decoded source stream name.
     pub source_stream: String,
-    /// Raw first header word; its object/class-map semantics remain unverified.
+    /// Raw leading word; anchors the first class index only in the supported profile.
     pub header_word: Option<u32>,
     /// Saved short-count header, when supported. Extended counts remain unsupported.
     pub declared_count: Option<usize>,
@@ -331,6 +352,7 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
             saved_identifier: identifier,
             name_prefix_tag: tag,
             kind: class_name.as_deref().and_then(MateKind::from_class),
+            class_reference_resolution: None,
             class_name,
             class_reference: reference,
             source_offset: start,
@@ -381,6 +403,7 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
         }
     }
     out.inventory_matches_declared_count = out.declared_count == Some(out.records.len());
+    resolve_first_class_references(&mut out);
     if !out.inventory_matches_declared_count {
         diagnostic(
             &mut out,
@@ -394,9 +417,44 @@ fn parse_stream(bytes: &[u8], name: &str, index: u32) -> ConfigurationMates {
     diagnostic(
         &mut out,
         "partial_mate_relations",
-        "Reference strings and named scalar prefixes are candidates; reused class tags, topology ownership, active/suppressed state, travel bounds and solving remain unsupported",
+        "Reference strings and named scalar prefixes are candidates; only leading-index class reuse is resolved, while other class tags, topology ownership, active/suppressed state, travel bounds and solving remain unsupported",
     );
     out
+}
+
+fn resolve_first_class_references(out: &mut ConfigurationMates) {
+    if !out.inventory_matches_declared_count {
+        return;
+    }
+    let Some(first) = out.records.first() else {
+        return;
+    };
+    let Some(index) = out.header_word.filter(|index| (1..0x7fff).contains(index)) else {
+        return;
+    };
+    let Some(name) = first.class_name.as_ref() else {
+        return;
+    };
+    // Supported short-count profile: the leading word anchors the first new
+    // class at byte six. The inherited feature class predates that declaration.
+    // Never count scanned declarations to infer any subsequent class slot.
+    if first.source_offset != 6 || u32::from(first.name_prefix_tag & 0x7fff) >= index {
+        return;
+    }
+    let name = name.clone();
+    let tag = 0x8000 | index as u16;
+    for record in &mut out.records {
+        if record.class_name.is_none() && record.class_reference == Some(tag) {
+            record.kind = MateKind::from_class(&name);
+            record.class_reference_resolution = Some(MateClassReferenceResolution {
+                class_name: name.clone(),
+                class_index: index,
+                index_source_offset: 0,
+                declaration_offset: 6,
+                reference_offset: record.source_offset,
+            });
+        }
+    }
 }
 
 fn parameter_candidate(

@@ -214,13 +214,98 @@ fn names_types_and_reference_graph_keep_occurrences_and_hyperedges_distinct() {
             .is_some()
     );
     assert_eq!(data.records[1].class_reference, Some(0x80c1));
-    assert_eq!(data.records[1].kind, None);
+    assert_eq!(data.records[1].kind, Some(MateKind::Width));
+    assert!(data.records[1].class_name.is_none());
+    let resolution = data.records[1].class_reference_resolution.as_ref().unwrap();
+    assert_eq!(resolution.class_name, "moMateWidth");
+    assert_eq!(resolution.class_index, 193);
+    assert_eq!(resolution.index_source_offset, 0);
+    assert_eq!(resolution.declaration_offset, 6);
+    assert_eq!(resolution.reference_offset, next);
     let graph = data.reference_graph();
     assert_eq!(graph.len(), 4);
     assert_eq!(graph[0].reference, "A-1@Root");
     assert_eq!(graph[0].record_indices, [0, 1]);
     assert!(!data.entity_ownership_decoded);
     assert!(!data.parameters_decoded);
+}
+
+#[test]
+fn leading_class_anchor_is_configuration_local_and_does_not_resolve_other_slots() {
+    let mut streams = BTreeMap::new();
+    for (index, class_name) in [(2, "moMateCoincident"), (7, "moMateConcentric")] {
+        let mut bytes = header(3);
+        record(&mut bytes, Some(class_name), "same editable name", 1);
+        record(&mut bytes, None, "unrelated label", 2);
+        let other = record(&mut bytes, None, "same editable name", 3);
+        bytes[other..other + 2].copy_from_slice(&0x80c2_u16.to_le_bytes());
+        streams.insert(format!("Contents/Config-{index}-MatesList"), bytes);
+    }
+    let data = parse(&streams);
+    assert_eq!(
+        data.configurations[0].records[1].kind,
+        Some(MateKind::Coincident)
+    );
+    assert_eq!(
+        data.configurations[1].records[1].kind,
+        Some(MateKind::Concentric)
+    );
+    for config in data.configurations {
+        assert!(config.records[0].class_reference_resolution.is_none());
+        assert!(config.records[2].kind.is_none());
+        assert!(config.records[2].class_reference_resolution.is_none());
+        assert!(!config.entity_ownership_decoded);
+        assert!(!config.limit_bounds_decoded);
+    }
+}
+
+#[test]
+fn leading_class_anchor_requires_supported_index_first_declaration_and_complete_inventory() {
+    let mut original = header(2);
+    record(
+        &mut original,
+        Some("moMateCoincident"),
+        "does not imply a type",
+        1,
+    );
+    record(&mut original, None, "Concentric1", 2);
+    for index in [0_u32, 12, 0x7fff, 0x1_00c1] {
+        let mut bytes = original.clone();
+        bytes[..4].copy_from_slice(&index.to_le_bytes());
+        let parsed = parse_stream(&bytes, "Contents/Config-0-MatesList", 0);
+        assert!(parsed.records[1].class_reference_resolution.is_none());
+        assert!(parsed.records[1].kind.is_none());
+    }
+    let mut mismatch = original.clone();
+    mismatch[4..6].copy_from_slice(&3_u16.to_le_bytes());
+    let parsed = parse_stream(&mismatch, "Contents/Config-0-MatesList", 0);
+    assert!(parsed.records[1].kind.is_none());
+    let mut displaced = original.clone();
+    displaced.splice(6..6, [0, 0]);
+    let parsed = parse_stream(&displaced, "Contents/Config-0-MatesList", 0);
+    assert!(parsed.records[1].kind.is_none());
+    let mut undeclared = header(2);
+    record(&mut undeclared, None, "same label", 1);
+    record(&mut undeclared, None, "same label", 2);
+    assert!(
+        parse_stream(&undeclared, "Contents/Config-0-MatesList", 0)
+            .records
+            .iter()
+            .all(|r| r.kind.is_none())
+    );
+    let mut future = header(2);
+    record(&mut future, Some("moMateFutureUnknown"), "any name", 1);
+    record(&mut future, None, "Distance1", 2);
+    let parsed = parse_stream(&future, "Contents/Config-0-MatesList", 0);
+    assert!(parsed.records[1].kind.is_none());
+    assert_eq!(
+        parsed.records[1]
+            .class_reference_resolution
+            .as_ref()
+            .unwrap()
+            .class_name,
+        "moMateFutureUnknown"
+    );
 }
 #[test]
 fn nested_dimension_parameters_are_not_extra_mates_and_types_are_not_guessed() {

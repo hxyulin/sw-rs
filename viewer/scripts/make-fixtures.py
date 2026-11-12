@@ -169,16 +169,17 @@ with zipfile.ZipFile(OUT/'configuration-hierarchy.zip', 'w', zipfile.ZIP_DEFLATE
 
 
 # Authored mate evidence: repeated names/occurrences, reused class and four-way width.
-def mate_record(class_name, name, identifier, references):
-    tag = visual_class(class_name) if class_name else struct.pack('<H',0x80c1)
+def mate_record(class_name, name, identifier, references, class_reference=0x80c1):
+    tag = visual_class(class_name) if class_name else struct.pack('<H',class_reference)
     out = (tag+struct.pack('<H',0x800c)+mfc_string(name)+bytes([0,1,0,0,0,0,0,0x40])+
            u32(identifier,0)+mfc_string(''))
     for reference in references:
         out += mfc_string('moSimpleSurfIdRep_c,1,2,')+u32(1)+mfc_string(reference)
     return out
-mates = (u32(193)+struct.pack('<H',2)+
+mates = (u32(193)+struct.pack('<H',3)+
          mate_record('moMateWidth','Width1',27,['A-1@Mated','A-2@Mated','B-1@Mated','B-2@Mated'])+
-         mate_record(None,'Renamed',31,['A-1@Mated','B-1@Mated']))
+         mate_record(None,'Renamed',31,['A-1@Mated','B-1@Mated'])+
+         mate_record(None,'Unknown',32,['A-2@Mated','B-2@Mated'],0x80c2))
 with zipfile.ZipFile(OUT/'mates.zip','w',zipfile.ZIP_DEFLATED) as archive:
     archive.writestr('Mated.SLDASM',linked_assembly('Mated.SLDASM',['Base.SLDPRT','Base.SLDPRT'],
                      [('Contents/Config-0-MatesList',mates)]))

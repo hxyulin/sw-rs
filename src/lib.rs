@@ -13,6 +13,7 @@ mod document;
 mod features;
 mod frame;
 mod geometry;
+mod geometry_inspection;
 mod inventory;
 mod mates;
 mod mesh;
@@ -39,14 +40,18 @@ pub use frame::{CoordinateFrame, SOLIDWORKS_MODEL_FRAME};
 pub use geometry::{
     GeometryDocument, GeometryModel, GeometrySource, Tessellation, geometry, geometry_with_limits,
 };
+pub use geometry_inspection::{
+    CachedFaceSummary, DisplayCacheInspection, GeometryCacheConfiguration, GeometryCacheInspection,
+    GeometryCacheStatus,
+};
 pub use inventory::{
     ByteSpan, ClassDeclaration, ContainerRecord, ContainerRecordStatus, DocumentInventory,
     SourceFormat, StreamInspection, StreamInventory, XmlAttribute, XmlElement, XmlReference,
     XmlText,
 };
 pub use mates::{
-    ConfigurationMates, MateData, MateDiagnostic, MateKind, MateParameterCandidate, MateRecord,
-    MateReferenceCandidate, MateReferenceNode,
+    ConfigurationMates, MateClassReferenceResolution, MateData, MateDiagnostic, MateKind,
+    MateParameterCandidate, MateRecord, MateReferenceCandidate, MateReferenceNode,
 };
 pub use model_headers::{
     NativeModelHeaderAttempt, NativeModelHeaderAttemptOutcome, NativeModelHeaderDecoding,

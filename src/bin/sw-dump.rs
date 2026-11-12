@@ -5,12 +5,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
     let first = args
         .next()
-        .ok_or("usage: sw-dump [metadata|geometry|mates|inventory|references|model-headers|assembly-analysis|stream] MODEL [STREAM] | --version")?;
+        .ok_or("usage: sw-dump [metadata|geometry|geometry-status|mates|inventory|references|model-headers|assembly-analysis|stream] MODEL [STREAM] | --version")?;
     if first == "--version" {
         println!("sw-rs {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     let geometry = first == "geometry";
+    let geometry_status = first == "geometry-status";
     let mates = first == "mates";
     let inventory = first == "inventory";
     let references = first == "references";
@@ -18,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stream = first == "stream";
     let assembly_analysis = first == "assembly-analysis";
     let path = if geometry
+        || geometry_status
         || mates
         || inventory
         || references
@@ -53,6 +55,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data = Vec::new();
     file.take((sw_rs::Limits::default().max_file_bytes as u64) + 1)
         .read_to_end(&mut data)?;
+    if geometry_status {
+        let reader =
+            sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;
+        serde_json::to_writer(std::io::stdout().lock(), &reader.inspect_geometry_cache()?)?;
+        return Ok(());
+    }
     if let Some(name) = raw_stream {
         let reader =
             sw_rs::DocumentReader::open(&data, &path.to_string_lossy(), sw_rs::Limits::default())?;

@@ -45,7 +45,7 @@ not a dropdown position or guessed configuration name. Each entry retains:
 - The exact stream name, raw first word and supported saved short count.
 - Common mate headers with exact UTF-16 names, offsets and saved identifier words.
 - Explicit class names and known families, where an inline declaration exists.
-- Reused class-reference tags, preserved without guessing their class dictionary.
+- Reused class-reference tags, with provenance when the leading-index profile resolves them.
 - Occurrence/selection-looking framed strings inside each source interval, plus
   adjacent geometry descriptor strings when their framing is supported.
 - Count agreement and diagnostics, with entity ownership and parameter coverage
@@ -65,8 +65,40 @@ framing is required; mate types never come from localized names such as
 A direct class declaration establishes coincident, concentric, parallel,
 perpendicular, tangent, distance, planar angle, symmetric, width, lock, slot,
 limit distance or limit angle when recognized. Other class names remain raw.
-Most later records reuse serialized class tags; their `kind` remains null.
-The first header word is not asserted to be a format version or mate type.
+Later records reuse serialized class tags. The supported leading-index profile
+can resolve references to the first declared class in the same stream; other
+references remain unknown. The first header word is not a format version or mate type.
+
+### Leading class-index profile
+
+For the supported short-count stream profile, the leading u32 supplies the
+archive-local index of the first inline mate class declaration at byte six.
+A later short class tag equal to `0x8000 | index` can therefore name that class
+without reconstructing intervening object payloads. The parser requires a complete
+header inventory, an inline first declaration at byte six, an index in the short
+class-tag range and an inherited feature-class tag preceding that index.
+Other layouts remain unsupported. The map is scoped to this literal Config-N
+stream; no indices are shared across configurations or documents.
+
+Resolved reused records retain `class_name: null` because no declaration exists
+at that record. Their `kind` comes from the first declaration's exact runtime
+class name. `class_reference_resolution` records that name, class index, index
+source offset, declaration offset and reused-tag offset. Unknown future class
+names retain this provenance with `kind: null`. Names and saved feature labels
+never determine a type.
+
+The profile was checked against 197 available readings in previously collected
+SolidWorks API evidence: 24 yaw concentric mates, 145 pitch coincident mates and
+28 main-assembly coincident mates. All matched. Original pitch/main source hashes
+were checked against the evidence; the yaw source matches the recorded baseline
+hash. These are comparisons to saved API readings, not new live native solves.
+The remaining 147 main-assembly anchor matches were not captured in that partial
+API export and are not included in the 197-check count.
+
+This does not recover subsequent class indices, reused parameter classes, entity
+ownership, alignment, suppression or rotation locks. A complete ModelHeader
+ledger is not an automatic seed for MatesList: its slots can be objects or absent
+where a mate tag expects a class. The full archive-context handoff remains open.
 
 `reference_candidates` are not a complete list of mate entities. A string such
 as `A-1@Root/B-2@A` retains its occurrence context and instance numbers. A plane

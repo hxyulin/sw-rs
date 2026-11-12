@@ -19,7 +19,8 @@ let geometry = reader.geometry()?;
 let inventory = reader.inventory();
 let original_feature_bytes = reader.stream("Contents/Config-0-ResolvedFeatures")?;
 let structural_view = reader.inspect_stream("swXmlContents/Features")?;
-let _ = (metadata, geometry, inventory, original_feature_bytes, structural_view);
+let cache_diagnosis = reader.inspect_geometry_cache()?;
+let _ = (metadata, geometry, inventory, original_feature_bytes, structural_view, cache_diagnosis);
 Ok(())
 }
 ```
@@ -28,6 +29,13 @@ Ok(())
 container once. It retains trace records and computes original-file/verified
 stream SHA-256 identities. It does not perform lazy decompression or run all
 semantic decoders.
+
+`inspect_geometry_cache()` is an on-demand Part inspection for missing or
+ambiguous geometry. It retains supported face counts and source offsets even
+when multiple saved configurations prevent `geometry()` from assigning a mesh.
+The report distinguishes absent carriers from unsupported face records and
+configuration ambiguity. It never chooses a configuration or installs geometry
+in the reader cache. See [display-cache diagnosis](cli.md#display-cache-diagnosis).
 
 - `source_bytes()` and `stream(name)` return borrowed byte slices.
 - `metadata()` and `geometry()` initialize cached results on demand. They share

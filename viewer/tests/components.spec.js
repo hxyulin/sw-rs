@@ -63,14 +63,19 @@ test('browser inspects and controls individual instances without reopening the a
   expect(errors).toEqual([]);
 });
 
-test('saved mates preserve unresolved type and reference evidence', async ({ page }) => {
+test('saved mates preserve class-resolution provenance and unresolved reference evidence', async ({ page }) => {
   await ready(page);
   await page.locator('#file').setInputFiles(path.join(fixtures, 'mates.zip'));
   await expect.poll(() => page.evaluate(() => window.viewer.triangles)).toBe(24);
   await page.locator('#mate-inspector > summary').click();
   await expect(page.locator('#mate-status')).toContainText('unresolved');
-  await expect(page.locator('#mate-list')).toContainText('2/2 saved headers');
+  await expect(page.locator('#mate-list')).toContainText('3/3 saved headers');
   await page.locator('#mate-list summary').first().click();
   await expect(page.locator('#mate-list pre').first()).toContainText('A-2@Mated');
-  await expect(page.locator('#mate-list summary').nth(1)).toContainText('Unknown type');
+  await expect(page.locator('#mate-list summary').nth(1)).toContainText('Renamed · width');
+  await page.locator('#mate-list summary').nth(1).click();
+  await expect(page.locator('#mate-list pre').nth(1)).toContainText('Reused class tag: 32961');
+  await expect(page.locator('#mate-list pre').nth(1)).toContainText('Class declaration: moMateWidth at 6');
+  await expect(page.locator('#mate-list pre').nth(1)).toContainText('Class index: 193 (leading word at 0)');
+  await expect(page.locator('#mate-list summary').nth(2)).toContainText('Unknown type');
 });

@@ -214,6 +214,7 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
             class_name: Some("moMateWidth".into()),
             class_reference: None,
             kind: Some(crate::MateKind::Width),
+            class_reference_resolution: None,
             source_offset: 6,
             evidence_end: 200,
             parameter_candidates: Vec::new(),

@@ -16,6 +16,7 @@ cargo run --release --locked --bin sw-dump -- [MODE] FILE [OPTION]
 | --- | --- |
 | `FILE` or `metadata FILE` | Saved metadata (`sw-rs-metadata-v1`) |
 | `geometry FILE.SLDPRT` | `sw-rs-geometry-v1` envelope |
+| `geometry-status FILE.SLDPRT` | Display-cache availability, face counts and configuration ambiguity |
 | `mates FILE.SLDASM` | `sw-rs-mates-v1` header inventory |
 | `assembly-analysis FILE.SLDASM` | Configuration-local occurrences, mate evidence and source-reference graph |
 | `stream FILE STREAM_NAME` | Exact decoded stream bytes on stdout, with no JSON wrapper |
@@ -47,6 +48,11 @@ present even when their names are unavailable. The source-reference graph and ex
 replacement records retain ambiguous and unresolved identities. Matching strings
 do not establish physical mate endpoints or a solved component graph.
 
+For reused mate tags, `class_reference_resolution` provides the exact declaration
+and leading-index offsets when the supported local anchor establishes a type.
+Other tags remain unknown. This resolves a subset of types, not native endpoints
+or parameters. See the [leading class-index profile](mates.md#leading-class-index-profile).
+
 Mate `parameter_candidates` retain supported named scalar prefixes and byte
 offsets. Explicit length/angle parameter declarations establish metres/radians;
 reused unknown classes have a null unit. A scalar in a limit mate is not identified
@@ -67,6 +73,30 @@ then exits unsuccessfully. Other hard failures exit unsuccessfully through the
 Rust error result; scripts must check the exit status rather than relying on a
 uniform error envelope. Inventory can describe a recognized unsupported container
 without successfully interpreting its contents.
+
+## Display-cache diagnosis
+
+```sh
+cargo run --release --locked --bin sw-dump -- geometry-status part.SLDPRT
+```
+
+This opt-in Part inspection writes `sw-rs-geometry-cache-inspection-v1`. It
+distinguishes an absent DisplayLists carrier, multiple ambiguous carriers, no
+supported face records, unsupported/invalid face records, and supported faces
+whose configuration assignment is ambiguous. These are successful analytical
+results; corrupt containers and non-Part inputs still fail.
+
+Each carrier retains its decoded stream name, size, face-marker presence and
+supported descriptor-table offsets with vertex/triangle counts. All saved
+configuration indices and names remain visible. Multiple configurations leave
+`assigned_configuration_index` null even when face decoding succeeds. Only the
+existing single-configuration profile supplies an index. This does not select
+the first configuration or allow those faces to be attached to an assembly.
+
+The inspection decodes face tables to count them, then releases mesh buffers.
+It does not decode configuration-to-cache ownership, prove cache completeness
+or freshness, or establish B-Rep body ownership. It has no fallback that invents
+meshes from bounding boxes or silently attaches another configuration's geometry.
 
 ## Complete model-header inspection
 

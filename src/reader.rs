@@ -115,6 +115,25 @@ impl<'a> DocumentReader<'a> {
             .as_ref()
             .map_err(Clone::clone)
     }
+    /// Diagnose Part display-cache availability without selecting ambiguous geometry.
+    /// This opt-in inspection decodes supported face tables to count their contents,
+    /// then releases mesh buffers. Results are owned and not cached. Container and
+    /// non-Part errors remain hard failures; absent/unsupported/ambiguous caches
+    /// have distinct statuses. Configuration ownership is never guessed.
+    pub fn inspect_geometry_cache(&self) -> Result<crate::GeometryCacheInspection, ParseError> {
+        let container = self.container()?;
+        let doc = self.metadata()?;
+        if doc.document_type != "part" {
+            return Err(ParseError(
+                "cached geometry inspection accepts Parts only".into(),
+            ));
+        }
+        Ok(crate::geometry_inspection::inspect(
+            container,
+            doc,
+            &self.source_hash,
+        ))
+    }
     /// Inspect source records and accounting without invoking semantic or geometry decoders.
     /// Unsupported file types retain an all-opaque inventory and explicit container error.
     pub fn inventory(&self) -> &DocumentInventory {

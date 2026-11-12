@@ -123,7 +123,10 @@ export class ComponentPanel {
         summary.textContent = `${record.name.value} · ${record.kind || 'Unknown type'}`;
         details.append(summary);
         const raw = document.createElement('pre');
+        const resolution = record.class_reference_resolution;
         raw.textContent = [record.class_name || `Reused class tag: ${record.class_reference ?? 'unknown'}`, `Source offset: ${record.source_offset}`,
+          ...(resolution ? [`Class declaration: ${resolution.class_name} at ${resolution.declaration_offset}`,
+            `Class index: ${resolution.class_index} (leading word at ${resolution.index_source_offset})`] : []),
           ...record.reference_candidates.map(c => c.reference.value)].join('\n');
         details.append(raw); list.append(details);
       }

@@ -112,7 +112,8 @@ Selection and visibility overrides reset when a scene/configuration is reloaded.
 
 **Saved assembly mates** lists evidence for the opened document's exact native
 configuration. Expand a record to see its class evidence, source offset and saved
-reference strings. Unknown reused mate types stay unknown. This list is scoped
+reference strings. Resolved reused classes show their raw tag and the declaration
+and leading-index offsets. Unsupported reused mate types stay unknown. This list is scoped
 to the opened assembly, not filtered by the selected component: entity ownership,
 parameters and active state are not resolved. Native mate editing and solving
 are not implemented. See [mate decoding](mates.md) for the current parser contract.
