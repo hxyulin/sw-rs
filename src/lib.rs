@@ -7,6 +7,7 @@
 //! assert!(sw_rs::parse(b"not CAD", "part.SLDPRT").is_err());
 //! ```
 mod binary;
+mod component_state;
 mod config;
 mod container;
 mod document;
@@ -29,6 +30,7 @@ mod visual;
 mod xml;
 mod zlb;
 pub use binary::{BinaryReader, FramedString};
+pub use component_state::ComponentFixation;
 pub use container::{Container, Diagnostic, Limits, ParseError};
 pub use document::{
     Component, Configuration, CutListItem, Document, MassProperties, MaterialAssignment,
@@ -50,8 +52,10 @@ pub use inventory::{
     XmlText,
 };
 pub use mates::{
-    ConfigurationMates, MateClassReferenceResolution, MateData, MateDiagnostic, MateKind,
-    MateParameterCandidate, MateRecord, MateReferenceCandidate, MateReferenceNode,
+    ConfigurationMates, MateAlignment, MateAlignmentValue, MateClassDeclaration, MateClassIndexUse,
+    MateClassOrderEvidence, MateClassReferenceResolution, MateData, MateDiagnostic, MateKind,
+    MateLimitBounds, MateLimitUnit, MateParameterCandidate, MatePlaneGeometryCandidate, MateRecord,
+    MateReferenceCandidate, MateReferenceNode, MateSavedState, MateStateFlag,
 };
 pub use model_headers::{
     NativeModelHeaderAttempt, NativeModelHeaderAttemptOutcome, NativeModelHeaderDecoding,

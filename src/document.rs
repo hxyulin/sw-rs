@@ -2,7 +2,7 @@
 // Copyright (c) 2026 hxyulin <hxyulin@proton.me>
 // Ported from openswx document.cc and internal/xml_readers.cc.
 // Copyright (c) 2026 openswx contributors; see LICENSE-openswx.
-use crate::{Container, Diagnostic, config, xml};
+use crate::{Container, Diagnostic, component_state, config, xml};
 #[path = "material.rs"]
 mod material;
 pub use material::{
@@ -46,6 +46,10 @@ pub struct Component {
     /// Explicit saved flexible flag; unknown does not imply rigid.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_flexible: Option<bool>,
+    /// Supported saved fixation in this owning assembly, not global grounding.
+    /// Absent means unknown; other occurrences are not assumed floating.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixation: Option<crate::ComponentFixation>,
     /// Source path, often a Windows path.
     pub path: String,
     /// Referenced child configuration.
@@ -199,6 +203,19 @@ fn build_streams(
         })
         .collect();
     indices.extend(names.keys().copied());
+    // Cross-configuration identity binding has not been independently established
+    // for the fixation profile. Require one configuration and one literal carrier.
+    let single_configuration = indices.len() == 1
+        && tree.single_root_configuration() == indices.first().copied()
+        && streams
+            .keys()
+            .filter(|name| {
+                name.strip_prefix("Contents/Config-").is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                })
+            })
+            .count()
+            == 1;
     if indices.is_empty() {
         indices.insert(0);
     }
@@ -254,7 +271,12 @@ fn build_streams(
                     }
                 },
                 components: if kind == "assembly" {
-                    xml::components(&tree, index)
+                    let mut components = xml::components(&tree, index);
+                    if single_configuration {
+                        let source = format!("Contents/Config-{index}");
+                        component_state::apply(&mut components, get(&source), &source);
+                    }
+                    components
                 } else {
                     Vec::new()
                 },

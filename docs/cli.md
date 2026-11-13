@@ -48,20 +48,42 @@ present even when their names are unavailable. The source-reference graph and ex
 replacement records retain ambiguous and unresolved identities. Matching strings
 do not establish physical mate endpoints or a solved component graph.
 
-For reused mate tags, `class_reference_resolution` provides the exact declaration
-and leading-index offsets when the supported local anchor establishes a type.
-Other tags remain unknown. This resolves a subset of types, not native endpoints
-or parameters. See the [leading class-index profile](mates.md#leading-class-index-profile).
+For reused mate and parameter tags, `class_reference_resolution` retains the
+matched declaration and index source. A leading index or a unique declaration-order
+proof can establish the class. Shared `class_order_evidence` records the latter
+proof per configuration. Other tags remain unknown. See the
+[class-reference profiles](mates.md#declaration-order-profile).
 
 Mate `parameter_candidates` retain supported named scalar prefixes and byte
 offsets. Explicit length/angle parameter declarations establish metres/radians;
-reused unknown classes have a null unit. A scalar in a limit mate is not identified
+proven reused parameter classes also establish units; unresolved classes retain a null unit. A scalar in a limit mate is not identified
 as its lower or upper bound. See [numerical mate evidence](mates.md#numerical-parameter-prefixes).
 
 The coverage object reports grounding, limit bounds, mate ownership and solving
-as unsupported. Fixed state is unknown, even when a transform is identity or
-mates appear to constrain a component. Saved flexible flags remain separate from
-grounding. Missing values never become zero bounds or unconstrained motion.
+as incompletely decoded. Supported configured distance and angle prefixes appear in
+each mate's `configured_limits`, with an explicit `metres` or `radians` unit,
+bounds and source offsets. `records_with_configured_limits` reports their count. This does not establish
+active state or physical usable travel. See [configured bounds](mates.md#configured-distance-and-angle-bounds).
+Supported saved mate state appears in `saved_state`: suppression, alignment and
+concentric rotation lock, each with byte provenance. Coverage counts
+`records_with_saved_suppression`, `records_with_saved_alignment` and
+`records_with_concentric_rotation_lock` report supported fields without claiming
+effective activation or motion freedom. See [saved mate state](mates.md#saved-mate-state).
+
+`cached_plane_geometry` retains supported explicit plane-cache prefixes with
+points in metres and unit normals in the mate's owning assembly frame. The
+declaration and parameter offsets identify their source bytes.
+`records_with_cached_plane_geometry` counts records with at least one candidate.
+Candidates have no resolved endpoint index or component owner and are not paired
+with selection strings. See [cached plane geometry](mates.md#cached-plane-geometry).
+
+Supported explicit component-reference prefixes appear in `Component::fixation`,
+with `fixed_in_owner`, exact occurrence identity and byte provenance.
+`components_with_saved_fixation` counts these fields. Reused references and
+multi-configuration fixation remain unknown. Identity transforms do not establish
+fixation, and local fixation does not establish global grounding. See
+[saved component state](mates.md#saved-component-state). Saved flexible flags
+remain separate from grounding. Missing values never become zero bounds or unconstrained motion.
 
 `stream` exports the reader's decoded bytes with the same limits and integrity
 checks as other modes. Its offsets match inventory inspections and mate evidence;

@@ -203,6 +203,8 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
         entity_ownership_decoded: false,
         parameters_decoded: false,
         limit_bounds_decoded: false,
+        records_with_configured_limits: 0,
+        class_order_evidence: Vec::new(),
         diagnostics: Vec::new(),
         records: vec![crate::MateRecord {
             name: crate::NativeString {
@@ -218,6 +220,9 @@ fn mate_identity_and_selection_evidence_keep_configuration_and_descriptor_contex
             source_offset: 6,
             evidence_end: 200,
             parameter_candidates: Vec::new(),
+            configured_limits: None,
+            saved_state: None,
+            cached_plane_geometry: Vec::new(),
             reference_candidates: vec![crate::MateReferenceCandidate {
                 reference: crate::NativeString {
                     offset: 150,

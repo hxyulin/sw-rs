@@ -876,6 +876,7 @@ mod traversal_tests {
             reference_number: None,
             native_id: None,
             is_flexible: None,
+            fixation: None,
             path: path.into(),
             ref_config: "Default".into(),
             component_reference: String::new(),

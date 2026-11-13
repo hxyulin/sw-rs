@@ -116,6 +116,27 @@ pub(crate) struct Tree<'a> {
     doc: Option<Document<'a>>,
     pub names: BTreeMap<u32, String>,
 }
+impl Tree<'_> {
+    pub(crate) fn single_root_configuration(&self) -> Option<u32> {
+        let root = self.doc.as_ref()?.root_element();
+        let top = root
+            .children()
+            .filter(|n| n.has_tag_name("swHeader"))
+            .flat_map(|n| n.children())
+            .find(|n| n.has_tag_name("swFile"))?
+            .attribute("id")?;
+        let mut models = root
+            .children()
+            .filter(|n| n.has_tag_name("swModelList"))
+            .flat_map(|n| n.children())
+            .filter(|n| n.has_tag_name("swModel") && n.attribute("swFileRef") == Some(top));
+        let model = models.next()?;
+        if models.next().is_some() {
+            return None;
+        }
+        model.attribute("swConfigurationId")?.parse().ok()
+    }
+}
 pub(crate) fn tree(bytes: &[u8]) -> Tree<'_> {
     let doc = parse(bytes);
     let mut names = BTreeMap::new();
@@ -195,6 +216,7 @@ pub(crate) fn components(tree: &Tree<'_>, index: u32) -> Vec<Component> {
                     Some("NO" | "FALSE" | "no" | "false") => Some(false),
                     _ => None,
                 },
+                fixation: None,
                 path,
                 ref_config,
                 component_reference: attr(r, "swComponentReference"),
